@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import (  # type: ignore[import-un
 )
 
 from .const import DOMAIN
+from .regional_prices import get_region_price_config, get_region_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -213,6 +214,10 @@ class Shaobor95598ElectricityFeeSensor(Shaobor95598SensorBase):
         cons_no = data.get("selected_cons_no") or ""
         if cons_no:
             attrs["户号"] = cons_no
+            
+            # 根据户号自动识别地区
+            region_name = get_region_name(cons_no)
+            attrs["识别地区"] = region_name
         
         # 用电地址
         addr = data.get("selected_elec_addr") or ""
@@ -368,12 +373,36 @@ class Shaobor95598DailyUsageSensor(Shaobor95598SensorBase):
             year_accumulated = 0
             current_year = str(datetime.now().year)
             
-            # 阶梯电价配置（从配置中读取，默认值为黑龙江标准，用户可在配置中修改）
-            LADDER_LEVEL_1 = self._entry.data.get("ladder_level_1", 2040)  # 第1档上限
-            LADDER_LEVEL_2 = self._entry.data.get("ladder_level_2", 3240)  # 第2档上限
-            PRICE_1 = self._entry.data.get("ladder_price_1", 0.51)  # 第1档电价
-            PRICE_2 = self._entry.data.get("ladder_price_2", 0.56)  # 第2档电价
-            PRICE_3 = self._entry.data.get("ladder_price_3", 0.81)  # 第3档电价
+            # 阶梯电价配置：优先从配置读取，否则根据户号自动识别地区
+            data = self.coordinator.data or {}
+            cons_no = data.get("selected_cons_no", "")
+            
+            # 尝试根据户号自动获取地区电价配置
+            regional_config = get_region_price_config(cons_no) if cons_no else None
+            region_name = get_region_name(cons_no) if cons_no else "未知地区"
+            
+            # 优先使用用户配置，其次使用地区配置，最后使用默认值（黑龙江）
+            if regional_config:
+                default_level_1 = regional_config["ladder_level_1"]
+                default_level_2 = regional_config["ladder_level_2"]
+                default_price_1 = regional_config["ladder_price_1"]
+                default_price_2 = regional_config["ladder_price_2"]
+                default_price_3 = regional_config["ladder_price_3"]
+                _LOGGER.info(f"根据户号 {cons_no} 自动识别地区: {region_name}")
+            else:
+                # 默认值（黑龙江标准）
+                default_level_1 = 2040
+                default_level_2 = 3240
+                default_price_1 = 0.51
+                default_price_2 = 0.56
+                default_price_3 = 0.81
+                _LOGGER.warning(f"无法识别户号 {cons_no} 的地区，使用默认电价（黑龙江标准）")
+            
+            LADDER_LEVEL_1 = self._entry.data.get("ladder_level_1", default_level_1)
+            LADDER_LEVEL_2 = self._entry.data.get("ladder_level_2", default_level_2)
+            PRICE_1 = self._entry.data.get("ladder_price_1", default_price_1)
+            PRICE_2 = self._entry.data.get("ladder_price_2", default_price_2)
+            PRICE_3 = self._entry.data.get("ladder_price_3", default_price_3)
             
             for item in seven_ele_list:
                 if isinstance(item, dict):
@@ -632,12 +661,30 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
         # 从配置中读取计费模式和电价参数
         billing_mode = self._entry.data.get("billing_mode", "year_ladder")
         
-        # 阶梯电价配置（从配置中读取，默认值为黑龙江标准，用户可在配置中修改）
-        LADDER_LEVEL_1 = self._entry.data.get("ladder_level_1", 2040)
-        LADDER_LEVEL_2 = self._entry.data.get("ladder_level_2", 3240)
-        PRICE_1 = self._entry.data.get("ladder_price_1", 0.51)
-        PRICE_2 = self._entry.data.get("ladder_price_2", 0.56)
-        PRICE_3 = self._entry.data.get("ladder_price_3", 0.81)
+        # 阶梯电价配置：优先从配置读取，否则根据户号自动识别地区
+        regional_config = get_region_price_config(cons_no) if cons_no else None
+        region_name = get_region_name(cons_no) if cons_no else "未知地区"
+        
+        # 优先使用用户配置，其次使用地区配置，最后使用默认值（黑龙江）
+        if regional_config:
+            default_level_1 = regional_config["ladder_level_1"]
+            default_level_2 = regional_config["ladder_level_2"]
+            default_price_1 = regional_config["ladder_price_1"]
+            default_price_2 = regional_config["ladder_price_2"]
+            default_price_3 = regional_config["ladder_price_3"]
+        else:
+            # 默认值（黑龙江标准）
+            default_level_1 = 2040
+            default_level_2 = 3240
+            default_price_1 = 0.51
+            default_price_2 = 0.56
+            default_price_3 = 0.81
+        
+        LADDER_LEVEL_1 = self._entry.data.get("ladder_level_1", default_level_1)
+        LADDER_LEVEL_2 = self._entry.data.get("ladder_level_2", default_level_2)
+        PRICE_1 = self._entry.data.get("ladder_price_1", default_price_1)
+        PRICE_2 = self._entry.data.get("ladder_price_2", default_price_2)
+        PRICE_3 = self._entry.data.get("ladder_price_3", default_price_3)
         
         year_accumulated = 0
         current_year = str(datetime.now().year)
