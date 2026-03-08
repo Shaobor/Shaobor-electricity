@@ -226,6 +226,9 @@ class Shaobor95598ApiClient:
         self._login_account: str | None = None  # loginAccount from userInfo for c05f01
         self._user_info: Any | None = None  # bizrt.userInfo (95598_userInfo)
         
+        # SMS login state
+        self._sms_code_key: str | None = None  # codeKey from step1, needed for step2
+        
         # Auto re-login credentials (only stored if auto_relogin is enabled)
         self._username: str | None = None
         self._password: str | None = None
@@ -1336,6 +1339,22 @@ class Shaobor95598ApiClient:
         
         # 解密响应
         decrypted = await self._decrypt_to_data(encrypted_response)
+        
+        # 保存 codeKey 用于步骤2
+        if isinstance(decrypted, dict):
+            # 尝试从多个可能的位置提取 codeKey
+            code_key = (
+                decrypted.get("codeKey") or 
+                decrypted.get("code_key") or
+                (decrypted.get("data", {}).get("codeKey") if isinstance(decrypted.get("data"), dict) else None) or
+                (decrypted.get("bizrt", {}).get("codeKey") if isinstance(decrypted.get("bizrt"), dict) else None)
+            )
+            if code_key:
+                self._sms_code_key = str(code_key)
+                _LOGGER.info("[短信登录] 步骤1: 保存 codeKey: %s", self._sms_code_key[:10] + "..." if len(self._sms_code_key) > 10 else self._sms_code_key)
+            else:
+                _LOGGER.warning("[短信登录] 步骤1: 未找到 codeKey，响应结构: %s", list(decrypted.keys()))
+        
         _LOGGER.info("[短信登录] 步骤1: 验证码发送成功")
         
         return {"success": True, "data": decrypted}
@@ -1358,19 +1377,28 @@ class Shaobor95598ApiClient:
         if not self._key_code:
             await self.initialize()
         
+        if not self._sms_code_key:
+            raise StateGridAuthError("Missing codeKey. Please call login_with_sms_step1 first.")
+        
         _LOGGER.info("[短信登录] 步骤2: 验证验证码")
         
         # Step 1: 加密手机号和验证码 (使用 c4f02 加密接口)
+        encrypt_payload = {
+            "token": self._encrypt_token,
+            "keyCode": self._key_code,
+            "uuid": self._uuid,
+            "publicKey": self._public_key,
+            "account": phone,
+            "code": code,
+            "codeKey": self._sms_code_key,
+        }
+        
+        _LOGGER.info("[短信登录] 步骤2: 加密参数 - account=%s, code=%s, codeKey=%s", 
+                     phone, code, self._sms_code_key[:10] + "..." if len(self._sms_code_key) > 10 else self._sms_code_key)
+        
         encrypt_data = await self._secure_post_encrypt(
             f"{ENCRYPT_API_URL}/encrypt/c4f02",
-            {
-                "token": self._encrypt_token,
-                "keyCode": self._key_code,
-                "uuid": self._uuid,
-                "publicKey": self._public_key,
-                "account": phone,
-                "code": code,
-            },
+            encrypt_payload,
         )
         
         # Step 2: 调用 95598 API 验证短信 (osg-uc0013/member/c4/f02 端点)
@@ -1402,23 +1430,30 @@ class Shaobor95598ApiClient:
         
         # 提取 token 信息（与密码登录类似）
         bizrt = decrypted_login.get("bizrt") or decrypted_login.get("data") or decrypted_login
+        user_token = None
         if isinstance(bizrt, dict):
-            user_token = bizrt.get("token")
+            user_token = bizrt.get("token") or bizrt.get("rsi")
+            user_info = bizrt.get("userInfo")
             if user_token:
-                self._user_token = user_token
+                self._user_token = str(user_token)
+                self._token = str(user_token)  # 更新 token（bizrt.token）
                 _LOGGER.info("[短信登录] 步骤2: 获取到 user_token")
+                
+                # 从 bizrt 提取 user_id、login_account
+                if isinstance(user_info, list) and user_info and isinstance(user_info[0], dict):
+                    first_ui = user_info[0]
+                    self._user_id = str(first_ui.get("userId", ""))
+                    if first_ui.get("loginAccount"):
+                        self._login_account = str(first_ui["loginAccount"])
+                elif isinstance(user_info, dict) and user_info.get("loginAccount"):
+                    self._login_account = str(user_info["loginAccount"])
         
-        # 获取 access_token
-        if isinstance(bizrt, dict):
-            access_token = bizrt.get("accessToken") or bizrt.get("access_token")
-            refresh_token = bizrt.get("refreshToken") or bizrt.get("refresh_token")
-            if access_token:
-                self._access_token = access_token
-                self._refresh_token = refresh_token
-                _LOGGER.info("[短信登录] 步骤2: 获取到 access_token")
-        
-        if not self._user_token:
+        if not user_token:
             raise StateGridAuthError("短信登录失败：未获取到 token")
+        
+        # Step 3: 用 user_token 换取 access_token（与密码登录一致）
+        _LOGGER.info("[短信登录] 步骤3: 换取 access_token")
+        tokens = await self.exchange_user_token_for_access_token(str(user_token))
         
         _LOGGER.info("[短信登录] 步骤2: 登录成功")
         
@@ -1426,8 +1461,8 @@ class Shaobor95598ApiClient:
             "success": True,
             "tokens": {
                 "user_token": self._user_token,
-                "access_token": self._access_token,
-                "refresh_token": self._refresh_token,
+                "access_token": tokens.get("access_token"),
+                "refresh_token": tokens.get("refresh_token"),
             },
             "data": decrypted_login,
         }
