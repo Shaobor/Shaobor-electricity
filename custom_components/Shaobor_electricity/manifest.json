@@ -1,0 +1,17 @@
+{
+    "domain": "Shaobor_electricity",
+    "name": "Shaobor Electricity",
+    "codeowners": [
+        "@shaobor"
+    ],
+    "config_flow": true,
+    "dependencies": [],
+    "requirements": [
+        "pyotp==2.8.0",
+        "PyQRCode==1.2.1"
+    ],
+    "documentation": "https://github.com/Shaobor/Shaobor-electricity",
+    "iot_class": "cloud_polling",
+    "issue_tracker": "https://github.com/Shaobor/Shaobor-electricity/issues",
+    "version": "1.0.0"
+}
