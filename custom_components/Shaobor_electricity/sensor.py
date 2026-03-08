@@ -368,12 +368,12 @@ class Shaobor95598DailyUsageSensor(Shaobor95598SensorBase):
             year_accumulated = 0
             current_year = str(datetime.now().year)
             
-            # 黑龙江电价配置
-            LADDER_LEVEL_1 = 2040  # 第1档上限
-            LADDER_LEVEL_2 = 3240  # 第2档上限
-            PRICE_1 = 0.51  # 第1档电价
-            PRICE_2 = 0.56  # 第2档电价
-            PRICE_3 = 0.81  # 第3档电价
+            # 阶梯电价配置（从配置中读取，默认值为黑龙江标准，用户可在配置中修改）
+            LADDER_LEVEL_1 = self._entry.data.get("ladder_level_1", 2040)  # 第1档上限
+            LADDER_LEVEL_2 = self._entry.data.get("ladder_level_2", 3240)  # 第2档上限
+            PRICE_1 = self._entry.data.get("ladder_price_1", 0.51)  # 第1档电价
+            PRICE_2 = self._entry.data.get("ladder_price_2", 0.56)  # 第2档电价
+            PRICE_3 = self._entry.data.get("ladder_price_3", 0.81)  # 第3档电价
             
             for item in seven_ele_list:
                 if isinstance(item, dict):
@@ -632,7 +632,7 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
         # 从配置中读取计费模式和电价参数
         billing_mode = self._entry.data.get("billing_mode", "year_ladder")
         
-        # 黑龙江电价配置（默认值，可从配置中读取）
+        # 阶梯电价配置（从配置中读取，默认值为黑龙江标准，用户可在配置中修改）
         LADDER_LEVEL_1 = self._entry.data.get("ladder_level_1", 2040)
         LADDER_LEVEL_2 = self._entry.data.get("ladder_level_2", 3240)
         PRICE_1 = self._entry.data.get("ladder_price_1", 0.51)
