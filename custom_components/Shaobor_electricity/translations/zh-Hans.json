@@ -254,16 +254,16 @@
     },
     "entity": {
         "sensor": {
-            "shaobor_95598__balance": {
+            "Shaobor_electricity__balance": {
                 "name": "实时电费"
             },
-            "shaobor_95598__remaining_days": {
+            "Shaobor_electricity__remaining_days": {
                 "name": "预计可用"
             },
-            "shaobor_95598__last_update": {
+            "Shaobor_electricity__last_update": {
                 "name": "最后更新时间"
             },
-            "shaobor_95598__payment_records": {
+            "Shaobor_electricity__payment_records": {
                 "name": "缴费记录"
             }
         }
