@@ -705,15 +705,53 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._pending_entry_data = None
                 return await self._finish_entry(title=title, data=entry_data)
 
+        # 根据户号自动获取地区电价配置
+        from .regional_prices import get_region_price_config, get_region_name
+        
+        cons_no = ""
+        if self._pending_entry_data:
+            power_list = self._pending_entry_data.get(CONF_POWER_USER_LIST) or []
+            idx = self._pending_entry_data.get(CONF_SELECTED_ACCOUNT_INDEX, 0)
+            if power_list and 0 <= idx < len(power_list) and isinstance(power_list[idx], dict):
+                raw = (
+                    power_list[idx].get("consNo_dst")
+                    or power_list[idx].get("consNoDst")
+                    or power_list[idx].get("consNo")
+                    or ""
+                )
+                cons_no = str(raw).split("-")[0].strip() if raw else ""
+        
+        # 获取地区配置
+        regional_config = get_region_price_config(cons_no) if cons_no else None
+        region_name = get_region_name(cons_no) if cons_no else "未知地区"
+        
+        # 设置默认值
+        if regional_config:
+            default_level_1 = regional_config["ladder_level_1"]
+            default_level_2 = regional_config["ladder_level_2"]
+            default_price_1 = regional_config["ladder_price_1"]
+            default_price_2 = regional_config["ladder_price_2"]
+            default_price_3 = regional_config["ladder_price_3"]
+            description = f"已自动识别地区：{region_name}\n以下为该地区的默认电价标准，您可以根据需要修改。"
+        else:
+            # 默认值（黑龙江标准）
+            default_level_1 = 2040
+            default_level_2 = 3240
+            default_price_1 = 0.51
+            default_price_2 = 0.56
+            default_price_3 = 0.81
+            description = "无法识别地区，使用默认电价标准（黑龙江），请根据实际情况修改。"
+
         return self.async_show_form(
             step_id="year_ladder_config",
+            description_placeholders={"description": description},
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_LADDER_LEVEL_1, default=2040): int,
-                    vol.Required(CONF_LADDER_LEVEL_2, default=3240): int,
-                    vol.Required(CONF_LADDER_PRICE_1, default=0.51): vol.Coerce(float),
-                    vol.Required(CONF_LADDER_PRICE_2, default=0.56): vol.Coerce(float),
-                    vol.Required(CONF_LADDER_PRICE_3, default=0.81): vol.Coerce(float),
+                    vol.Required(CONF_LADDER_LEVEL_1, default=default_level_1): int,
+                    vol.Required(CONF_LADDER_LEVEL_2, default=default_level_2): int,
+                    vol.Required(CONF_LADDER_PRICE_1, default=default_price_1): vol.Coerce(float),
+                    vol.Required(CONF_LADDER_PRICE_2, default=default_price_2): vol.Coerce(float),
+                    vol.Required(CONF_LADDER_PRICE_3, default=default_price_3): vol.Coerce(float),
                     vol.Optional(CONF_YEAR_LADDER_START, default="0101"): str,
                 }
             ),
@@ -1184,16 +1222,48 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
             return self.async_create_entry(title="", data={})
 
+        # 根据户号自动获取地区电价配置
+        from .regional_prices import get_region_price_config, get_region_name
+        
         current_data = self.config_entry.data
+        
+        # 尝试从coordinator获取户号
+        cons_no = ""
+        if DOMAIN in self.hass.data and self.config_entry.entry_id in self.hass.data[DOMAIN]:
+            coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id].get("coordinator")
+            if coordinator and coordinator.data:
+                cons_no = coordinator.data.get("selected_cons_no", "")
+        
+        # 获取地区配置
+        regional_config = get_region_price_config(cons_no) if cons_no else None
+        region_name = get_region_name(cons_no) if cons_no else "未知地区"
+        
+        # 设置默认值
+        if regional_config:
+            default_level_1 = regional_config["ladder_level_1"]
+            default_level_2 = regional_config["ladder_level_2"]
+            default_price_1 = regional_config["ladder_price_1"]
+            default_price_2 = regional_config["ladder_price_2"]
+            default_price_3 = regional_config["ladder_price_3"]
+            description = f"已自动识别地区：{region_name}\n当前配置的电价标准，您可以根据需要修改。"
+        else:
+            default_level_1 = 2040
+            default_level_2 = 3240
+            default_price_1 = 0.51
+            default_price_2 = 0.56
+            default_price_3 = 0.81
+            description = "当前配置的电价标准，您可以根据实际情况修改。"
+        
         return self.async_show_form(
             step_id="year_ladder_config",
+            description_placeholders={"description": description},
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_LADDER_LEVEL_1, default=current_data.get(CONF_LADDER_LEVEL_1, 2040)): int,
-                    vol.Required(CONF_LADDER_LEVEL_2, default=current_data.get(CONF_LADDER_LEVEL_2, 3240)): int,
-                    vol.Required(CONF_LADDER_PRICE_1, default=current_data.get(CONF_LADDER_PRICE_1, 0.51)): vol.Coerce(float),
-                    vol.Required(CONF_LADDER_PRICE_2, default=current_data.get(CONF_LADDER_PRICE_2, 0.56)): vol.Coerce(float),
-                    vol.Required(CONF_LADDER_PRICE_3, default=current_data.get(CONF_LADDER_PRICE_3, 0.81)): vol.Coerce(float),
+                    vol.Required(CONF_LADDER_LEVEL_1, default=current_data.get(CONF_LADDER_LEVEL_1, default_level_1)): int,
+                    vol.Required(CONF_LADDER_LEVEL_2, default=current_data.get(CONF_LADDER_LEVEL_2, default_level_2)): int,
+                    vol.Required(CONF_LADDER_PRICE_1, default=current_data.get(CONF_LADDER_PRICE_1, default_price_1)): vol.Coerce(float),
+                    vol.Required(CONF_LADDER_PRICE_2, default=current_data.get(CONF_LADDER_PRICE_2, default_price_2)): vol.Coerce(float),
+                    vol.Required(CONF_LADDER_PRICE_3, default=current_data.get(CONF_LADDER_PRICE_3, default_price_3)): vol.Coerce(float),
                     vol.Optional(CONF_YEAR_LADDER_START, default=current_data.get(CONF_YEAR_LADDER_START, "0101")): str,
                 }
             ),
