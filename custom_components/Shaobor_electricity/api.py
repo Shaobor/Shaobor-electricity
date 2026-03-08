@@ -1296,7 +1296,7 @@ class Shaobor95598ApiClient:
         
         _LOGGER.info("[短信登录] 步骤1: 发送验证码到 %s", phone)
         
-        # Step 1: 加密手机号
+        # Step 1: 加密手机号 (使用 lf03 加密接口)
         encrypt_data = await self._secure_post_encrypt(
             f"{ENCRYPT_API_URL}/encrypt/lf03",
             {
@@ -1308,7 +1308,7 @@ class Shaobor95598ApiClient:
             },
         )
         
-        # Step 2: 调用 95598 API 发送短信
+        # Step 2: 调用 95598 API 发送短信 (c8f04 端点)
         headers = self._get_sgcc_headers(str(encrypt_data.get("timestamp", "")))
         payload = {
             "data": encrypt_data.get("data"),
@@ -1318,7 +1318,7 @@ class Shaobor95598ApiClient:
         }
         
         async with self._session.post(
-            "https://www.95598.cn/api/osg-web0004/open/c44/f03",
+            "https://www.95598.cn/api/osg-web0004/open/c8/f04",
             json=payload,
             headers=headers,
         ) as resp:
@@ -1359,7 +1359,7 @@ class Shaobor95598ApiClient:
         
         _LOGGER.info("[短信登录] 步骤2: 验证验证码")
         
-        # Step 1: 加密手机号和验证码
+        # Step 1: 加密手机号和验证码 (使用 lf04 加密接口)
         encrypt_data = await self._secure_post_encrypt(
             f"{ENCRYPT_API_URL}/encrypt/lf04",
             {
@@ -1372,7 +1372,7 @@ class Shaobor95598ApiClient:
             },
         )
         
-        # Step 2: 调用 95598 API 验证短信
+        # Step 2: 调用 95598 API 验证短信 (c4f02 端点)
         headers = self._get_sgcc_headers(str(encrypt_data.get("timestamp", "")))
         payload = {
             "data": encrypt_data.get("data"),
@@ -1381,7 +1381,7 @@ class Shaobor95598ApiClient:
         }
         
         async with self._session.post(
-            "https://www.95598.cn/api/osg-web0004/open/c44/f04",
+            "https://www.95598.cn/api/osg-web0004/open/c4/f02",
             json=payload,
             headers=headers,
         ) as resp:
