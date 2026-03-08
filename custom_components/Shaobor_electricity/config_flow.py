@@ -1039,10 +1039,16 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self._phone_number = user_input[CONF_PHONE_NUMBER]
             try:
+                _LOGGER.info("[配置流程] 短信登录步骤1: 发送验证码到 %s", self._phone_number)
                 await self._api.login_with_sms_step1(self._phone_number)
+                _LOGGER.info("[配置流程] 短信登录步骤1: 验证码发送成功")
                 return await self.async_step_sms_verify()
-            except Exception:
-                errors["base"] = "sms_not_supported"
+            except StateGridAuthError as err:
+                _LOGGER.error("[配置流程] 短信登录失败: %s", err)
+                errors["base"] = "login_error"
+            except Exception as err:
+                _LOGGER.error("[配置流程] 短信登录异常: %s", err, exc_info=True)
+                errors["base"] = "unknown"
 
         return self.async_show_form(
             step_id="sms",
@@ -1116,10 +1122,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             entry_data[CONF_SELECTED_ACCOUNT_INDEX] = 0
                             self._pending_entry_data = {**entry_data, "_title": f"Shaobor_95598 ({self._phone_number})"}
                             return await self.async_step_billing_mode()
-            except Exception:
-                pass
+            except StateGridAuthError as err:
+                _LOGGER.error("[配置流程] 短信验证失败: %s", err)
+                errors["base"] = "invalid_code"
+            except Exception as err:
+                _LOGGER.error("[配置流程] 短信验证异常: %s", err, exc_info=True)
+                errors["base"] = "unknown"
             if not errors:
-                errors["base"] = "sms_not_supported"
+                errors["base"] = "invalid_code"
 
         return self.async_show_form(
             step_id="sms_verify",
