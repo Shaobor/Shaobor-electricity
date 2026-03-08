@@ -1,6 +1,6 @@
 # Shaobor Electricity - 国家电网集成
 
-Home Assistant 自定义集成，用于获取国家电网（95598）的电费和用电量数据。
+Home Assistant 自定义集成 的电费和用电量数据。
 
 ## 功能特性
 
