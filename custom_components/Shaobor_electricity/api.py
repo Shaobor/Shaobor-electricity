@@ -1,0 +1,1930 @@
+"""API Client for Shaobor_electricity."""
+import asyncio
+import hashlib
+import json
+import logging
+import random
+import re
+import time
+import uuid
+from datetime import datetime, timezone, timedelta
+from typing import Any, Optional
+from urllib.parse import urlencode
+
+import aiohttp  # type: ignore[import-untyped]
+
+_LOGGER = logging.getLogger(__name__)
+
+# Constants based on flows.json
+ENCRYPT_API_URL = "https://encrypt.hrbzlyy.com/api"
+SLIDER_API_URL = "https://cv2.hrbzlyy.com"
+SGCC_HOST = "https://www.95598.cn"
+APP_KEY = "7e5b5e84ddad4994b0ebc68dedca4962"
+VERSION = "1.0"
+DEFAULT_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+
+class StateGridAuthError(Exception):
+    """Exception raised for State Grid Auth errors."""
+    pass
+
+
+class StateGridTokenExpiredError(StateGridAuthError):
+    """Exception raised when token has expired and needs refresh."""
+    pass
+
+STORAGE_KEY = "Shaobor_electricity_auth"
+STORAGE_VERSION = 2  # v2: full session (bizrt.token + userInfo + access_token etc.)
+
+
+def retry_on_network_error(max_retries: int = 3, delay: float = 1.0):
+    """Decorator to retry async functions on network errors."""
+    def decorator(func):
+        async def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(max_retries):
+                try:
+                    return await func(*args, **kwargs)
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        _LOGGER.warning(
+                            "[重试] %s 网络错误 (第%d/%d次): %s (类型: %s). %s秒后重试...",
+                            func.__name__, attempt + 1, max_retries, str(e), type(e).__name__, delay
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        _LOGGER.error(
+                            "[重试失败] %s 在%d次尝试后仍失败: %s (类型: %s)",
+                            func.__name__, max_retries, str(e), type(e).__name__
+                        )
+                except (StateGridAuthError, StateGridTokenExpiredError):
+                    # 认证错误，直接抛出让外层装饰器处理
+                    raise
+                except Exception as e:
+                    # 其他非网络错误，记录后直接抛出，不重试
+                    _LOGGER.error(
+                        "[非网络错误] %s 遇到异常: %s (类型: %s)，不重试",
+                        func.__name__, str(e), type(e).__name__
+                    )
+                    raise
+            raise StateGridAuthError(f"Network error after {max_retries} retries: {last_exception}")
+        return wrapper
+    return decorator
+
+
+def auto_relogin_on_auth_error(func):
+    """Decorator to automatically refresh token or re-login when auth fails."""
+    async def wrapper(self, *args, **kwargs):
+        try:
+            return await func(self, *args, **kwargs)
+        except (StateGridAuthError, StateGridTokenExpiredError) as e:
+            error_msg = str(e).lower()
+            # 检测常见的 token 失效错误信息
+            token_expired_keywords = [
+                "token", "unauthorized", "401", "403", "expired", 
+                "invalid", "认证失败", "登录失效", "未登录"
+            ]
+            
+            is_token_error = any(keyword in error_msg for keyword in token_expired_keywords)
+            
+            # 检查是否已经在重试中，避免无限循环
+            if hasattr(self, '_auto_relogin_in_progress') and self._auto_relogin_in_progress:
+                _LOGGER.debug("[自动重连] 已在重连中，跳过重复尝试")
+                raise
+            
+            # 检查重试次数限制
+            if not hasattr(self, '_auto_relogin_retry_count'):
+                self._auto_relogin_retry_count = 0
+            
+            if self._auto_relogin_retry_count >= 3:
+                _LOGGER.error("[自动重连] 已达到最大重试次数(3次)，停止重试")
+                self._auto_relogin_retry_count = 0  # 重置计数器
+                raise StateGridTokenExpiredError(
+                    "Token expired and max retry attempts (3) reached. Please reconfigure the integration."
+                ) from e
+            
+            if is_token_error and self._user_token:
+                # 设置重连标志，防止递归
+                self._auto_relogin_in_progress = True
+                self._auto_relogin_retry_count += 1
+                try:
+                    _LOGGER.warning(
+                        "[自动重连] 检测到认证失败(第%d/3次)，尝试刷新 token: %s", 
+                        self._auto_relogin_retry_count, str(e)
+                    )
+                    try:
+                        # 尝试刷新 access_token
+                        await self.refresh_access_token()
+                        _LOGGER.info("[自动重连] Token 刷新成功，重试原操作")
+                        # 重置计数器
+                        self._auto_relogin_retry_count = 0
+                        # 重试原操作
+                        return await func(self, *args, **kwargs)
+                    except Exception as refresh_error:
+                        _LOGGER.error("[自动重连] Token 刷新失败: %s", str(refresh_error))
+                        
+                        # 如果刷新失败，检查是否启用了自动重新登录
+                        if (hasattr(self, '_auto_relogin_enabled') and self._auto_relogin_enabled and
+                            hasattr(self, '_username') and self._username and
+                            hasattr(self, '_password') and self._password):
+                            _LOGGER.warning("[自动重连] Token 刷新失败，尝试使用账号密码重新登录")
+                            try:
+                                # 使用保存的账号密码重新登录
+                                result = await self.login_with_password(self._username, self._password)
+                                if result.get("success"):
+                                    data = result.get("data", {})
+                                    # 更新内部状态
+                                    if data.get("token"):
+                                        self._token = data.get("token")  # 更新 bizrt.token
+                                    self._user_token = data.get("user_token")
+                                    self._user_id = data.get("user_id")
+                                    self._access_token = data.get("access_token")
+                                    self._refresh_token = data.get("refresh_token")
+                                    if data.get("power_user_list"):
+                                        self._power_user_list = data.get("power_user_list")
+                                    if data.get("login_account"):
+                                        self._login_account = data.get("login_account")
+                                    
+                                    _LOGGER.info("[自动重连] 账号密码重新登录成功，重试原操作")
+                                    
+                                    # 调用回调函数更新 Store
+                                    if hasattr(self, '_store_update_callback') and self._store_update_callback:
+                                        try:
+                                            await self._store_update_callback(
+                                                token=self._token,
+                                                user_token=self._user_token,
+                                                user_id=self._user_id,
+                                                access_token=self._access_token,
+                                                refresh_token=self._refresh_token,
+                                                power_user_list=self._power_user_list,
+                                                login_account=self._login_account,
+                                                username=self._username,
+                                                password=self._password,
+                                                auto_relogin=self._auto_relogin_enabled,
+                                            )
+                                            _LOGGER.info("[自动重连] Store 更新成功")
+                                        except Exception as store_err:
+                                            _LOGGER.warning("[自动重连] Store 更新失败: %s", str(store_err))
+                                    
+                                    # 重置计数器
+                                    self._auto_relogin_retry_count = 0
+                                    # 重试原操作
+                                    return await func(self, *args, **kwargs)
+                                else:
+                                    _LOGGER.error("[自动重连] 账号密码重新登录失败")
+                                    raise StateGridTokenExpiredError(
+                                        f"Token expired, refresh failed, and re-login failed: {result.get('message')}"
+                                    ) from refresh_error
+                            except Exception as relogin_error:
+                                _LOGGER.error("[自动重连] 账号密码重新登录异常: %s", str(relogin_error))
+                                raise StateGridTokenExpiredError(
+                                    f"Token expired, refresh failed, and re-login error: {relogin_error}"
+                                ) from refresh_error
+                        else:
+                            # 未启用自动重新登录或缺少账号密码
+                            raise StateGridTokenExpiredError(
+                                f"Token expired and refresh failed: {refresh_error}"
+                            ) from refresh_error
+                finally:
+                    # 重置重连标志
+                    self._auto_relogin_in_progress = False
+            else:
+                # 非 token 错误或没有保存的 user_token，直接抛出
+                raise
+    return wrapper
+
+
+class Shaobor95598ApiClient:
+    """95598 API Client handling encryption and SGCC commands."""
+
+    def __init__(
+        self,
+        token: str,
+        session: aiohttp.ClientSession,
+        store: Any | None = None,
+        hass: Any | None = None,
+    ) -> None:
+        """Initialize the API client."""
+        self._encrypt_token = token  # 用于加密服务的固定 token，不应被修改
+        self._token = token  # bizrt.token，登录后会被更新
+        self._session = session
+        self._store = store  # 用于持久化存储
+        self._hass = hass  # Home Assistant 实例，用于创建 Store
+        
+        # Internal state mimicking Node-RED globals
+        self._uuid = str(uuid.uuid4()).replace("-", "")
+        self._key_code: str = ""
+        self._public_key: str = ""
+
+        # Login/session state
+        self._user_token: str | None = None  # 95598_token (rsi)
+        self._user_id: str | None = None
+        self._access_token: str | None = None
+        self._refresh_token: str | None = None
+        self._power_user_list: list[dict[str, Any]] | None = None
+        self._selected_account_index: int = 0  # 户号选择索引，用于 c05f01 等
+        self._login_account: str | None = None  # loginAccount from userInfo for c05f01
+        self._user_info: Any | None = None  # bizrt.userInfo (95598_userInfo)
+        
+        # Auto re-login credentials (only stored if auto_relogin is enabled)
+        self._username: str | None = None
+        self._password: str | None = None
+        self._auto_relogin_enabled: bool = False
+        
+        # Callback for updating store after successful re-login
+        self._store_update_callback: Any = None
+
+    def load_auth_state(
+        self,
+        *,
+        user_token: str | None = None,
+        user_id: str | None = None,
+        access_token: str | None = None,
+        refresh_token: str | None = None,
+        power_user_list: Any | None = None,
+        selected_account_index: int | None = None,
+        login_account: str | None = None,
+    ) -> None:
+        """Load previously stored auth state from config entry."""
+        if user_token:
+            self._user_token = user_token
+        if user_id:
+            self._user_id = user_id
+        if access_token:
+            self._access_token = access_token
+        if refresh_token:
+            self._refresh_token = refresh_token
+        if isinstance(power_user_list, list):
+            self._power_user_list = power_user_list
+        if selected_account_index is not None and selected_account_index >= 0:
+            self._selected_account_index = selected_account_index
+        if login_account:
+            self._login_account = login_account
+
+    def set_auto_relogin_credentials(
+        self,
+        *,
+        username: str | None = None,
+        password: str | None = None,
+        auto_relogin_enabled: bool = False,
+        store_update_callback: Any = None,
+    ) -> None:
+        """Set credentials for auto re-login when token expires."""
+        self._username = username
+        self._password = password
+        self._auto_relogin_enabled = auto_relogin_enabled
+        self._store_update_callback = store_update_callback
+
+    @property
+    def user_id(self) -> str | None:
+        return self._user_id
+
+    @property
+    def user_token(self) -> str | None:
+        return self._user_token
+
+    async def initialize(self) -> None:
+        """Step 1: Initialize the encryption session."""
+        url = f"{ENCRYPT_API_URL}/initialize"
+        payload = {"token": self._encrypt_token}  # 使用加密服务的固定 token
+        try:
+            async with self._session.post(url, json=payload) as response:
+                response.raise_for_status()
+                data = await response.json()
+                
+            success_flag = data.get("success")
+            inner_data = data.get("data", {})
+                
+            # The actual payload says code: 1 is success（支持整数 1 或字符串 "1"）
+            if not success_flag or inner_data.get("code") not in (1, "1"):
+                msg = inner_data.get("message", "Unknown error")
+                raise StateGridAuthError(f"Init failed: {msg}")
+                
+            result = inner_data.get("data") or {}
+            if not isinstance(result, dict):
+                result = {}
+            self._key_code = result.get("keyCode") or ""
+            self._public_key = result.get("publicKey") or ""
+        except aiohttp.ClientError as err:
+            raise StateGridAuthError(f"Communication error during init: {err}")
+
+    async def _decrypt_to_data(self, encrypt_data: str, *, uuid_override: str | None = None) -> Any:
+        """Decrypt helper response and return the decrypted 'data' payload (dict or string)."""
+        url = f"{ENCRYPT_API_URL}/decrypt"
+        use_uuid = uuid_override or self._uuid
+        payload = {
+            "token": self._encrypt_token,  # 使用加密服务的固定 token
+            "uuid": use_uuid,
+            "encryptData": encrypt_data,
+        }
+        try:
+            async with self._session.post(url, json=payload) as response:
+                if response.status != 200:
+                    text = await response.text()
+                    response.raise_for_status()
+                    
+                data = await response.json()
+                if not isinstance(data, dict):
+                    raise StateGridAuthError(f"Decrypt returned unexpected type: {type(data).__name__}")
+                # 解密服务返回 code=1（整数）或 code="1"/"00"（字符串）表示成功
+                # 支持两种结构: 顶层 code 或 data.code（如 {"success":true,"data":{"code":1,"data":{...}}）
+                decrypt_code = data.get("code")
+                if decrypt_code is None and isinstance(data.get("data"), dict):
+                    decrypt_code = data["data"].get("code")
+                
+                # 优先检查业务错误码（如 11401 等错误）
+                if decrypt_code is not None and decrypt_code not in [1, "1", "00", 0, "0"]:
+                    # 提取错误信息
+                    err_msg = None
+                    if isinstance(data.get("data"), dict):
+                        err_msg = data["data"].get("message") or data["data"].get("msg")
+                    if not err_msg:
+                        err_msg = data.get("message") or data.get("msg")
+                    if not err_msg:
+                        err_msg = f"code={decrypt_code}"
+                    raise StateGridAuthError(f"Decrypt failed: {err_msg}")
+                
+                # 检查是否成功
+                is_ok = (
+                    decrypt_code in [1, "1", "00", 0, "0"]
+                    or data.get("success") is True
+                )
+                if not is_ok:
+                    err_msg = data.get("message") or data.get("msg") or f"code={data.get('code')}, full={data}"
+                    raise StateGridAuthError(f"Decrypt failed: {err_msg}")
+                # 解密服务返回结构: {"success":true,"data":{"code":1,"message":"成功","data":{实际内容}}}
+                # 需要提取 data.data 才是真正的解密后业务数据（含 srvrt/bizrt 等）
+                inner = data.get("data") if data.get("data") is not None else data.get("data", {})
+                if inner is None:
+                    inner = {}
+                
+                _LOGGER.debug("[解密] 解密服务返回的 data: %s", data)
+                _LOGGER.debug("[解密] 提取的 inner: %s", inner)
+                
+                if isinstance(inner, dict):
+                    result = inner.get("data")
+                    # 部分解密服务直接返回 data 为业务内容，无嵌套 data.data
+                    has_biz = inner.get("bizrt") is not None
+                    has_srv = inner.get("srvrt") is not None
+                    if result is None and (has_biz or has_srv):
+                        result = inner
+                    # 当 inner 为空但 data 顶层有 bizrt/srvrt 时，直接返回 data
+                    if result is None and not (has_biz or has_srv):
+                        if data.get("bizrt") is not None or data.get("srvrt") is not None:
+                            result = data
+                else:
+                    result = inner if inner is not None else None
+                
+                _LOGGER.debug("[解密] 最终 result: %s (类型: %s)", result, type(result))
+                
+                # 当 data 在顶层直接包含 bizrt/srvrt 时（无嵌套 data 键）
+                if result is None and isinstance(data, dict) and (data.get("bizrt") or data.get("srvrt")):
+                    return data
+                
+                # 如果 result 仍然是 None 或空字符串，记录错误
+                if result is None or result == "":
+                    _LOGGER.error("[解密] 无法从解密数据中提取有效结果。原始数据: %s", data)
+                    raise StateGridAuthError(f"Failed to extract valid data from decrypt response")
+                
+                return result
+        except aiohttp.ClientError as err:
+            raise StateGridAuthError(f"Communication error during decrypt: {err}")
+
+    async def validate_token(self) -> bool:
+        """Validate if the provided auth token is valid."""
+        try:
+            await self.initialize()
+            return True
+        except StateGridAuthError:
+            return False
+
+    async def login_with_password(self, username: str, password: str) -> dict[str, Any]:
+        """Password login with slider captcha (flows.json: lf05 -> c44/f05 -> decrypt -> cv2/match -> lf06 -> c44/f06)."""
+        if not self._key_code:
+            await self.initialize()
+
+        # 密码需 MD5 加密（与 Node-RED 流程一致，见 flows.json 提示）
+        password_md5 = hashlib.md5(password.encode("utf-8")).hexdigest().upper()
+
+        # Step 1: encrypt lf05 (account+password)
+        encrypt_lf05 = await self._secure_post_encrypt(
+            f"{ENCRYPT_API_URL}/encrypt/lf05",
+            {
+                "token": self._encrypt_token,
+                "keyCode": self._key_code,
+                "uuid": self._uuid,
+                "publicKey": self._public_key,
+                "account": username,
+                "password": password_md5,
+            },
+        )
+
+        # Step 2: call 95598 c44/f05 to get captcha
+        headers_f05 = self._get_sgcc_headers(str(encrypt_lf05.get("timestamp", "")))
+        payload_f05 = {
+            "data": encrypt_lf05.get("data"),
+            "skey": encrypt_lf05.get("skey"),
+            "client_id": encrypt_lf05.get("client_id"),
+            "timestamp": encrypt_lf05.get("timestamp"),
+        }
+        async with self._session.post(
+            "https://www.95598.cn/api/osg-web0004/open/c44/f05",
+            json=payload_f05,
+            headers=headers_f05,
+        ) as resp:
+            resp.raise_for_status()
+            text_f05 = await resp.text()
+
+        raw_f05 = self._parse_sgcc_response(text_f05)
+        encrypted_f05 = self._get_encrypted_data(raw_f05) or (
+            text_f05.strip() if self._is_likely_encrypted(text_f05) else ""
+        )
+        if not encrypted_f05:
+            raise StateGridAuthError("c44/f05 did not return decryptable payload")
+
+        decrypted_captcha = await self._decrypt_to_data(encrypted_f05)
+        if not isinstance(decrypted_captcha, dict):
+            raise StateGridAuthError("Captcha decrypt returned unexpected type")
+
+        # 递归查找 captcha 对象：优先 ticket+canvasSrc，其次 blockY/blockSrc（终端确认存在）
+        captcha_data = (
+            self._find_first_dict_with_keys(decrypted_captcha, {"ticket", "canvasSrc"})
+            or self._find_first_dict_with_keys(decrypted_captcha, {"ticket", "canvas"})
+            or self._find_first_dict_with_keys(decrypted_captcha, {"blockY"})
+            or self._find_first_dict_with_keys(decrypted_captcha, {"blockSrc"})
+        )
+        if not captcha_data:
+            inner = decrypted_captcha.get("data") or decrypted_captcha
+            if isinstance(inner, dict):
+                captcha_data = inner.get("bizrt") or inner.get("data") or inner
+            else:
+                captcha_data = decrypted_captcha.get("bizrt") or decrypted_captcha
+        if isinstance(captcha_data, list) and captcha_data:
+            captcha_data = captcha_data[0]
+        if not isinstance(captcha_data, dict):
+            raise StateGridAuthError("Captcha data structure invalid")
+
+        # ticket: 支持 ticket/loginKey/captchaKey/key
+        ticket = (
+            captcha_data.get("ticket")
+            or captcha_data.get("loginKey")
+            or captcha_data.get("captchaKey")
+            or captcha_data.get("key")
+        )
+        # 大图：canvasSrc/canvas/bgImg/image/bgImage/jigsawImage，并尝试大小写不敏感匹配
+        def _get_by_keys(d: dict, *keys: str):
+            for k in keys:
+                if d.get(k):
+                    return d.get(k)
+            low = {str(k).lower(): k for k in d}
+            for want in keys:
+                for lk, orig in low.items():
+                    if want.lower() in lk and len(str(d.get(orig) or "")) > 100:
+                        return d.get(orig)
+            return None
+
+        canvas_src = _get_by_keys(
+            captcha_data, "canvasSrc", "canvas", "bgImg", "bgImage", "image", "jigsawImage"
+        )
+        block_src = captcha_data.get("blockSrc") or _get_by_keys(
+            captcha_data, "block", "blockImg", "template", "slideImage", "targetImage"
+        )
+        # 95598 大图可能用动态键（32位hex如 d70f962fd494496fa024c06410aac850），非 canvasSrc
+        _HEX32 = re.compile(r"^[a-fA-F0-9]{32}$")
+
+        def _is_base64_like(s: str, min_len: int = 150, min_valid_ratio: float = 0.7) -> bool:
+            raw = s.split("base64,", 1)[-1].replace("\n", "").replace("\r", "").strip()
+            if len(raw) < min_len:
+                return False
+            sample_len = min(150, len(raw))
+            valid = sum(1 for c in raw[:sample_len] if c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
+            return valid >= sample_len * min_valid_ratio
+
+        def _find_canvas_in_obj(obj: Any, skip_keys: set) -> str | None:
+            if isinstance(obj, dict):
+                # 优先：32位hex键（95598 常用作大图）
+                for k, v in obj.items():
+                    if k in skip_keys:
+                        continue
+                    if _HEX32.match(k) and isinstance(v, str) and len(v) > 500 and _is_base64_like(v):
+                        return v
+                for k, v in obj.items():
+                    if k in skip_keys:
+                        continue
+                    if isinstance(v, str) and len(v) > 500 and _is_base64_like(v):
+                        return v
+                    elif isinstance(v, dict):
+                        found = _find_canvas_in_obj(v, skip_keys)
+                        if found:
+                            return found
+            return None
+
+        if not canvas_src and block_src:
+            skip = {"ticket", "blockY", "blockSrc", "block", "blockImg", "template"}
+            canvas_src = _find_canvas_in_obj(captcha_data, skip) or _find_canvas_in_obj(decrypted_captcha, skip)
+        # 显式后备：32位hex键的值作为大图（当 _is_base64_like 过严时，仅检查顶层）
+        if not canvas_src and block_src:
+            for k, v in list(captcha_data.items()) + list((decrypted_captcha or {}).items()):
+                if _HEX32.match(str(k)) and isinstance(v, str) and len(v) > 200:
+                    raw = v.split("base64,", 1)[-1].replace("\n", "").replace("\r", "").strip()
+                    if len(raw) > 100:
+                        valid = sum(1 for c in raw[:100] if c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
+                        if valid >= 60:
+                            canvas_src = v
+                            break
+        # 若在顶层未找到，尝试嵌套 images/captcha
+        if not canvas_src or not block_src:
+            for nest_key in ("images", "captcha", "captchaData"):
+                nest = captcha_data.get(nest_key) if isinstance(captcha_data.get(nest_key), dict) else None
+                if nest:
+                    canvas_src = canvas_src or nest.get("canvasSrc") or nest.get("canvas") or nest.get("bgImg") or nest.get("image")
+                    block_src = block_src or nest.get("blockSrc") or nest.get("block") or nest.get("blockImg") or nest.get("template")
+                    if canvas_src and block_src:
+                        break
+        # 后备：按键名模糊匹配（大小写不敏感），大图键含 canvas/bg/back，小图含 block/slide/template
+        if not canvas_src or not block_src:
+            for k, v in captcha_data.items():
+                if not isinstance(v, str) or len(v) < 200:
+                    continue
+                kl = k.lower()
+                if not canvas_src and any(x in kl for x in ("canvas", "bg", "back", "image", "jigsaw")):
+                    canvas_src = v
+                elif not block_src and any(x in kl for x in ("block", "slide", "template", "piece", "target")):
+                    block_src = v
+                    if canvas_src and block_src:
+                        break
+        # 后备：按键名模糊匹配（大小写不敏感），如 CanvasSrc/canvasSrc/bgImg 等
+        if not canvas_src or not block_src:
+            for k, v in captcha_data.items():
+                if not isinstance(v, str) or len(v) < 100:
+                    continue
+                kl = k.lower()
+                if not canvas_src and any(x in kl for x in ("canvas", "bg", "back", "image", "jigsaw")):
+                    canvas_src = canvas_src or v
+                if not block_src and any(x in kl for x in ("block", "slide", "template", "piece", "target")):
+                    block_src = block_src or v
+        # 后备：递归收集所有 base64 样字符串（大图更长，小图较短），支持 data:image/png;base64, 前缀
+        def _collect_base64(obj: Any, out: list) -> None:
+            if isinstance(obj, str):
+                s = obj.split("base64,", 1)[-1].strip() if "base64," in obj else obj
+                s = "".join(s.split())  # 去除换行、空格
+                s_clean = "".join(c for c in s if c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
+                if len(s_clean) > 100 and len(s_clean) >= len(s) * 0.85:
+                    out.append((len(s_clean), obj))
+            elif isinstance(obj, dict):
+                for v in obj.values():
+                    _collect_base64(v, out)
+            elif isinstance(obj, list):
+                for item in obj:
+                    _collect_base64(item, out)
+
+        if (canvas_src or block_src) and not (canvas_src and block_src):
+            base64_candidates = []
+            _collect_base64(decrypted_captcha, base64_candidates)
+            if len(base64_candidates) < 2:
+                _collect_base64(decrypted_captcha, base64_candidates)
+            base64_candidates.sort(key=lambda x: -x[0])
+            if len(base64_candidates) >= 2:
+                canvas_src = canvas_src or base64_candidates[0][1]
+                block_src = block_src or base64_candidates[1][1]
+        # 显式后备：hex32 键存在但 _is_base64_like 未通过时，用更宽松的校验再试（含递归嵌套）
+        def _find_hex32_canvas(obj: Any, found: list) -> None:
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if _HEX32.match(str(k)) and isinstance(v, str) and len(v) > 200:
+                        raw = v.split("base64,", 1)[-1].replace("\n", "").replace("\r", "").strip()
+                        if len(raw) > 150:
+                            valid = sum(1 for c in raw[:min(100, len(raw))] if c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
+                            if valid >= 60:
+                                found.append(v)
+                    elif isinstance(v, (dict, list)):
+                        _find_hex32_canvas(v, found)
+            elif isinstance(obj, list):
+                for item in obj:
+                    _find_hex32_canvas(item, found)
+
+        if not canvas_src and block_src:
+            hex32_candidates = []
+            _find_hex32_canvas(captcha_data, hex32_candidates)
+            _find_hex32_canvas(decrypted_captcha or {}, hex32_candidates)
+            if hex32_candidates:
+                canvas_src = hex32_candidates[0]
+        if not ticket or not canvas_src or not block_src:
+            # 输出实际结构便于排查（值截断，仅保留键和类型）
+            def _keys_summary(obj: Any, depth: int = 0) -> str:
+                if depth > 2:
+                    return "..."
+                if isinstance(obj, dict):
+                    return "{" + ", ".join(f"{k}:{type(v).__name__}" for k, v in list(obj.items())[:15]) + "}"
+                if isinstance(obj, list):
+                    return f"[{len(obj)} items]"
+                return str(type(obj).__name__)
+
+            def _debug_key_info(obj: dict) -> str:
+                parts = []
+                for k, v in list(obj.items())[:20]:
+                    if isinstance(v, str):
+                        parts.append(f"{k}(str,len={len(v)})")
+                    else:
+                        parts.append(f"{k}({type(v).__name__})")
+                return ", ".join(parts)
+
+            def _all_hex32_keys(obj: Any, out: list, depth: int = 0) -> None:
+                if depth > 5:
+                    return
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        if _HEX32.match(str(k)):
+                            out.append((k, type(v).__name__, len(v) if isinstance(v, str) else "-"))
+                        elif isinstance(v, (dict, list)):
+                            _all_hex32_keys(v, out, depth + 1)
+                elif isinstance(obj, list):
+                    for item in obj:
+                        _all_hex32_keys(item, out, depth + 1)
+
+            hex32_in_captcha = [k for k in captcha_data if _HEX32.match(str(k))]
+            hex32_anywhere = []
+            _all_hex32_keys(decrypted_captcha, hex32_anywhere)
+
+            def _struct_dump(obj: Any, indent: int = 0) -> str:
+                """递归输出结构，字符串仅显示长度，不输出 base64 内容。"""
+                pad = "  " * indent
+                if indent > 5:
+                    return pad + "..."
+                if isinstance(obj, dict):
+                    lines = [pad + "{"]
+                    for k, v in list(obj.items())[:20]:
+                        if isinstance(v, str):
+                            # 任何超过 60 字符的字符串只显示长度，避免 base64 撑爆日志
+                            if len(v) > 60 or "base64" in v[:100].lower():
+                                lines.append(f'{pad}  "{k}": str(len={len(v)})')
+                            else:
+                                lines.append(f'{pad}  "{k}": {repr(v[:40] + "..." if len(v) > 40 else v)}')
+                        else:
+                            lines.append(f'{pad}  "{k}": {_struct_dump(v, indent + 1)}')
+                    lines.append(pad + "}")
+                    return "\n".join(lines)
+                if isinstance(obj, list):
+                    return pad + f"[{len(obj)} items]" + (_struct_dump(obj[0], indent + 1) if obj else "")
+                return pad + str(type(obj).__name__)
+
+            raise StateGridAuthError(
+                "Captcha missing ticket/canvasSrc/blockSrc (keys: %s)"
+                % list(captcha_data.keys())
+            )
+
+        # Step 3: call slider recognition API (cv2.hrbzlyy.com/match) - 传入 image/template（与 flows.json 一致，原样传递 base64）
+        try:
+            async with self._session.post(
+                f"{SLIDER_API_URL}/match",
+                json={"image": canvas_src, "template": block_src},
+                headers={"Content-Type": "application/json"},
+            ) as resp:
+                resp_text = await resp.text()
+                if resp.status != 200:
+                    raise StateGridAuthError(f"Slider API 返回 {resp.status}: {resp_text[:200]}")
+                try:
+                    slider_res = json.loads(resp_text)
+                except json.JSONDecodeError:
+                    raise StateGridAuthError(f"Slider API 返回非 JSON: {resp_text[:200]}")
+        except aiohttp.ClientError as err:
+            raise StateGridAuthError(f"滑块接口请求失败: {err}") from err
+
+        slider_x = None
+        if isinstance(slider_res, dict):
+            for path in (("data", "x"), ("x",), ("result", "x")):
+                val = slider_res
+                for k in path:
+                    val = val.get(k) if isinstance(val, dict) else None
+                    if val is None:
+                        break
+                if val is not None and (isinstance(val, (int, float)) or (isinstance(val, str) and str(val).replace(".", "").isdigit())):
+                    slider_x = int(float(val))
+                    break
+        if slider_x is None:
+            raise StateGridAuthError(f"滑块接口未返回 x 坐标，响应: {str(slider_res)[:150]}")
+
+        # Step 4: encrypt lf06 (ticket + x)
+        encrypt_lf06 = await self._secure_post_encrypt(
+            f"{ENCRYPT_API_URL}/encrypt/lf06",
+            {
+                "token": self._encrypt_token,
+                "uuid": self._uuid,
+                "publicKey": self._public_key,
+                "account": username,
+                "password": password_md5,
+                "loginKey": ticket,
+                "code": slider_x,
+            },
+        )
+
+        # Step 5: call 95598 c44/f06 to login
+        headers_f06 = self._get_sgcc_headers(str(encrypt_lf06.get("timestamp", "")))
+        payload_f06 = {
+            "data": encrypt_lf06.get("data"),
+            "skey": encrypt_lf06.get("skey"),
+            "timestamp": encrypt_lf06.get("timestamp"),
+        }
+        async with self._session.post(
+            "https://www.95598.cn/api/osg-web0004/open/c44/f06",
+            json=payload_f06,
+            headers=headers_f06,
+        ) as resp:
+            resp.raise_for_status()
+            text_f06 = await resp.text()
+
+        raw_f06 = self._parse_sgcc_response(text_f06)
+        encrypted_f06 = self._get_encrypted_data(raw_f06) or (
+            text_f06.strip() if self._is_likely_encrypted(text_f06) else ""
+        )
+        if not encrypted_f06:
+            raise StateGridAuthError("c44/f06 did not return decryptable payload")
+
+        # c44/f06 解密后得到 bizrt.token，此时才是真正的登录成功
+        decrypted_login = await self._decrypt_to_data(encrypted_f06)
+        _sanitized = self._sanitize_for_log(decrypted_login)
+        try:
+            _LOGGER.debug("[调试] 登录返回值(脱敏): %s", json.dumps(_sanitized, ensure_ascii=False, default=str)[:1500])
+        except (TypeError, ValueError):
+            _LOGGER.debug("[调试] 登录返回值(脱敏): %s", repr(_sanitized)[:800])
+        
+        # 确保 decrypted_login 是字典类型
+        if not isinstance(decrypted_login, dict):
+            _LOGGER.error("[登录] 解密后的数据不是字典类型: %s (类型: %s)", decrypted_login, type(decrypted_login))
+            raise StateGridAuthError(f"Login decryption returned unexpected type: {type(decrypted_login).__name__}")
+        
+        bizrt = self._find_first_dict_with_keys(decrypted_login, {"token", "userInfo"})
+        if not bizrt:
+            bizrt = (
+                decrypted_login.get("data", {})
+                if isinstance(decrypted_login.get("data"), dict)
+                else {}
+            )
+            bizrt = bizrt.get("bizrt", bizrt) if isinstance(bizrt, dict) else {}
+        user_token = bizrt.get("token") or bizrt.get("rsi")
+        user_info = bizrt.get("userInfo")
+        if not user_token:
+            raise StateGridAuthError("Login result missing token")
+        # 从 bizrt 提取 user_id、login_account（真正的登录成功时刻）
+        if isinstance(user_info, list) and user_info and isinstance(user_info[0], dict):
+            first_ui = user_info[0]
+            self._user_id = str(first_ui.get("userId", ""))
+            if first_ui.get("loginAccount"):
+                self._login_account = str(first_ui["loginAccount"])
+        elif isinstance(user_info, dict) and user_info.get("loginAccount"):
+            self._login_account = str(user_info["loginAccount"])
+        self._user_token = str(user_token)
+        self._token = str(user_token)  # 更新 token（bizrt.token）
+
+        # Step 6: exchange for access_token
+        tokens = await self.exchange_user_token_for_access_token(str(user_token))
+        power_user_list = None
+        try:
+            power_user_list = await self.fetch_power_user_list()
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "data": {
+                "token": str(user_token),  # bizrt.token
+                "user_token": str(user_token),  # 保持兼容性
+                "user_id": self._user_id,
+                "access_token": tokens.get("access_token"),
+                "refresh_token": tokens.get("refresh_token"),
+                "power_user_list": power_user_list,
+                "login_account": self._login_account,
+                "user_info": user_info,  # bizrt.userInfo，真正的登录成功时刻的数据
+            },
+        }
+
+    @auto_relogin_on_auth_error
+    @retry_on_network_error(max_retries=3, delay=2.0)
+    async def exchange_user_token_for_access_token(self, user_token: str) -> dict[str, str]:
+        """Exchange 95598 'rsi' user_token for oauth2 access_token/refresh_token."""
+        # 确保在刷新 token 之前先执行初始化操作（获取 key_code 和 public_key）
+        if not self._key_code or not self._public_key:
+            await self.initialize()
+
+        self._user_token = user_token
+
+        # Step A: authorize -> decrypt -> extract code
+        timestamp = int(time.time() * 1000)
+        headers = {
+            "keyCode": self._key_code,
+            "timestamp": str(timestamp),
+            "wsgwType": "web",
+            "source": "0901",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+            "Accept": "application/json;charset=UTF-8",
+            "appKey": APP_KEY,
+            "version": VERSION,
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        }
+        form_payload = urlencode(
+            {
+                "client_id": APP_KEY,
+                "response_type": "code",
+                "redirect_url": "/test",
+                "timestamp": str(timestamp),
+                "rsi": user_token,
+            }
+        )
+
+        async with self._session.post(
+            "https://www.95598.cn/api/oauth2/oauth/authorize",
+            data=form_payload,
+            headers=headers,
+        ) as resp:
+            resp.raise_for_status()
+            authorize_text = await resp.text()
+
+        authorize_raw = self._parse_sgcc_response(authorize_text)
+        authorize_encrypted = self._get_encrypted_data(authorize_raw) or (
+            authorize_text.strip() if self._is_likely_encrypted(authorize_text) else ""
+        )
+        if not authorize_encrypted:
+            raise StateGridAuthError("Authorize did not return decryptable payload")
+
+        authorize_data = await self._decrypt_to_data(authorize_encrypted, uuid_override=user_token)
+        if not isinstance(authorize_data, dict):
+            raise StateGridAuthError(f"Authorize decrypt returned unexpected type: {type(authorize_data)}")
+
+        redirect_url = authorize_data.get("redirect_url") or ""
+        if "code=" not in redirect_url:
+            raise StateGridAuthError("Authorize response missing code in redirect_url")
+        code = redirect_url.split("code=", 1)[1]
+
+        # Step B: helper encrypt getWebToken
+        encrypt_payload = {
+            "token": self._encrypt_token,
+            "code": code,
+            "key_code": self._key_code,
+            "uuid": self._uuid,
+            "publicKey": self._public_key,
+        }
+        encrypted = await self._secure_post_encrypt(f"{ENCRYPT_API_URL}/encrypt/getWebToken", encrypt_payload)
+
+        # Step C: call getWebToken and decrypt
+        web_token_headers = self._get_sgcc_headers(str(encrypted.get("timestamp")))
+        web_token_payload = {
+            "data": encrypted.get("data"),
+            "skey": encrypted.get("skey"),
+            "timestamp": encrypted.get("timestamp"),
+        }
+        async with self._session.post(
+            "https://www.95598.cn/api/oauth2/outer/getWebToken",
+            json=web_token_payload,
+            headers=web_token_headers,
+        ) as resp:
+            resp.raise_for_status()
+            web_token_text = await resp.text()
+
+        web_token_raw = self._parse_sgcc_response(web_token_text)
+        web_token_encrypted = self._get_encrypted_data(web_token_raw) or (
+            web_token_text.strip() if self._is_likely_encrypted(web_token_text) else ""
+        )
+        if not web_token_encrypted:
+            raise StateGridAuthError("getWebToken did not return decryptable payload")
+
+        web_token_data = await self._decrypt_to_data(web_token_encrypted)
+        if not isinstance(web_token_data, dict):
+            raise StateGridAuthError(f"getWebToken decrypt returned unexpected type: {type(web_token_data)}")
+
+        access_token = web_token_data.get("access_token")
+        refresh_token = web_token_data.get("refresh_token")
+        
+        _LOGGER.debug("[getWebToken] 解密后的数据: %s", 
+                     {k: (v[:20] + "..." if isinstance(v, str) and len(v) > 20 else v) 
+                      for k, v in web_token_data.items()})
+        
+        if not access_token:
+            raise StateGridAuthError("Missing access_token in getWebToken decrypted payload")
+
+        self._access_token = str(access_token)
+        self._refresh_token = str(refresh_token) if refresh_token else None
+        
+        _LOGGER.debug("[getWebToken] 已设置 access_token: %s..., refresh_token: %s...",
+                     self._access_token[:20] if self._access_token else None,
+                     self._refresh_token[:20] if self._refresh_token else None)
+        
+        out = {"access_token": self._access_token, "refresh_token": self._refresh_token or ""}
+        return out
+
+    async def refresh_access_token(self) -> dict[str, str]:
+        """Refresh access_token via authorize+getWebToken (与 Node-RED 获取Token 流程一致，每10分钟执行)."""
+        _LOGGER.warning("[Token刷新] 开始刷新 access_token")
+        if not self._user_token:
+            raise StateGridAuthError("Missing user_token. Reconfigure integration.")
+        try:
+            result = await self.exchange_user_token_for_access_token(str(self._user_token))
+            _LOGGER.warning("[Token刷新] access_token 刷新成功")
+            return result
+        except Exception as e:
+            _LOGGER.error("[Token刷新] 刷新失败: %s", str(e))
+            
+            # 如果刷新失败且启用了自动重新登录,尝试用账号密码重新登录
+            if (hasattr(self, '_auto_relogin_enabled') and self._auto_relogin_enabled and
+                hasattr(self, '_username') and self._username and
+                hasattr(self, '_password') and self._password):
+                _LOGGER.warning("[Token刷新] 尝试使用账号密码重新登录")
+                try:
+                    # 重新初始化加密密钥(可能已过期)
+                    _LOGGER.info("[Token刷新] 重新初始化加密密钥")
+                    await self.initialize()
+                    
+                    result = await self.login_with_password(self._username, self._password)
+                    if result.get("success"):
+                        data = result.get("data", {})
+                        # 更新内部状态
+                        if data.get("token"):
+                            self._token = data.get("token")
+                        self._user_token = data.get("user_token")
+                        self._user_id = data.get("user_id")
+                        self._access_token = data.get("access_token")
+                        self._refresh_token = data.get("refresh_token")
+                        if data.get("power_user_list"):
+                            self._power_user_list = data.get("power_user_list")
+                        if data.get("login_account"):
+                            self._login_account = data.get("login_account")
+                        
+                        _LOGGER.info("[Token刷新] 账号密码重新登录成功")
+                        
+                        # 调用回调函数更新 Store
+                        if hasattr(self, '_store_update_callback') and self._store_update_callback:
+                            try:
+                                await self._store_update_callback(
+                                    token=self._token,
+                                    user_token=self._user_token,
+                                    user_id=self._user_id,
+                                    access_token=self._access_token,
+                                    refresh_token=self._refresh_token,
+                                    power_user_list=self._power_user_list,
+                                    login_account=self._login_account,
+                                    username=self._username,
+                                    password=self._password,
+                                    auto_relogin=self._auto_relogin_enabled,
+                                )
+                                _LOGGER.info("[Token刷新] Store 更新成功")
+                            except Exception as store_err:
+                                _LOGGER.warning("[Token刷新] Store 更新失败: %s", str(store_err))
+                        
+                        return {"access_token": self._access_token, "refresh_token": self._refresh_token or ""}
+                    else:
+                        _LOGGER.error("[Token刷新] 账号密码重新登录失败")
+                        raise StateGridAuthError("Auto re-login failed") from e
+                except Exception as login_err:
+                    _LOGGER.error("[Token刷新] 自动重新登录异常: %s", str(login_err))
+                    raise StateGridAuthError("Auto re-login exception") from login_err
+            else:
+                _LOGGER.warning("[Token刷新] 未启用自动重新登录或缺少账号密码")
+                raise
+
+    @auto_relogin_on_auth_error
+    @retry_on_network_error(max_retries=3, delay=2.0)
+    async def get_electricity_data(self) -> dict[str, Any]:
+        """Fetch all electricity data from SGCC."""
+        if not self._key_code:
+            await self.initialize()
+        if not self._user_token or not self._access_token:
+            raise StateGridAuthError("Missing login state (user_token/access_token). Reconfigure integration.")
+
+        # 拿到 access_token 后才能获取户号（c8f11 需要 Authorization: Bearer access_token）
+        # c05f01 需要 userName，来自 c8f11 返回的 userInfo.loginAccount
+        if not self._power_user_list or not self._login_account:
+            self._power_user_list = await self._fetch_power_user_list()
+
+        # 当前所选户号：所有后续数据（余额、预估等）均仅针对该户号
+        idx = min(self._selected_account_index, len(self._power_user_list) - 1) if self._power_user_list else 0
+        active_account = self._power_user_list[idx] if self._power_user_list and idx >= 0 else {}
+        selected_cons_no = active_account.get("consNo_dst") or active_account.get("consNoDst") or ""
+        selected_elec_addr = active_account.get("elecAddr_dst") or active_account.get("elecAddrDst") or ""
+        selected_org_name = active_account.get("orgName") or ""
+        selected_owner_name = active_account.get("consName_dst") or active_account.get("consNameDst") or ""
+        selected_org_no = active_account.get("orgNo") or ""
+        selected_province_id = active_account.get("provinceId") or ""
+        selected_pro_no = active_account.get("proNo") or ""
+        selected_elec_type = active_account.get("elecTypeCode") or ""
+        selected_cons_sort = active_account.get("consSortCode") or active_account.get("sceneType") or ""
+        selected_status = active_account.get("status") or ""
+        selected_is_default = active_account.get("isDefault") or ""
+
+        balance_info = await self._fetch_balance_info()
+        balance = balance_info.get("balance")
+        esti_amt = balance_info.get("esti_amt")
+        electricity_fee_detail = balance_info.get("electricity_fee_detail", {})
+
+        daily_avg = None
+        remaining_days = None
+        if isinstance(esti_amt, (int, float)) and esti_amt > 0:
+            day_of_month = datetime.now().day or 1
+            daily_avg = float(esti_amt) / float(day_of_month)
+        if isinstance(balance, (int, float)) and balance is not None and isinstance(daily_avg, (int, float)) and daily_avg > 0:
+            remaining_days = int(float(balance) // float(daily_avg))
+
+        # 获取缴费记录（可选功能，失败不影响主要功能）
+        payment_records = {"count": 0, "payList": []}
+        try:
+            payment_records = await self._fetch_payment_records()
+        except Exception as e:
+            # 缴费记录接口可能对某些登录方式有限制，失败不影响主要功能
+            _LOGGER.debug("无法获取缴费记录（不影响主要功能）: %s", e)
+
+        # 获取每日用电量（可选功能，失败不影响主要功能）
+        daily_usage = {}
+        try:
+            daily_usage = await self._fetch_daily_usage()
+        except Exception as e:
+            _LOGGER.debug("无法获取每日用电量（不影响主要功能）: %s", e)
+
+        return {
+            "balance": balance,
+            "daily_avg": daily_avg,
+            "remaining_days": remaining_days,
+            "last_update": time.time(),
+            "payment_records": payment_records,
+            "electricity_fee_detail": electricity_fee_detail,
+            "daily_usage": daily_usage,
+            "selected_cons_no": selected_cons_no,
+            "selected_elec_addr": selected_elec_addr,
+            "selected_org_name": selected_org_name,
+            "selected_owner_name": selected_owner_name,
+            "selected_org_no": selected_org_no,
+            "selected_province_id": selected_province_id,
+            "selected_pro_no": selected_pro_no,
+            "selected_elec_type": selected_elec_type,
+            "selected_cons_sort": selected_cons_sort,
+            "selected_status": selected_status,
+            "selected_is_default": selected_is_default,
+        }
+
+    async def get_login_qrcode(self) -> dict[str, Any]:
+        """Fetch login QR code and serial number."""
+        url = "https://www.95598.cn/api/osg-open-uc0001/member/c8/f24"
+        timestamp = int(time.time() * 1000)
+        serial_no = "".join([str(random.randint(0, 9)) for _ in range(28)])
+        
+        headers = self._get_sgcc_headers(str(timestamp))
+        payload = {
+            "_access_token": "",
+            "_t": "",
+            "_data": {
+                "uscInfo": {
+                    "devciceIp": "",
+                    "tenant": "state_grid",
+                    "member": "0902",
+                    "devciceId": ""
+                },
+                "quInfo": {
+                    "optType": "01",
+                    "serialNo": serial_no
+                }
+            },
+            "timestamp": timestamp
+        }
+        async with self._session.post(url, json=payload, headers=headers) as resp:
+            resp.raise_for_status()
+            text = await resp.text()
+            data = self._parse_sgcc_response(text)
+            # The structure might be different if it was raw data
+            inner_data = data.get("data", {}) if isinstance(data, dict) else {}
+            srvrt = inner_data.get("srvrt", {})
+            if str(data.get("code")) != "1" or srvrt.get("resultCode") != "0000":
+                msg = srvrt.get("resultMessage") or data.get("message") or "Unknown error"
+                raise StateGridAuthError(f"Failed to get QR code: {msg}")
+            
+            bizrt = data.get("data", {}).get("bizrt", {})
+            qr_code = bizrt.get("qrCode")
+            qr_serial = bizrt.get("qrCodeSerial")
+            
+            if not qr_code:
+                raise StateGridAuthError("Server returned empty QR code")
+                
+            return {
+                "qr_code": qr_code,
+                "serial_no": qr_serial
+            }
+
+    async def check_qrcode_status(self, serial_no: str) -> dict[str, Any]:
+        """Check if QR code has been scanned via c50f02."""
+        if not self._key_code:
+            await self.initialize()
+        encrypt_url = f"{ENCRYPT_API_URL}/encrypt/c50f02"
+        payload = {
+            "token": self._encrypt_token,
+            "uuid": self._uuid,
+            "publicKey": self._public_key,
+            "qrCodeSerial": serial_no
+        }
+        
+        try:
+            encrypt_res = await self._secure_post_encrypt(encrypt_url, payload)
+            
+            # Now call 95598.cn status check
+            url = "https://www.95598.cn/api/osg-web0004/open/c50/f02"
+            headers = self._get_sgcc_headers(str(encrypt_res["timestamp"]))
+            
+            payload_sgcc = {
+                "data": encrypt_res["data"],
+                "skey": encrypt_res["skey"],
+                "timestamp": encrypt_res["timestamp"]
+            }
+            
+            async with self._session.post(url, json=payload_sgcc, headers=headers) as resp:
+                resp.raise_for_status()
+                text = await resp.text()
+                res_data_raw = self._parse_sgcc_response(text)
+                res_data_to_decrypt = self._get_encrypted_data(res_data_raw)
+                if not res_data_to_decrypt:
+                    if isinstance(res_data_raw, dict) and str(res_data_raw.get("code")) not in ["None", "1", "0000", "0"]:
+                        return {"status": "WAITING", "message": res_data_raw.get("message")}
+                decrypted = await self._decrypt_to_data(res_data_to_decrypt or text)
+
+                # Node-RED flow expects decrypted payload.data.data to be token string containing '99tt'
+                if isinstance(decrypted, str) and "99tt" in decrypted:
+                    return {"status": "SUCCESS", "user_token": decrypted}
+
+                if isinstance(decrypted, dict):
+                    srvrt = decrypted.get("srvrt", {}) if isinstance(decrypted.get("srvrt"), dict) else {}
+                    bizrt = decrypted.get("bizrt", {}) if isinstance(decrypted.get("bizrt"), dict) else {}
+                    if srvrt.get("resultCode") == "0000" and (bizrt or decrypted):
+                        token = None
+                        if isinstance(bizrt, dict):
+                            token = bizrt.get("token") or bizrt.get("rsi")
+                        token = token or decrypted.get("token") or decrypted.get("rsi")
+                        if token:
+                            return {"status": "SUCCESS", "user_token": str(token), "bizrt": bizrt}
+                
+                return {
+                    "status": "WAITING",
+                    "message": "Waiting for scan"
+                }
+        except Exception as err:
+            return {"status": "ERROR", "message": str(err)}
+
+    def _get_sgcc_headers(self, timestamp: str) -> dict[str, str]:
+        """Generate headers required for www.95598.cn calls."""
+        return {
+            'Host': 'www.95598.cn',
+            'keyCode': self._key_code,
+            'timestamp': str(timestamp),
+            'wsgwType': 'web',
+            'source': '0901',
+            'User-Agent': DEFAULT_USER_AGENT,
+            'Accept': 'application/json;charset=UTF-8',
+            'appKey': APP_KEY,
+            'version': VERSION,
+            'Content-Type': 'application/json;charset=UTF-8'
+        }
+
+    def _parse_sgcc_response(self, text: str) -> dict:
+        """Parse SGCC response text robustly, handling concatenated JSON or mixed content."""
+        if not text:
+            return {}
+        
+        stripped = text.strip()
+        
+        # 情况1：以 { 或 [ 开头，直接尝试 JSON 解析
+        if stripped.startswith('{') or stripped.startswith('['):
+            try:
+                return json.loads(stripped)
+            except json.JSONDecodeError as e:
+                # 处理 {JSON}{JSON} 格式（Extra data）
+                if "Extra data" in str(e):
+                    try:
+                        return json.loads(stripped[:e.pos])
+                    except Exception:
+                        pass
+        
+        # 情况2：文本以非 JSON 字符（如 Base64）开头，后面跟着 JSON
+        # 例如：BASE64DATA{...}，尝试从第一个 { 开始解析
+        elif '{' in stripped:
+            json_start = stripped.index('{')
+            try:
+                candidate = stripped[json_start:]
+                result = json.loads(candidate)
+                return result
+            except json.JSONDecodeError as e:
+                if "Extra data" in str(e):
+                    try:
+                        return json.loads(candidate[:e.pos])
+                    except Exception:
+                        pass
+        
+        # 情况3：无法解析，将原始文本包装为 data 字段（可能是纯 Base64 加密数据）
+        return {"data": stripped}
+
+
+    def _get_encrypted_data(self, data: Any) -> Optional[str]:
+        """Extract encrypted Base64 data from various SGCC response structures."""
+        if not isinstance(data, dict):
+            return None
+        
+        # 1. Direct 'encryptData' or 'data' string
+        for key in ["encryptData", "data"]:
+            val = data.get(key)
+            if isinstance(val, str):
+                return val
+        
+        # 2. Nested 'encryptData' inside 'data'
+        inner_data = data.get("data")
+        if isinstance(inner_data, dict):
+            val = inner_data.get("encryptData")
+            if isinstance(val, str):
+                return val
+        
+        return None
+
+    def _is_likely_encrypted(self, text: str) -> bool:
+        """粗略判断字符串是否像 Base64 加密数据（而非普通 JSON/文本）。"""
+        if not text or len(text) < 20:
+            return False
+        # 如果文本以 '{' 或 '[' 开头，它很可能是 JSON 明文，不是加密数据
+        stripped = text.strip()
+        if stripped.startswith(('{', '[')):
+            return False
+        # Base64 只包含 A-Z a-z 0-9 + / = 字符
+        import re
+        return bool(re.match(r'^[A-Za-z0-9+/=]+$', stripped))
+
+    async def _secure_post_encrypt(self, url: str, payload: dict) -> dict:
+        """Helper to post to encrypt helper server using session."""
+        try:
+            async with self._session.post(url, json=payload) as response:
+                body = await response.text()
+                if response.status >= 400:
+                    try:
+                        err_json = json.loads(body) if body else {}
+                        err_msg = err_json.get("error") or err_json.get("message") or err_json.get("msg") or body[:500]
+                    except (json.JSONDecodeError, TypeError):
+                        err_msg = body[:500] if body else str(response.status)
+                    raise StateGridAuthError(
+                        f"Helper API {response.status}: {err_msg}"
+                    )
+                res = json.loads(body) if isinstance(body, str) else body
+                if not res.get("success"):
+                    raise StateGridAuthError(f"Helper API error: {res.get('message')}")
+                
+                # Extract inner data but also keep important metadata if present
+                inner = res.get("data", {})
+                if not isinstance(inner, dict):
+                    return {"data": inner}
+                
+                # If skey/client_id are at top level (unlikely but defensive), merge them
+                for key in ["skey", "client_id", "timestamp"]:
+                    if key in res and key not in inner:
+                        inner[key] = res[key]
+                return inner
+        except StateGridAuthError:
+            raise
+        except aiohttp.ClientError as err:
+            raise StateGridAuthError(f"Helper API communication error: {err}")
+        except Exception as err:
+            raise StateGridAuthError(f"Unexpected error in _secure_post_encrypt: {err}")
+
+    async def login_with_sms_step1(self, phone: str) -> dict[str, Any]:
+        """Trigger SMS code."""
+        raise StateGridAuthError("SMS login not implemented. Use QR Code login.")
+
+    async def login_with_sms_step2(self, phone: str, code: str) -> dict[str, Any]:
+        """Verify SMS code."""
+        raise StateGridAuthError("SMS login not implemented. Use QR Code login.")
+
+    def _bearer_header(self) -> str | None:
+        if not self._access_token:
+            return None
+        access = str(self._access_token)
+        access_no_prefix = access.replace("WEB.", "")
+        trimmed = access_no_prefix[:250]
+        if not trimmed:
+            return None
+        return f"Bearer WEB.{trimmed}"
+
+    def _t_header(self) -> str | None:
+        if not self._user_token:
+            return None
+        token = str(self._user_token)
+        half = max(1, len(token) // 2)
+        return token[:half]
+
+    # @auto_relogin_on_auth_error  # 暂时禁用自动重连，调试用
+    @retry_on_network_error(max_retries=3, delay=2.0)
+    async def _fetch_power_user_list(self) -> list[dict[str, Any]]:
+        """Fetch powerUserList via c8f11."""
+        _LOGGER.warning("[c8f11] ===== 开始执行 _fetch_power_user_list =====")
+        _LOGGER.warning("[c8f11] 当前状态: key_code=%s, public_key=%s, user_token=%s, access_token=%s",
+                       "有值" if self._key_code else "空",
+                       "有值" if self._public_key else "空",
+                       "有值" if self._user_token else "空",
+                       "有值" if self._access_token else "空")
+        
+        # 每次请求前都重新初始化（获取 keyCode 和 publicKey）
+        _LOGGER.warning("[c8f11] 执行初始化操作")
+        await self.initialize()
+        _LOGGER.warning("[c8f11] 初始化完成: key_code=%s, public_key=%s",
+                       "有值" if self._key_code else "空",
+                       "有值" if self._public_key else "空")
+        
+        # c8f11 需要 userId、userToken、accessToken，这些参数不能为空
+        if not self._user_token:
+            raise StateGridAuthError("Missing user_token for c8f11")
+        if not self._access_token:
+            raise StateGridAuthError("Missing access_token for c8f11")
+        
+        # 确保所有参数都是字符串类型，不能是 None（会被序列化为 null）
+        # 扫码登录使用 c8/f11 接口，不需要 userId 参数
+        encrypt_payload = {
+            "token": str(self._encrypt_token) if self._encrypt_token else "",
+            "uuid": str(self._uuid) if self._uuid else "",
+            "publicKey": str(self._public_key) if self._public_key else "",
+            # "userId": str(self._user_id) if self._user_id else "",  # c8/f11 不需要 userId
+            "userToken": str(self._user_token) if self._user_token else "",
+            "accessToken": str(self._access_token) if self._access_token else "",
+        }
+        
+        # 输出实际 payload 中的参数值
+        _LOGGER.warning("[c8f11] 实际加密 payload:")
+        for key, value in encrypt_payload.items():
+            if isinstance(value, str) and len(value) > 20:
+                _LOGGER.warning("[c8f11]   - %s: %s... (len=%s, type=%s)", 
+                               key, value[:20], len(value), type(value).__name__)
+            else:
+                _LOGGER.warning("[c8f11]   - %s: '%s' (len=%s, type=%s)", 
+                               key, value, len(value) if isinstance(value, str) else 0, type(value).__name__)
+        
+        # 输出完整的 JSON 请求（用于调试）
+        import json
+        _LOGGER.warning("[c8f11] 完整的 JSON payload: %s", json.dumps(encrypt_payload, ensure_ascii=False))
+        _LOGGER.warning("[c8f11] 请求 URL: %s", f"{ENCRYPT_API_URL}/encrypt/c8f11")
+        
+        encrypted = await self._secure_post_encrypt(f"{ENCRYPT_API_URL}/encrypt/c8f11", encrypt_payload)
+        
+        # 输出加密服务的响应
+        _LOGGER.warning("[c8f11] 加密服务响应: %s", 
+                       {k: (v[:50] + "..." if isinstance(v, str) and len(v) > 50 else v) 
+                        for k, v in encrypted.items()})
+
+        headers = self._get_sgcc_headers(str(encrypted.get("timestamp")))
+        bearer = self._bearer_header()
+        if bearer:
+            headers["Authorization"] = bearer
+        t = self._t_header()
+        if t:
+            headers["t"] = t
+
+        payload_sgcc = {
+            "data": encrypted.get("data"),
+            "skey": encrypted.get("skey"),
+            "timestamp": encrypted.get("timestamp"),
+        }
+        
+        _LOGGER.warning("[c8f11] 准备调用 95598 API: https://www.95598.cn/api/osg-open-uc0001/member/c8/f11")
+        
+        async with self._session.post(
+            "https://www.95598.cn/api/osg-open-uc0001/member/c8/f11",
+            json=payload_sgcc,
+            headers=headers,
+        ) as resp:
+            resp.raise_for_status()
+            text = await resp.text()
+            _LOGGER.warning("[c8f11] 95598 API 响应状态: %s", resp.status)
+            _LOGGER.warning("[c8f11] 95598 API 响应内容(前200字符): %s", text[:200] if text else "空")
+
+        raw = self._parse_sgcc_response(text)
+        encrypted_data = self._get_encrypted_data(raw) or (text.strip() if self._is_likely_encrypted(text) else "")
+        if not encrypted_data:
+            _LOGGER.error("[c8f11] 无法从响应中提取加密数据")
+            raise StateGridAuthError("c8/f11 did not return decryptable payload")
+
+        decrypted = await self._decrypt_to_data(encrypted_data)
+        _LOGGER.warning("[c8f11] 解密后的数据类型: %s", type(decrypted).__name__)
+        
+        if not isinstance(decrypted, dict):
+            raise StateGridAuthError(f"c8/f11 decrypt returned unexpected type: {type(decrypted)}")
+        
+        # 输出解密后的数据结构
+        _LOGGER.warning("[c8f11] 解密后的数据keys: %s", list(decrypted.keys()) if isinstance(decrypted, dict) else "非字典")
+        
+        # 输出完整的解密数据用于调试
+        try:
+            import json
+            _LOGGER.warning("[c8f11] 完整解密数据: %s", json.dumps(decrypted, ensure_ascii=False, indent=2)[:2000])
+        except Exception as e:
+            _LOGGER.warning("[c8f11] 无法序列化解密数据: %s", e)
+        
+        # c8/f11 返回的是 data 字段,不是 bizrt
+        data_field = decrypted.get("data", {}) if isinstance(decrypted.get("data"), dict) else {}
+        _LOGGER.warning("[c8f11] data keys: %s", list(data_field.keys()) if isinstance(data_field, dict) else "非字典")
+        
+        # 从 data 字段提取 userId
+        user_id = data_field.get("userId")
+        if user_id:
+            self._user_id = str(user_id)
+            _LOGGER.warning("[c8f11] 成功从 data 提取到 userId: %s", self._user_id)
+        else:
+            raise StateGridAuthError("c8/f11 did not return userId")
+        
+        # 从 data 字段提取 realName 作为 loginAccount（用于后续 API 调用的 userName 参数）
+        # 扫码登录时，c8/f11 返回的 data 中包含 realName，可以作为 loginAccount 使用
+        real_name = data_field.get("realName") or data_field.get("realName_dst")
+        if real_name:
+            self._login_account = str(real_name)
+            _LOGGER.warning("[c8f11] 成功从 data 提取到 realName 作为 loginAccount: %s", self._login_account)
+        
+        # 步骤2: 使用 userId 调用 c9/f02 获取 powerUserList
+        _LOGGER.warning("[c9f02] ===== 开始调用 c9/f02 获取户号列表 =====")
+        _LOGGER.warning("[c9f02] 使用 userId: %s", self._user_id)
+        
+        # 构建 c9/f02 的请求 payload
+        encrypt_payload_c9f02 = {
+            "token": str(self._encrypt_token) if self._encrypt_token else "",
+            "uuid": str(self._uuid) if self._uuid else "",
+            "publicKey": str(self._public_key) if self._public_key else "",
+            "userId": str(self._user_id),
+            "userToken": str(self._user_token) if self._user_token else "",
+            "accessToken": str(self._access_token) if self._access_token else "",
+        }
+        
+        _LOGGER.warning("[c9f02] 请求 URL: %s", f"{ENCRYPT_API_URL}/encrypt/c9f02")
+        encrypted_c9f02 = await self._secure_post_encrypt(f"{ENCRYPT_API_URL}/encrypt/c9f02", encrypt_payload_c9f02)
+        
+        headers_c9f02 = self._get_sgcc_headers(str(encrypted_c9f02.get("timestamp")))
+        if bearer:
+            headers_c9f02["Authorization"] = bearer
+        if t:
+            headers_c9f02["t"] = t
+        
+        payload_sgcc_c9f02 = {
+            "data": encrypted_c9f02.get("data"),
+            "skey": encrypted_c9f02.get("skey"),
+            "timestamp": encrypted_c9f02.get("timestamp"),
+        }
+        
+        _LOGGER.warning("[c9f02] 准备调用 95598 API: https://www.95598.cn/api/osg-open-uc0001/member/c9/f02")
+        
+        async with self._session.post(
+            "https://www.95598.cn/api/osg-open-uc0001/member/c9/f02",
+            json=payload_sgcc_c9f02,
+            headers=headers_c9f02,
+        ) as resp:
+            resp.raise_for_status()
+            text_c9f02 = await resp.text()
+            _LOGGER.warning("[c9f02] 95598 API 响应状态: %s", resp.status)
+            _LOGGER.warning("[c9f02] 95598 API 响应内容(前200字符): %s", text_c9f02[:200] if text_c9f02 else "空")
+        
+        raw_c9f02 = self._parse_sgcc_response(text_c9f02)
+        encrypted_data_c9f02 = self._get_encrypted_data(raw_c9f02) or (text_c9f02.strip() if self._is_likely_encrypted(text_c9f02) else "")
+        if not encrypted_data_c9f02:
+            _LOGGER.error("[c9f02] 无法从响应中提取加密数据")
+            raise StateGridAuthError("c9/f02 did not return decryptable payload")
+        
+        decrypted_c9f02 = await self._decrypt_to_data(encrypted_data_c9f02)
+        _LOGGER.warning("[c9f02] 解密后的数据类型: %s", type(decrypted_c9f02).__name__)
+        
+        if not isinstance(decrypted_c9f02, dict):
+            raise StateGridAuthError(f"c9/f02 decrypt returned unexpected type: {type(decrypted_c9f02)}")
+        
+        # 输出完整的解密数据
+        try:
+            import json
+            _LOGGER.warning("[c9f02] 完整解密数据: %s", json.dumps(decrypted_c9f02, ensure_ascii=False, indent=2)[:2000])
+        except Exception as e:
+            _LOGGER.warning("[c9f02] 无法序列化解密数据: %s", e)
+        
+        # c9/f02 应该返回 bizrt 字段
+        bizrt = decrypted_c9f02.get("bizrt", {}) if isinstance(decrypted_c9f02.get("bizrt"), dict) else {}
+        _LOGGER.warning("[c9f02] bizrt keys: %s", list(bizrt.keys()) if isinstance(bizrt, dict) else "非字典")
+        
+        power_list = bizrt.get("powerUserList")
+        _LOGGER.warning("[c9f02] powerUserList 类型: %s, 长度: %s", type(power_list).__name__, len(power_list) if isinstance(power_list, list) else "N/A")
+        if isinstance(power_list, list) and power_list:
+            _LOGGER.warning("[c9f02] powerUserList[0] keys: %s", list(power_list[0].keys()) if isinstance(power_list[0], dict) else "非字典")
+        
+        if not isinstance(power_list, list) or not power_list:
+            raise StateGridAuthError("Empty powerUserList from c9/f02")
+        _sanitized_pl = self._sanitize_for_log(power_list)
+        try:
+            _LOGGER.debug("[调试] 户号返回值: %s", json.dumps(_sanitized_pl, ensure_ascii=False, default=str)[:1500])
+        except (TypeError, ValueError):
+            _LOGGER.debug("[调试] 户号返回值: len=%s", len(power_list))
+        return power_list
+
+    async def fetch_power_user_list(self) -> list[dict[str, Any]]:
+        """Public wrapper to fetch and cache power user list."""
+        self._power_user_list = await self._fetch_power_user_list()
+        return self._power_user_list
+
+    @auto_relogin_on_auth_error
+    @retry_on_network_error(max_retries=3, delay=2.0)
+    async def _fetch_balance_info(self) -> dict[str, float | None]:
+        """Fetch account balance and estimated amount via c05/f01."""
+        if not self._power_user_list or len(self._power_user_list) == 0:
+            raise StateGridAuthError("Missing power user list")
+        idx = min(self._selected_account_index, len(self._power_user_list) - 1)
+        active = self._power_user_list[idx]
+        # Support both snake_case and camelCase from API
+        cons_no_src = active.get("consNo_dst") or active.get("consNoDst") or ""
+        cons_no = active.get("consNo") or ""
+        pro_code = active.get("proNo") or active.get("proCode") or ""
+        org_no = active.get("orgNo") or ""
+        scene_type = active.get("consSortCode") or active.get("sceneType") or ""
+
+        encrypt_payload = {
+            "token": self._encrypt_token,
+            "uuid": self._uuid,
+            "publicKey": self._public_key,
+            "proCode": pro_code,
+            "consNoSrc": cons_no_src,
+            "consNo": cons_no,
+            "orgNo": org_no,
+            "sceneType": scene_type,
+        }
+        if self._user_id: encrypt_payload["userId"] = self._user_id
+        if self._user_token: encrypt_payload["userToken"] = self._user_token
+        if self._access_token: encrypt_payload["accessToken"] = self._access_token
+        if self._login_account: encrypt_payload["userName"] = self._login_account
+        encrypted = await self._secure_post_encrypt(f"{ENCRYPT_API_URL}/encrypt/c05f01", encrypt_payload)
+
+        headers = self._get_sgcc_headers(str(encrypted.get("timestamp")))
+        bearer = self._bearer_header()
+        if bearer:
+            headers["Authorization"] = bearer
+        t = self._t_header()
+        if t:
+            headers["t"] = t
+
+        payload_sgcc = {
+            "data": encrypted.get("data"),
+            "skey": encrypted.get("skey"),
+            "timestamp": encrypted.get("timestamp"),
+        }
+        async with self._session.post(
+            "https://www.95598.cn/api/osg-open-bc0001/member/c05/f01",
+            json=payload_sgcc,
+            headers=headers,
+        ) as resp:
+            resp.raise_for_status()
+            text = await resp.text()
+
+        raw = self._parse_sgcc_response(text)
+        encrypted_data = self._get_encrypted_data(raw) or (text.strip() if self._is_likely_encrypted(text) else "")
+        if not encrypted_data:
+            raise StateGridAuthError("c05/f01 did not return decryptable payload")
+
+        decrypted = await self._decrypt_to_data(encrypted_data)
+        
+        # [调试] 输出 c05/f01 解密后的完整返回值
+        _sanitized_c05 = self._sanitize_for_log(decrypted)
+        try:
+            _LOGGER.warning("[c05/f01] 解密后的完整数据: %s", json.dumps(_sanitized_c05, ensure_ascii=False, default=str))
+        except (TypeError, ValueError):
+            _LOGGER.warning("[c05/f01] 解密后的数据无法序列化")
+        
+        found = self._find_first_dict_with_keys(decrypted, {"sumMoney", "estiAmt"})
+        balance = None
+        esti_amt = None
+        fee_detail = {}
+        
+        if found:
+            balance = self._to_float(found.get("sumMoney"))
+            esti_amt = self._to_float(found.get("estiAmt"))
+            
+            # 提取完整的电费详情数据
+            fee_detail = {
+                "prepayBal": found.get("prepayBal"),  # 账户余额
+                "totalPq": found.get("totalPq"),  # 总电量
+                "sumMoney": found.get("sumMoney"),  # 应缴金额
+                "estiAmt": found.get("estiAmt"),  # 预估金额
+                "historyOwe": found.get("historyOwe"),  # 历史欠费
+                "penalty": found.get("penalty"),  # 滞纳金
+                "amtTime": found.get("amtTime"),  # 数据更新时间
+                "date": found.get("date"),  # 查询时间
+            }
+        
+        return {
+            "balance": balance, 
+            "esti_amt": esti_amt,
+            "electricity_fee_detail": fee_detail
+        }
+
+    @auto_relogin_on_auth_error
+    @retry_on_network_error(max_retries=3, delay=2.0)
+    async def _fetch_payment_records(self) -> dict[str, Any]:
+        """Fetch payment records via c24/f01 (缴费记录) from current year to today."""
+        if not self._power_user_list or len(self._power_user_list) == 0:
+            raise StateGridAuthError("Missing power user list")
+        idx = min(self._selected_account_index, len(self._power_user_list) - 1)
+        active = self._power_user_list[idx]
+        
+        # 使用 consNo_dst（解密后的实际户号）而不是 consNo（加密值）
+        cons_no = active.get("consNo_dst") or active.get("consNoDst") or active.get("consNo") or ""
+        pro_code = active.get("proNo") or active.get("proCode") or ""
+        org_no = active.get("orgNo") or ""
+        
+        # 日期范围：3年前的1月1日 到今天
+        now = datetime.now()
+        three_years_ago = now.year - 3
+        bgn_pay_date = f"{three_years_ago}-01-01"
+        end_pay_date = now.strftime("%Y-%m-%d")
+        
+        encrypt_payload = {
+            "token": self._encrypt_token,
+            "uuid": self._uuid,
+            "publicKey": self._public_key,
+            "consNo": cons_no,
+            "proCode": pro_code,
+            "orgNo": org_no,
+            "bgnPayDate": bgn_pay_date,  # 注意：参数名是 bgnPayDate，不是 startDate
+            "endPayDate": end_pay_date,  # 注意：参数名是 endPayDate，不是 endDate
+            "page": 1,
+            "number": 10000,
+        }
+        if self._user_id: encrypt_payload["userId"] = self._user_id
+        if self._user_token: encrypt_payload["userToken"] = self._user_token
+        if self._access_token: encrypt_payload["accessToken"] = self._access_token
+        if self._login_account: encrypt_payload["userName"] = self._login_account
+        
+        # 注意：使用 c24f01-payment 端点，不是 c24f01
+        encrypted = await self._secure_post_encrypt(f"{ENCRYPT_API_URL}/encrypt/c24f01-payment", encrypt_payload)
+
+        headers = self._get_sgcc_headers(str(encrypted.get("timestamp")))
+        bearer = self._bearer_header()
+        if bearer:
+            headers["Authorization"] = bearer
+        t = self._t_header()
+        if t:
+            headers["t"] = t
+
+        payload_sgcc = {
+            "data": encrypted.get("data"),
+            "skey": encrypted.get("skey"),
+            "timestamp": encrypted.get("timestamp"),
+        }
+        # 注意：使用 osg-web0004，不是 osg-open-bc0001
+        async with self._session.post(
+            "https://www.95598.cn/api/osg-web0004/member/c24/f01",
+            json=payload_sgcc,
+            headers=headers,
+        ) as resp:
+            resp.raise_for_status()
+            text = await resp.text()
+
+        raw = self._parse_sgcc_response(text)
+        encrypted_data = self._get_encrypted_data(raw) or (text.strip() if self._is_likely_encrypted(text) else "")
+        if not encrypted_data:
+            raise StateGridAuthError("c24/f01 did not return decryptable payload")
+
+        decrypted = await self._decrypt_to_data(encrypted_data)
+        
+        # 提取 count 和 payList
+        # 注意：c24f01-payment 返回的数据结构是直接的 {count, payList}，不是嵌套在 data.data 中
+        count = 0
+        pay_list = []
+        if isinstance(decrypted, dict):
+            # 直接从 decrypted 中提取
+            count = int(decrypted.get("count") or 0)
+            pay_list_raw = decrypted.get("payList") or []
+            if isinstance(pay_list_raw, list):
+                # 提取需要的字段
+                for item in pay_list_raw:
+                    if isinstance(item, dict):
+                        filtered = {
+                            "payDate": item.get("payDate", ""),
+                            "rcvAmt": item.get("rcvAmt", ""),
+                            "typeName": item.get("typeName", ""),
+                            "chanName": item.get("chanName", ""),
+                            "chanCls": item.get("chanCls", ""),
+                            "payModeName": item.get("payModeName", ""),
+                            "consName": item.get("consName", ""),
+                            "consNo": item.get("consNo", ""),
+                            "elecAddr": item.get("elecAddr", ""),
+                            "remark": item.get("remark", ""),
+                        }
+                        pay_list.append(filtered)
+        
+        return {"count": count, "payList": pay_list}
+
+    @staticmethod
+    def _sanitize_for_log(obj: Any, _mask_keys: frozenset | None = None) -> Any:
+        """Deep copy with token/rsi/accessToken etc masked for debug logging."""
+        mask = _mask_keys or frozenset({"token", "rsi", "accessToken", "refreshToken", "access_token", "refresh_token"})
+        if isinstance(obj, dict):
+            return {k: ("<masked>" if k in mask and v else Shaobor95598ApiClient._sanitize_for_log(v, mask))
+                    for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [Shaobor95598ApiClient._sanitize_for_log(x, mask) for x in obj]
+        return obj
+
+    def _find_first_dict_with_keys(self, obj: Any, keys: set[str]) -> dict[str, Any] | None:
+        if isinstance(obj, dict):
+            if keys.issubset(obj.keys()):
+                return obj
+            for v in obj.values():
+                hit = self._find_first_dict_with_keys(v, keys)
+                if hit:
+                    return hit
+        elif isinstance(obj, list):
+            for item in obj:
+                hit = self._find_first_dict_with_keys(item, keys)
+                if hit:
+                    return hit
+        return None
+
+    def _collect_base64_strings(self, obj: Any, out: list[tuple[int, str]]) -> None:
+        """递归收集 base64 样字符串（长度, 值），用于后备提取验证码图片。"""
+        if isinstance(obj, str):
+            s = obj.split("base64,", 1)[-1].strip() if "base64," in obj else obj
+            if len(s) > 200 and all(c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=" for c in s[:min(100, len(s))]):
+                out.append((len(s), obj))
+        elif isinstance(obj, dict):
+            for v in obj.values():
+                self._collect_base64_strings(v, out)
+        elif isinstance(obj, list):
+            for item in obj:
+                self._collect_base64_strings(item, out)
+
+    def _to_float(self, val: Any) -> float | None:
+        if val is None:
+            return None
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return None
+
+    @auto_relogin_on_auth_error
+    @retry_on_network_error(max_retries=3, delay=2.0)
+    async def _fetch_daily_usage(self) -> dict[str, Any]:
+        """获取每日用电量 (c24/f01-daily)，使用增量更新策略"""
+        if not self._power_user_list or len(self._power_user_list) == 0:
+            raise StateGridAuthError("Missing power user list")
+        idx = min(self._selected_account_index, len(self._power_user_list) - 1)
+        active = self._power_user_list[idx]
+        
+        cons_no = active.get("consNo_dst") or active.get("consNoDst") or ""
+        pro_code = active.get("proNo") or active.get("proCode") or ""
+        org_no = active.get("orgNo") or ""
+        
+        # 增量更新策略：
+        # - 首次运行：从3年前的1月1日开始获取（获取近3年历史数据，但只保存有数据的记录）
+        # - 后续运行：只从上个月1日开始获取
+        now = datetime.now()
+        
+        # 从存储中读取上次获取的标记
+        store_key = f"daily_usage_fetched_{cons_no}"
+        stored_data = await self._store.async_load() if self._store else None
+        is_first_fetch = True
+        
+        if stored_data and isinstance(stored_data, dict):
+            is_first_fetch = not stored_data.get(store_key, False)
+        
+        if is_first_fetch:
+            # 首次获取：从3年前的1月1日开始
+            three_years_ago = now.year - 3
+            start_time = f"{three_years_ago}-01-01"
+            _LOGGER.info("[c24/f01-daily] 首次获取数据，从%s开始（只保存有数据的记录）", start_time)
+        else:
+            # 后续获取：从上个月1日开始
+            if now.month == 1:
+                # 如果是1月，上个月是去年12月
+                last_month_year = now.year - 1
+                last_month = 12
+            else:
+                last_month_year = now.year
+                last_month = now.month - 1
+            start_time = f"{last_month_year}-{last_month:02d}-01"
+            _LOGGER.info("[c24/f01-daily] 增量获取数据，从%s开始", start_time)
+        
+        end_time = now.strftime("%Y-%m-%d")
+        
+        _LOGGER.info("[c24/f01-daily] 请求参数 - startTime: %s, endTime: %s, consNo: %s", start_time, end_time, cons_no)
+        
+        encrypt_payload = {
+            "token": self._encrypt_token,
+            "uuid": self._uuid,
+            "publicKey": self._public_key,
+            "consNo": cons_no,
+            "proCode": pro_code,
+            "orgNo": org_no,
+            "startTime": start_time,
+            "endTime": end_time,
+        }
+        if self._user_id: encrypt_payload["userId"] = self._user_id
+        if self._user_token: encrypt_payload["userToken"] = self._user_token
+        if self._access_token: encrypt_payload["accessToken"] = self._access_token
+        if self._login_account: encrypt_payload["userName"] = self._login_account
+        
+        encrypted = await self._secure_post_encrypt(f"{ENCRYPT_API_URL}/encrypt/c24f01-daily", encrypt_payload)
+
+        headers = self._get_sgcc_headers(str(encrypted.get("timestamp")))
+        bearer = self._bearer_header()
+        if bearer:
+            headers["Authorization"] = bearer
+        t = self._t_header()
+        if t:
+            headers["t"] = t
+
+        payload_sgcc = {
+            "data": encrypted.get("data"),
+            "skey": encrypted.get("skey"),
+            "timestamp": encrypted.get("timestamp"),
+        }
+        async with self._session.post(
+            "https://www.95598.cn/api/osg-web0004/member/c24/f01",
+            json=payload_sgcc,
+            headers=headers,
+        ) as resp:
+            resp.raise_for_status()
+            text = await resp.text()
+
+        raw = self._parse_sgcc_response(text)
+        encrypted_data = self._get_encrypted_data(raw) or (text.strip() if self._is_likely_encrypted(text) else "")
+        if not encrypted_data:
+            raise StateGridAuthError("c24/f01-daily did not return decryptable payload")
+
+        decrypted = await self._decrypt_to_data(encrypted_data)
+        
+        # 输出完整解密数据（调试用）
+        _sanitized = self._sanitize_for_log(decrypted)
+        try:
+            _LOGGER.warning("[c24/f01-daily] 解密后的完整数据: %s", json.dumps(_sanitized, ensure_ascii=False, default=str))
+        except (TypeError, ValueError):
+            _LOGGER.warning("[c24/f01-daily] 解密后的数据无法序列化")
+        
+        # 保存数据到文件（只保存有数据的记录）
+        await self._save_daily_usage_to_file(decrypted)
+        
+        # 标记已完成首次获取
+        if is_first_fetch and self._store:
+            if stored_data is None:
+                stored_data = {}
+            stored_data[store_key] = True
+            await self._store.async_save(stored_data)
+            _LOGGER.info("[c24/f01-daily] 已标记首次获取完成")
+        
+        return decrypted
+    
+    async def _save_daily_usage_to_file(self, data: dict[str, Any]) -> None:
+        """将每日用电量数据保存到 Store"""
+        from datetime import timezone
+        
+        if not self._hass:
+            _LOGGER.warning("[c24/f01-daily] 无法保存数据: hass 实例不可用")
+            return
+        
+        try:
+            # 创建历史数据 Store
+            from homeassistant.helpers.storage import Store  # type: ignore
+            history_store = Store(self._hass, version=1, key="Shaobor_electricity_history")
+            
+            # 读取现有数据
+            existing_data = await history_store.async_load() or {}
+            
+            # 解析 sevenEleList 中的每日数据
+            seven_ele_list = data.get("sevenEleList", [])
+            current_timestamp = datetime.now(timezone.utc).isoformat()
+            
+            saved_count = 0
+            skipped_count = 0
+            for day_data in seven_ele_list:
+                day_str = day_data.get("day")
+                if not day_str or len(day_str) != 8:
+                    continue
+                
+                # 检查是否有有效数据（dayElePq 不为 "-" 或空）
+                day_ele_pq = day_data.get("dayElePq")
+                if not day_ele_pq or day_ele_pq == "-":
+                    skipped_count += 1
+                    continue
+                
+                # 将 YYYYMMDD 格式转换为 YYYY-MM-DD
+                try:
+                    date_key = f"{day_str[:4]}-{day_str[4:6]}-{day_str[6:8]}"
+                    
+                    # 只保存有数据的记录
+                    existing_data[date_key] = {
+                        "date": date_key,
+                        "timestamp": current_timestamp,
+                        "data": {
+                            "success": True,
+                            "data": {
+                                "code": 1,
+                                "message": "成功",
+                                "data": {
+                                    "sevenEleList": [day_data],
+                                    "returnCode": "1",
+                                    "returnMsg": "成功",
+                                    "totalPq": day_data.get("dayElePq", "-")
+                                }
+                            }
+                        }
+                    }
+                    saved_count += 1
+                except Exception as e:
+                    _LOGGER.warning(f"[c24/f01-daily] 解析日期失败 {day_str}: {e}")
+                    continue
+            
+            # 保存到 Store
+            await history_store.async_save(existing_data)
+            _LOGGER.info(f"[c24/f01-daily] 已保存 {saved_count} 天的有效数据，跳过 {skipped_count} 天的空数据")
+        except Exception as e:
+            _LOGGER.error(f"[c24/f01-daily] 保存数据失败: {e}", exc_info=True)

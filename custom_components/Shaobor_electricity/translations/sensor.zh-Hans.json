@@ -1,0 +1,15 @@
+{
+    "entity": {
+        "sensor": {
+            "shaobor_95598__balance": {
+                "name": "实时电费"
+            },
+            "shaobor_95598__remaining_days": {
+                "name": "预计可用"
+            },
+            "shaobor_95598__last_update": {
+                "name": "最后更新时间"
+            }
+        }
+    }
+}

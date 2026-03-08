@@ -1,0 +1,113 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "认证",
+                "description": "请输入授权令牌以开始。",
+                "data": {
+                    "auth_token": "授权令牌"
+                }
+            },
+            "login_method": {
+                "title": "选择登录方式",
+                "description": "请选择您的登录方式。",
+                "data": {
+                    "login_method": "登录方式"
+                }
+            },
+            "password": {
+                "title": "账号密码登录",
+                "description": "请输入您的用户名和密码。",
+                "data": {
+                    "username": "用户名",
+                    "password": "密码",
+                    "auto_relogin": "掉线自动重新登录"
+                }
+            },
+            "qrcode": {
+                "title": "扫码登录",
+                "description": "请扫描二维码登录。\n\n{qr_code_image}\n\n扫描后点击提交。"
+            },
+            "sms": {
+                "title": "短信验证码登录",
+                "description": "请输入手机号以接收验证码。",
+                "data": {
+                    "phone_number": "手机号"
+                }
+            },
+            "sms_verify": {
+                "title": "验证短信验证码",
+                "description": "请输入发送到 {phone_number} 的验证码。",
+                "data": {
+                    "sms_code": "短信验证码"
+                }
+            },
+            "select_account": {
+                "title": "选择户号",
+                "description": "请选择要监控电费数据的户号。",
+                "data": {
+                    "selected_account_index": "选择户号"
+                }
+            },
+            "reauth_confirm": {
+                "title": "重新认证",
+                "description": "登录已过期，请重新选择登录方式。"
+            }
+        },
+        "error": {
+            "invalid_token": "授权令牌无效。",
+            "invalid_auth": "用户名或密码错误。",
+            "slider_failed": "滑块识别失败，请重试或使用扫码登录。",
+            "captcha_parse_failed": "验证码数据解析失败，请重试。",
+            "login_verify_failed": "登录验证失败，无法获取电费数据。请重试或重新扫码。",
+            "power_user_list_failed": "获取户号列表失败，请重试。",
+            "login_error": "登录失败：{error}（查看 Home Assistant 日志）",
+            "invalid_code": "短信验证码无效。",
+            "qr_not_scanned": "二维码尚未扫描或验证。",
+            "qr_dependency_missing": "扫码登录需要 PyQRCode 包，请安装或使用密码登录。",
+            "password_not_supported": "密码登录需要交互式验证码验证，请使用扫码登录。",
+            "sms_not_supported": "暂不支持短信登录，请使用扫码登录。",
+            "unknown": "未知错误。",
+            "already_configured": "该户号已添加"
+        },
+        "abort": {
+            "already_configured": "该户号已添加",
+            "reauth_successful": "重新认证成功",
+            "missing_token": "缺少授权令牌",
+            "invalid_token": "授权令牌无效"
+        }
+    },
+    "selector": {
+        "select_account": {
+            "label": "选择户号",
+            "options": {
+                "0": "户号 1",
+                "1": "户号 2",
+                "2": "户号 3"
+            }
+        },
+        "login_method": {
+            "options": {
+                "password": "账号密码登录",
+                "qrcode": "扫码登录",
+                "sms": "短信验证码登录"
+            }
+        }
+    },
+    "entity": {
+        "sensor": {
+            "Shaobor_electricity__balance": {
+                "name": "实时电费"
+            },
+            "Shaobor_electricity__remaining_days": {
+                "name": "预计可用"
+            },
+            "Shaobor_electricity__last_update": {
+                "name": "最后更新时间"
+            },
+            "Shaobor_electricity__payment_records": {
+                "name": "缴费记录"
+            }
+        }
+    }
+}

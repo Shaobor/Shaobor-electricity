@@ -1,0 +1,15 @@
+{
+    "entity": {
+        "sensor": {
+            "shaobor_95598__balance": {
+                "name": "Real-time electricity bill"
+            },
+            "shaobor_95598__remaining_days": {
+                "name": "Estimated available"
+            },
+            "shaobor_95598__last_update": {
+                "name": "Last update time"
+            }
+        }
+    }
+}
