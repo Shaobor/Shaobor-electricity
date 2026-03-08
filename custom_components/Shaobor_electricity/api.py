@@ -1283,12 +1283,153 @@ class Shaobor95598ApiClient:
             raise StateGridAuthError(f"Unexpected error in _secure_post_encrypt: {err}")
 
     async def login_with_sms_step1(self, phone: str) -> dict[str, Any]:
-        """Trigger SMS code."""
-        raise StateGridAuthError("SMS login not implemented. Use QR Code login.")
+        """发送短信验证码.
+        
+        Args:
+            phone: 手机号码
+            
+        Returns:
+            {"success": True}
+        """
+        if not self._key_code:
+            await self.initialize()
+        
+        _LOGGER.info("[短信登录] 步骤1: 发送验证码到 %s", phone)
+        
+        # Step 1: 加密手机号
+        encrypt_data = await self._secure_post_encrypt(
+            f"{ENCRYPT_API_URL}/encrypt/lf03",
+            {
+                "token": self._encrypt_token,
+                "keyCode": self._key_code,
+                "uuid": self._uuid,
+                "publicKey": self._public_key,
+                "account": phone,
+            },
+        )
+        
+        # Step 2: 调用 95598 API 发送短信
+        headers = self._get_sgcc_headers(str(encrypt_data.get("timestamp", "")))
+        payload = {
+            "data": encrypt_data.get("data"),
+            "skey": encrypt_data.get("skey"),
+            "client_id": encrypt_data.get("client_id"),
+            "timestamp": encrypt_data.get("timestamp"),
+        }
+        
+        async with self._session.post(
+            "https://www.95598.cn/api/osg-web0004/open/c44/f03",
+            json=payload,
+            headers=headers,
+        ) as resp:
+            resp.raise_for_status()
+            text = await resp.text()
+        
+        raw_response = self._parse_sgcc_response(text)
+        encrypted_response = self._get_encrypted_data(raw_response) or (
+            text.strip() if self._is_likely_encrypted(text) else ""
+        )
+        
+        if not encrypted_response:
+            raise StateGridAuthError("发送短信验证码失败：未返回加密数据")
+        
+        # 解密响应
+        decrypted = await self._decrypt_to_data(encrypted_response)
+        _LOGGER.info("[短信登录] 步骤1: 验证码发送成功")
+        
+        return {"success": True, "data": decrypted}
 
     async def login_with_sms_step2(self, phone: str, code: str) -> dict[str, Any]:
-        """Verify SMS code."""
-        raise StateGridAuthError("SMS login not implemented. Use QR Code login.")
+        """验证短信验证码并登录.
+        
+        Args:
+            phone: 手机号码
+            code: 短信验证码
+            
+        Returns:
+            {
+                "success": True,
+                "tokens": {...},
+                "user_id": "...",
+                ...
+            }
+        """
+        if not self._key_code:
+            await self.initialize()
+        
+        _LOGGER.info("[短信登录] 步骤2: 验证验证码")
+        
+        # Step 1: 加密手机号和验证码
+        encrypt_data = await self._secure_post_encrypt(
+            f"{ENCRYPT_API_URL}/encrypt/lf04",
+            {
+                "token": self._encrypt_token,
+                "keyCode": self._key_code,
+                "uuid": self._uuid,
+                "publicKey": self._public_key,
+                "account": phone,
+                "code": code,
+            },
+        )
+        
+        # Step 2: 调用 95598 API 验证短信
+        headers = self._get_sgcc_headers(str(encrypt_data.get("timestamp", "")))
+        payload = {
+            "data": encrypt_data.get("data"),
+            "skey": encrypt_data.get("skey"),
+            "timestamp": encrypt_data.get("timestamp"),
+        }
+        
+        async with self._session.post(
+            "https://www.95598.cn/api/osg-web0004/open/c44/f04",
+            json=payload,
+            headers=headers,
+        ) as resp:
+            resp.raise_for_status()
+            text = await resp.text()
+        
+        raw_response = self._parse_sgcc_response(text)
+        encrypted_response = self._get_encrypted_data(raw_response) or (
+            text.strip() if self._is_likely_encrypted(text) else ""
+        )
+        
+        if not encrypted_response:
+            raise StateGridAuthError("验证短信验证码失败：未返回加密数据")
+        
+        # 解密响应，获取登录信息
+        decrypted_login = await self._decrypt_to_data(encrypted_response)
+        
+        # 提取 token 信息（与密码登录类似）
+        bizrt = decrypted_login.get("bizrt") or decrypted_login.get("data") or decrypted_login
+        if isinstance(bizrt, dict):
+            user_token = bizrt.get("token")
+            if user_token:
+                self._user_token = user_token
+                _LOGGER.info("[短信登录] 步骤2: 获取到 user_token")
+        
+        # 获取 access_token
+        if isinstance(bizrt, dict):
+            access_token = bizrt.get("accessToken") or bizrt.get("access_token")
+            refresh_token = bizrt.get("refreshToken") or bizrt.get("refresh_token")
+            if access_token:
+                self._access_token = access_token
+                self._refresh_token = refresh_token
+                _LOGGER.info("[短信登录] 步骤2: 获取到 access_token")
+        
+        if not self._user_token:
+            raise StateGridAuthError("短信登录失败：未获取到 token")
+        
+        _LOGGER.info("[短信登录] 步骤2: 登录成功")
+        
+        return {
+            "success": True,
+            "tokens": {
+                "user_token": self._user_token,
+                "access_token": self._access_token,
+                "refresh_token": self._refresh_token,
+            },
+            "data": decrypted_login,
+        }
 
     def _bearer_header(self) -> str | None:
         if not self._access_token:
