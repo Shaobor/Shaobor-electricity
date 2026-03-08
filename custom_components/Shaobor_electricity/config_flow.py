@@ -337,7 +337,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         if len(power_list) == 1:
                             entry_data[CONF_SELECTED_ACCOUNT_INDEX] = 0
                             self._pending_entry_data = {**entry_data, "_title": "Shaobor_95598"}
-                            return await self.async_step_billing_mode()
+                            # 跳过计费模式配置，直接使用默认值（年阶梯计费）
+                            self._pending_entry_data[CONF_BILLING_MODE] = BILLING_STANDARD_YEAR_LADDER
+                            return await self.async_step_year_ladder_config()
                         self._pending_entry_data = {**entry_data, "_title": "Shaobor_95598"}
                         return await self.async_step_select_account()
                     return await self.async_step_login_method()
@@ -473,9 +475,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 entry_data = {k: v for k, v in pending.items() if k != "_title"}
                 entry_data[CONF_SELECTED_ACCOUNT_INDEX] = idx
-                # 选择户号后，进入计费模式配置
+                # 跳过计费模式配置，直接使用默认值（年阶梯计费）
                 self._pending_entry_data = {**entry_data, "_title": pending.get("_title", "Shaobor_95598")}
-                return await self.async_step_billing_mode()
+                self._pending_entry_data[CONF_BILLING_MODE] = BILLING_STANDARD_YEAR_LADDER
+                return await self.async_step_year_ladder_config()
         options = self._build_account_options(power_list)
         return self.async_show_form(
             step_id="select_account",
@@ -583,7 +586,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             return await self.async_step_select_account()
                         entry_data[CONF_SELECTED_ACCOUNT_INDEX] = 0
                         self._pending_entry_data = {**entry_data, "_title": f"Shaobor_95598 ({username})"}
-                        return await self.async_step_billing_mode()
+                        # 跳过计费模式配置，直接使用默认值（年阶梯计费）
+                        self._pending_entry_data[CONF_BILLING_MODE] = BILLING_STANDARD_YEAR_LADDER
+                        return await self.async_step_year_ladder_config()
                 else:
                     if "captcha" in str(result.get("message", "")).lower():
                         errors["base"] = "password_not_supported"
@@ -984,7 +989,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                     return await self.async_step_select_account()
                                 entry_data[CONF_SELECTED_ACCOUNT_INDEX] = 0
                                 self._pending_entry_data = {**entry_data, "_title": "Shaobor_95598 (QR)"}
-                                return await self.async_step_billing_mode()
+                                # 跳过计费模式配置，直接使用默认值（年阶梯计费）
+                            self._pending_entry_data[CONF_BILLING_MODE] = BILLING_STANDARD_YEAR_LADDER
+                            return await self.async_step_year_ladder_config()
                     elif res.get("status") == "WAITING":
                         errors["base"] = "qr_not_scanned"
                     else:
@@ -1121,7 +1128,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 return await self.async_step_select_account()
                             entry_data[CONF_SELECTED_ACCOUNT_INDEX] = 0
                             self._pending_entry_data = {**entry_data, "_title": f"Shaobor_95598 ({self._phone_number})"}
-                            return await self.async_step_billing_mode()
+                            # 跳过计费模式配置，直接使用默认值（年阶梯计费）
+                            self._pending_entry_data[CONF_BILLING_MODE] = BILLING_STANDARD_YEAR_LADDER
+                            return await self.async_step_year_ladder_config()
             except StateGridAuthError as err:
                 _LOGGER.error("[配置流程] 短信验证失败: %s", err)
                 errors["base"] = "invalid_code"
