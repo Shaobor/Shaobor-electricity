@@ -21,21 +21,21 @@ Home Assistant 自定义集成 的电费和用电量数据。
 
 1. 在 HACS 中点击右上角的三个点
 2. 选择 "自定义存储库"
-3. 添加此仓库的 URL
+3. 添加此仓库的 URL：`https://github.com/Shaobor/Shaobor-electricity`
 4. 类别选择 "Integration"
-5. 搜索 "Shaobor 95598" 并安装
+5. 搜索 "Shaobor electricity" 并安装
 
 ### 方法 2: 手动安装
 
 1. 下载此仓库
-2. 将 `custom_components/shaobor_95598` 文件夹复制到你的 Home Assistant 配置目录下的 `custom_components` 文件夹中
+2. 将 `custom_components/Shaobor_electricity` 文件夹复制到你的 Home Assistant 配置目录下的 `custom_components` 文件夹中
 3. 重启 Home Assistant
 
 ## 配置
 
 1. 在 Home Assistant 中进入 **配置** -> **集成**
 2. 点击右下角的 **+ 添加集成**
-3. 搜索 **Shaobor Electricity**
+3. 搜索 **Shaobor electricity**
 4. 选择登录方式：
    - **扫码登录**（推荐）：使用国家电网 APP 扫码
    - **密码登录**：输入手机号和密码
