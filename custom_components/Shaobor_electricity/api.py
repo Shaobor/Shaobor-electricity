@@ -352,12 +352,11 @@ class Shaobor95598ApiClient:
                     decrypt_code in [1, "1", "00", 0, "0"]
                     or data.get("success") is True
                 )
-                if not is_ok:
-                    err_msg = data.get("message") or data.get("msg") or f"code={data.get('code')}, full={data}"
-                    raise StateGridAuthError(f"Decrypt failed: {err_msg}")
+                _LOGGER.debug("[解密] 解密服务返回原始 JSON: %s", data)
+                
                 # 解密服务返回结构: {"success":true,"data":{"code":1,"message":"成功","data":{实际内容}}}
                 # 需要提取 data.data 才是真正的解密后业务数据（含 srvrt/bizrt 等）
-                inner = data.get("data") if data.get("data") is not None else data.get("data", {})
+                inner = data.get("data") if data.get("data") is not None else {}
                 if inner is None:
                     inner = {}
                 
@@ -439,11 +438,19 @@ class Shaobor95598ApiClient:
             text_f05 = await resp.text()
 
         raw_f05 = self._parse_sgcc_response(text_f05)
+        _LOGGER.debug("[登录] c44/f05 原始响应(可能包含非加密错误): %s", raw_f05)
+        
+        # 检查是否是未加密的业务错误（如频繁操作等）
+        if isinstance(raw_f05, dict) and str(raw_f05.get("code")) not in (None, "1", "0", "00"):
+            msg = raw_f05.get("message") or raw_f05.get("msg") or f"code={raw_f05.get('code')}"
+            raise StateGridAuthError(f"c44/f05 业务异常: {msg}")
+
         encrypted_f05 = self._get_encrypted_data(raw_f05) or (
             text_f05.strip() if self._is_likely_encrypted(text_f05) else ""
         )
         if not encrypted_f05:
-            raise StateGridAuthError("c44/f05 did not return decryptable payload")
+            # 如果不是加密字符串也不是 JSON 错误码，则抛出详细日志
+            raise StateGridAuthError(f"c44/f05 响应无法解析，结构: {type(raw_f05).__name__}")
 
         decrypted_captcha = await self._decrypt_to_data(encrypted_f05)
         if not isinstance(decrypted_captcha, dict):
@@ -737,14 +744,28 @@ class Shaobor95598ApiClient:
             text_f06 = await resp.text()
 
         raw_f06 = self._parse_sgcc_response(text_f06)
+        _LOGGER.debug("[登录] c44/f06 原始响应: %s", raw_f06)
+        
+        # 检查是否是业务错误（此时还未解密，但报错通常是明文 JSON）
+        if isinstance(raw_f06, dict) and str(raw_f06.get("code")) not in (None, "1", "0", "00"):
+            msg = raw_f06.get("message") or raw_f06.get("msg") or f"code={raw_f06.get('code')}"
+            raise StateGridAuthError(f"c44/f06 业务异常: {msg}")
+
         encrypted_f06 = self._get_encrypted_data(raw_f06) or (
             text_f06.strip() if self._is_likely_encrypted(text_f06) else ""
         )
         if not encrypted_f06:
-            raise StateGridAuthError("c44/f06 did not return decryptable payload")
+            raise StateGridAuthError(f"c44/f06 响应无法识别加密内容，响应体长: {len(text_f06)}")
 
         # c44/f06 解密后得到 bizrt.token，此时才是真正的登录成功
         decrypted_login = await self._decrypt_to_data(encrypted_f06)
+        
+        # 深度检查业务错误码（解密后的 bizrt/srvrt 可能包含错误）
+        if isinstance(decrypted_login, dict):
+            srvrt = decrypted_login.get("srvrt") or decrypted_login.get("data", {}).get("srvrt")
+            if isinstance(srvrt, dict) and srvrt.get("resultCode") not in (None, "0000", "1", "0"):
+                msg = srvrt.get("resultMessage") or "登录失败"
+                raise StateGridAuthError(f"服务异常: {msg} (code={srvrt.get('resultCode')})")
         _sanitized = self._sanitize_for_log(decrypted_login)
         try:
             _LOGGER.debug("[调试] 登录返回值(脱敏): %s", json.dumps(_sanitized, ensure_ascii=False, default=str)[:1500])
