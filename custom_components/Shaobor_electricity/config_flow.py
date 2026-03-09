@@ -1201,8 +1201,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     ) -> FlowResult:
         """配置年阶梯峰平谷计费."""
         if user_input is not None:
-            # 更新配置
-            new_data = {**self.config_entry.data, **user_input}
+            # 更新配置，确保包含 billing_mode
+            new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_YEAR_LADDER_TOU}
             self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
             return self.async_create_entry(title="", data={})
 
@@ -1228,7 +1228,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     ) -> FlowResult:
         """配置年阶梯计费."""
         if user_input is not None:
-            new_data = {**self.config_entry.data, **user_input}
+            new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_YEAR_LADDER}
             self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
             return self.async_create_entry(title="", data={})
 
@@ -1284,7 +1284,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     ) -> FlowResult:
         """配置月阶梯峰平谷变动价格计费."""
         if user_input is not None:
-            new_data = {**self.config_entry.data, **user_input}
+            new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_MONTH_LADDER_TOU_VARIABLE}
             self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
             return self.async_create_entry(title="", data={})
 
@@ -1308,7 +1308,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     ) -> FlowResult:
         """配置月阶梯峰平谷计费."""
         if user_input is not None:
-            new_data = {**self.config_entry.data, **user_input}
+            new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_MONTH_LADDER_TOU}
             self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
             return self.async_create_entry(title="", data={})
 
@@ -1332,7 +1332,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     ) -> FlowResult:
         """配置月阶梯计费."""
         if user_input is not None:
-            new_data = {**self.config_entry.data, **user_input}
+            new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_MONTH_LADDER}
             self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
             return self.async_create_entry(title="", data={})
 
@@ -1355,7 +1355,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     ) -> FlowResult:
         """配置平均单价计费."""
         if user_input is not None:
-            new_data = {**self.config_entry.data, **user_input}
+            new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_AVERAGE}
             self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
             return self.async_create_entry(title="", data={})
 

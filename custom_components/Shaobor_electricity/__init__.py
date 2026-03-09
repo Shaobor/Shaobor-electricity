@@ -75,6 +75,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         login_account=entry.data.get(CONF_LOGIN_ACCOUNT) or (stored.get("login_account") if stored else None),
     )
     
+    # 设置计费配置，用于计算日均电费
+    from .const import (
+        CONF_BILLING_MODE,
+        CONF_AVERAGE_PRICE,
+        CONF_LADDER_PRICE_1,
+        CONF_LADDER_PRICE_2,
+        CONF_LADDER_PRICE_3,
+        CONF_PRICE_TIP,
+        CONF_PRICE_PEAK,
+        CONF_PRICE_FLAT,
+        CONF_PRICE_VALLEY,
+    )
+    
+    api.set_billing_config({
+        "billing_mode": entry.data.get(CONF_BILLING_MODE, ""),
+        "average_price": entry.data.get(CONF_AVERAGE_PRICE),
+        "ladder_price_1": entry.data.get(CONF_LADDER_PRICE_1),
+        "ladder_price_2": entry.data.get(CONF_LADDER_PRICE_2),
+        "ladder_price_3": entry.data.get(CONF_LADDER_PRICE_3),
+        "price_tip": entry.data.get(CONF_PRICE_TIP),
+        "price_peak": entry.data.get(CONF_PRICE_PEAK),
+        "price_flat": entry.data.get(CONF_PRICE_FLAT),
+        "price_valley": entry.data.get(CONF_PRICE_VALLEY),
+    })
+    
     # 创建 Store 更新回调函数
     async def update_store_callback(**kwargs):
         """Callback to update Store after successful re-login."""
@@ -153,3 +178,25 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop(entry.entry_id)
 
     return unload_ok
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle removal of an entry - clear stored auth data."""
+    _LOGGER.info("删除集成，清除存储的登录状态数据")
+    
+    # 清除 Store 中的登录状态数据
+    store = AuthStore(hass, STORAGE_VERSION, STORAGE_KEY)
+    try:
+        # 检查是否还有其他集成实例
+        other_entries = [
+            e for e in hass.config_entries.async_entries(DOMAIN)
+            if e.entry_id != entry.entry_id
+        ]
+        
+        # 如果没有其他集成实例，清除 Store 数据
+        if not other_entries:
+            await store.async_remove()
+            _LOGGER.info("已清除所有登录状态数据")
+        else:
+            _LOGGER.info("还有其他集成实例，保留登录状态数据")
+    except Exception as err:
+        _LOGGER.warning("清除登录状态数据时出错: %s", err)

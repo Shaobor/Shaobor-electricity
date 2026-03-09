@@ -236,6 +236,13 @@ class Shaobor95598ApiClient:
         
         # Callback for updating store after successful re-login
         self._store_update_callback: Any = None
+        
+        # Billing configuration for calculating daily average cost
+        self._billing_config: dict[str, Any] = {}
+
+    def set_billing_config(self, config: dict[str, Any]) -> None:
+        """Set billing configuration for calculating daily average cost."""
+        self._billing_config = config
 
     def load_auth_state(
         self,
@@ -1038,13 +1045,94 @@ class Shaobor95598ApiClient:
         esti_amt = balance_info.get("esti_amt")
         electricity_fee_detail = balance_info.get("electricity_fee_detail", {})
 
+        # 获取每日用电量（用于计算日均电费）
+        daily_usage = {}
+        try:
+            daily_usage = await self._fetch_daily_usage()
+        except Exception as e:
+            _LOGGER.debug("无法获取每日用电量（不影响主要功能）: %s", e)
+
         daily_avg = None
         remaining_days = None
+        
+        # 方法1：使用 estiAmt（本月预估电费）计算日均电费（适用于后付费账户）
         if isinstance(esti_amt, (int, float)) and esti_amt > 0:
             day_of_month = datetime.now().day or 1
             daily_avg = float(esti_amt) / float(day_of_month)
+            _LOGGER.info("[预计可用] 使用 estiAmt 计算日均电费: %.2f元/天", daily_avg)
+        
+        # 方法2：使用最近7天的用电量计算日均电费（适用于预付费账户）
+        elif isinstance(daily_usage, dict) and daily_usage.get("sevenEleList"):
+            seven_ele_list = daily_usage.get("sevenEleList", [])
+            # 获取最近7天有数据的记录，同时收集峰谷电量
+            recent_days_total = []
+            recent_days_peak = []  # 尖峰/高峰电量
+            recent_days_valley = []  # 低谷电量
+            
+            for day_data in seven_ele_list[:7]:  # 只取最近7天
+                day_ele_pq = day_data.get("dayElePq")
+                if day_ele_pq and day_ele_pq != "-":
+                    try:
+                        recent_days_total.append(float(day_ele_pq))
+                        # 收集峰谷电量数据
+                        peak = day_data.get("thisPPq") or day_data.get("thisTPq") or "0"
+                        valley = day_data.get("thisVPq") or "0"
+                        try:
+                            recent_days_peak.append(float(peak))
+                            recent_days_valley.append(float(valley))
+                        except (ValueError, TypeError):
+                            pass
+                    except (ValueError, TypeError):
+                        pass
+            
+            if len(recent_days_total) >= 3:  # 至少需要3天的数据
+                avg_daily_kwh = sum(recent_days_total) / len(recent_days_total)
+                
+                # 从配置中获取电价
+                billing_mode = self._billing_config.get("billing_mode", "")
+                avg_price_per_kwh = 0.6  # 默认电价
+                
+                # 判断是否使用峰谷电价
+                has_tou_data = len(recent_days_peak) >= 3 and len(recent_days_valley) >= 3
+                
+                if "tou" in billing_mode.lower() and has_tou_data:
+                    # 峰谷计费：根据实际峰谷电量加权计算
+                    avg_peak_kwh = sum(recent_days_peak) / len(recent_days_peak)
+                    avg_valley_kwh = sum(recent_days_valley) / len(recent_days_valley)
+                    
+                    price_tip = self._billing_config.get("price_tip", 0)  # 尖峰电价
+                    price_peak = self._billing_config.get("price_peak", 0)  # 高峰电价
+                    price_valley = self._billing_config.get("price_valley", 0)  # 低谷电价
+                    
+                    # 浙江省只有尖峰和低谷，使用 price_tip 或 price_peak（取较大值）
+                    effective_peak_price = max(price_tip, price_peak) if price_tip or price_peak else 0.6
+                    effective_valley_price = price_valley if price_valley else 0.3
+                    
+                    daily_avg = (avg_peak_kwh * effective_peak_price) + (avg_valley_kwh * effective_valley_price)
+                    _LOGGER.info("[预计可用] 使用峰谷电价计算: 峰%.2f度×%.2f元 + 谷%.2f度×%.2f元 = %.2f元/天", 
+                               avg_peak_kwh, effective_peak_price, avg_valley_kwh, effective_valley_price, daily_avg)
+                elif "average" in billing_mode.lower():
+                    # 平均单价计费
+                    avg_price_per_kwh = self._billing_config.get("average_price", 0.6)
+                    daily_avg = avg_daily_kwh * avg_price_per_kwh
+                    _LOGGER.info("[预计可用] 使用平均单价计算: %.2f度/天 × %.2f元/度 = %.2f元/天", 
+                               avg_daily_kwh, avg_price_per_kwh, daily_avg)
+                elif "ladder" in billing_mode.lower():
+                    # 阶梯计费：使用第一档电价作为估算
+                    avg_price_per_kwh = self._billing_config.get("ladder_price_1", 0.6)
+                    daily_avg = avg_daily_kwh * avg_price_per_kwh
+                    _LOGGER.info("[预计可用] 使用阶梯电价(第一档)计算: %.2f度/天 × %.2f元/度 = %.2f元/天", 
+                               avg_daily_kwh, avg_price_per_kwh, daily_avg)
+                else:
+                    # 默认：使用固定电价
+                    daily_avg = avg_daily_kwh * avg_price_per_kwh
+                    _LOGGER.info("[预计可用] 使用默认电价计算: %.2f度/天 × %.2f元/度 = %.2f元/天", 
+                               avg_daily_kwh, avg_price_per_kwh, daily_avg)
+        
+        # 计算预计可用天数
         if isinstance(balance, (int, float)) and balance is not None and isinstance(daily_avg, (int, float)) and daily_avg > 0:
             remaining_days = int(float(balance) // float(daily_avg))
+            _LOGGER.info("[预计可用] 余额 %.2f元 ÷ 日均 %.2f元 = %d天", balance, daily_avg, remaining_days)
 
         # 获取缴费记录（可选功能，失败不影响主要功能）
         payment_records = {"count": 0, "payList": []}
@@ -1053,13 +1141,6 @@ class Shaobor95598ApiClient:
         except Exception as e:
             # 缴费记录接口可能对某些登录方式有限制，失败不影响主要功能
             _LOGGER.debug("无法获取缴费记录（不影响主要功能）: %s", e)
-
-        # 获取每日用电量（可选功能，失败不影响主要功能）
-        daily_usage = {}
-        try:
-            daily_usage = await self._fetch_daily_usage()
-        except Exception as e:
-            _LOGGER.debug("无法获取每日用电量（不影响主要功能）: %s", e)
 
         return {
             "balance": balance,
@@ -1772,13 +1853,33 @@ class Shaobor95598ApiClient:
         decrypted = await self._decrypt_to_data(encrypted_data)
         
         # [调试] 输出 c05/f01 解密后的完整返回值
-        _sanitized_c05 = self._sanitize_for_log(decrypted)
-        try:
-            _LOGGER.warning("[c05/f01] 解密后的完整数据: %s", json.dumps(_sanitized_c05, ensure_ascii=False, default=str))
-        except (TypeError, ValueError):
-            _LOGGER.warning("[c05/f01] 解密后的数据无法序列化")
+        _LOGGER.warning("[c05/f01 实时电费] ===== 开始输出解密数据 =====")
+        _LOGGER.warning("[c05/f01 实时电费] 解密数据类型: %s", type(decrypted).__name__)
+        if isinstance(decrypted, str):
+            _LOGGER.warning("[c05/f01 实时电费] 解密数据长度: %d", len(decrypted))
+            _LOGGER.warning("[c05/f01 实时电费] 解密数据内容: %s", decrypted[:500] if len(decrypted) > 500 else decrypted)
+        else:
+            _sanitized_c05 = self._sanitize_for_log(decrypted)
+            try:
+                json_str = json.dumps(_sanitized_c05, ensure_ascii=False, indent=2, default=str)
+                _LOGGER.warning("[c05/f01 实时电费] 解密数据内容:\n%s", json_str)
+            except (TypeError, ValueError) as e:
+                _LOGGER.warning("[c05/f01 实时电费] 解密后的数据无法序列化: %s", e)
+        _LOGGER.warning("[c05/f01 实时电费] ===== 结束输出解密数据 =====")
         
-        found = self._find_first_dict_with_keys(decrypted, {"sumMoney", "estiAmt"})
+        # 优先从 list 数组中获取数据（新版API返回格式）
+        found = None
+        if isinstance(decrypted, dict):
+            data_list = decrypted.get("list", [])
+            if isinstance(data_list, list) and len(data_list) > 0:
+                found = data_list[0]
+                _LOGGER.info("[c05/f01] 从 list 数组中获取到数据")
+            else:
+                # 兼容旧版API：直接在根对象中查找
+                found = self._find_first_dict_with_keys(decrypted, {"sumMoney"})
+                if found:
+                    _LOGGER.info("[c05/f01] 从根对象中获取到数据（旧版API）")
+        
         balance = None
         esti_amt = None
         fee_detail = {}
@@ -1792,8 +1893,10 @@ class Shaobor95598ApiClient:
             # 后付费用户：使用 sumMoney（可能为负数表示欠费）
             if prepay_bal is not None:
                 balance = prepay_bal
+                _LOGGER.info("[c05/f01] 使用预付费余额: %s", balance)
             else:
                 balance = sum_money
+                _LOGGER.info("[c05/f01] 使用应缴金额: %s", balance)
             
             esti_amt = self._to_float(found.get("estiAmt"))
             
@@ -1808,6 +1911,9 @@ class Shaobor95598ApiClient:
                 "amtTime": found.get("amtTime"),  # 数据更新时间
                 "date": found.get("date"),  # 查询时间
             }
+            _LOGGER.info("[c05/f01] 解析结果 - balance: %s, esti_amt: %s", balance, esti_amt)
+        else:
+            _LOGGER.warning("[c05/f01] 未找到有效的电费数据")
         
         return {
             "balance": balance, 
@@ -2051,12 +2157,14 @@ class Shaobor95598ApiClient:
 
         decrypted = await self._decrypt_to_data(encrypted_data)
         
-        # 输出完整解密数据（调试用）
-        _sanitized = self._sanitize_for_log(decrypted)
-        try:
-            _LOGGER.warning("[c24/f01-daily] 解密后的完整数据: %s", json.dumps(_sanitized, ensure_ascii=False, default=str))
-        except (TypeError, ValueError):
-            _LOGGER.warning("[c24/f01-daily] 解密后的数据无法序列化")
+        # 只输出数据类型和记录数量，不输出完整内容（数据量太大）
+        _LOGGER.info("[c24/f01-daily 每日电量] 解密数据类型: %s", type(decrypted).__name__)
+        if isinstance(decrypted, dict):
+            seven_ele_list = decrypted.get("sevenEleList", [])
+            total_pq = decrypted.get("totalPq", "未知")
+            _LOGGER.info("[c24/f01-daily 每日电量] 获取到 %d 条记录，总电量: %s kWh", len(seven_ele_list), total_pq)
+        elif isinstance(decrypted, str):
+            _LOGGER.info("[c24/f01-daily 每日电量] 解密数据长度: %d", len(decrypted))
         
         # 保存数据到文件（只保存有数据的记录）
         await self._save_daily_usage_to_file(decrypted)
