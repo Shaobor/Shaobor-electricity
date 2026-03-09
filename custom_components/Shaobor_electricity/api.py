@@ -1784,14 +1784,24 @@ class Shaobor95598ApiClient:
         fee_detail = {}
         
         if found:
-            balance = self._to_float(found.get("sumMoney"))
+            # 优先使用 prepayBal（预付费余额），如果没有则使用 sumMoney（应缴金额）
+            prepay_bal = self._to_float(found.get("prepayBal"))
+            sum_money = self._to_float(found.get("sumMoney"))
+            
+            # 预付费用户：使用 prepayBal
+            # 后付费用户：使用 sumMoney（可能为负数表示欠费）
+            if prepay_bal is not None:
+                balance = prepay_bal
+            else:
+                balance = sum_money
+            
             esti_amt = self._to_float(found.get("estiAmt"))
             
             # 提取完整的电费详情数据
             fee_detail = {
-                "prepayBal": found.get("prepayBal"),  # 账户余额
+                "prepayBal": found.get("prepayBal"),  # 账户余额（预付费）
                 "totalPq": found.get("totalPq"),  # 总电量
-                "sumMoney": found.get("sumMoney"),  # 应缴金额
+                "sumMoney": found.get("sumMoney"),  # 应缴金额（后付费）
                 "estiAmt": found.get("estiAmt"),  # 预估金额
                 "historyOwe": found.get("historyOwe"),  # 历史欠费
                 "penalty": found.get("penalty"),  # 滞纳金
