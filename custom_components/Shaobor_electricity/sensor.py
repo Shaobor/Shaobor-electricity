@@ -75,7 +75,24 @@ class Shaobor95598BalanceSensor(Shaobor95598SensorBase):
 
     @property
     def native_value(self) -> float | None:
-        return self.coordinator.data.get("balance")
+        """返回余额或本月预估电费."""
+        data = self.coordinator.data or {}
+        balance = data.get("balance")
+        
+        # 预付费用户：返回余额
+        if balance is not None:
+            return balance
+        
+        # 非预付费用户：返回本月预估电费
+        fee_data = data.get("electricity_fee_detail") or {}
+        esti_amt = fee_data.get("estiAmt")
+        if esti_amt is not None:
+            try:
+                return float(esti_amt)
+            except (TypeError, ValueError):
+                pass
+        
+        return None
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -588,14 +605,27 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
 
     @property
     def native_value(self) -> float | None:
-        """显示账户余额作为传感器的值."""
+        """显示账户余额作为传感器的值，如果是非预付费用户则显示本月预估电费."""
         data = self.coordinator.data or {}
         balance = data.get("balance")
+        
+        # 如果有余额数据（预付费用户），直接返回
         if balance is not None:
             try:
                 return float(balance)
             except (TypeError, ValueError):
-                return None
+                pass
+        
+        # 非预付费用户：计算本月预估电费
+        electricity_fee_detail = data.get("electricity_fee_detail") or {}
+        esti_amt = electricity_fee_detail.get("estiAmt")
+        
+        if esti_amt is not None:
+            try:
+                return float(esti_amt)
+            except (TypeError, ValueError):
+                pass
+        
         return None
 
     @property
@@ -888,7 +918,7 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
         
         attrs["计费标准"] = {
             "计费标准": "年阶梯计费",
-            "省份": "黑龙江",
+            "省份": region_name,
             "当前年阶梯档": current_tier,
             "年阶梯累计用电量": round(year_accumulated, 2),
             "当前电价": current_price,
