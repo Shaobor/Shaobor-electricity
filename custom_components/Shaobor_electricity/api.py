@@ -1937,6 +1937,8 @@ class Shaobor95598ApiClient:
                 fee_detail["amtTime"] = found.get("amtTime")
             if found.get("date"):
                 fee_detail["date"] = found.get("date")
+            if found.get("consType") is not None:
+                fee_detail["consType"] = found.get("consType")
             
             _LOGGER.info("[c05/f01] 解析结果 - balance: %s, esti_amt: %s", balance, esti_amt)
         else:
