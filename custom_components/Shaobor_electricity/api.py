@@ -758,9 +758,13 @@ class Shaobor95598ApiClient:
         _LOGGER.debug("[登录] c44/f06 原始响应: %s", raw_f06)
         
         # 检查是否是业务错误（此时还未解密，但报错通常是明文 JSON）
-        if isinstance(raw_f06, dict) and str(raw_f06.get("code")) not in (None, "1", "0", "00"):
-            msg = raw_f06.get("message") or raw_f06.get("msg") or f"code={raw_f06.get('code')}"
-            raise StateGridAuthError(f"c44/f06 业务异常: {msg}")
+        # 只有当 code 存在且不是成功码时才报错
+        if isinstance(raw_f06, dict):
+            code = raw_f06.get("code")
+            # 如果 code 存在且不是成功码（1, 0, 00, "1", "0", "00"），则报错
+            if code is not None and str(code) not in ("1", "0", "00", "None"):
+                msg = raw_f06.get("message") or raw_f06.get("msg") or f"code={code}"
+                raise StateGridAuthError(f"c44/f06 业务异常: {msg}")
 
         encrypted_f06 = self._get_encrypted_data(raw_f06) or (
             text_f06.strip() if self._is_likely_encrypted(text_f06) else ""
