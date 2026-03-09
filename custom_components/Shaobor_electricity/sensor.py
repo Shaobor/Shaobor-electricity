@@ -708,10 +708,11 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
         if remaining_days:
             attrs["剩余天数"] = remaining_days
         
-        # 2. 预付费状态
+        # 2. 预付费状态（根据 consType 判断）
         electricity_fee_detail = data.get("electricity_fee_detail") or {}
-        prepay_bal = electricity_fee_detail.get("prepayBal")
-        attrs["预付费"] = "是" if prepay_bal is not None else "否"
+        cons_type = electricity_fee_detail.get("consType")
+        # consType = "0" 表示预付费，"1" 表示后付费
+        attrs["预付费"] = "是" if cons_type == "0" else "否"
         
         # 3. 使用缓存的历史数据
         # 获取用户配置的户号
