@@ -114,7 +114,7 @@ class Shaobor95598BalanceSensor(Shaobor95598SensorBase):
         if "sumMoney" in fee_data:
             attrs["总金额"] = fee_data["sumMoney"]
         
-        # 预估金额
+        # 预估金额（后付费用户的本月预估电费）
         if "estiAmt" in fee_data:
             attrs["预估金额"] = fee_data["estiAmt"]
         
@@ -126,9 +126,10 @@ class Shaobor95598BalanceSensor(Shaobor95598SensorBase):
         if "penalty" in fee_data:
             attrs["违约金"] = fee_data["penalty"]
         
-        # 金额时间（数据更新时间）
-        if "amtTime" in fee_data:
-            attrs["刷新时间"] = fee_data["amtTime"]
+        # 刷新时间（优先使用 amtTime，如果没有则使用 date）
+        refresh_time = fee_data.get("amtTime）") or fee_data.get("date")
+        if refresh_time:
+            attrs["刷新时间"] = refresh_time
         
         return attrs
 
