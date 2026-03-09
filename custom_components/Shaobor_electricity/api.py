@@ -1893,20 +1893,30 @@ class Shaobor95598ApiClient:
         fee_detail = {}
         
         if found:
-            # 优先使用 prepayBal（预付费余额），如果没有则使用 sumMoney（应缴金额）
+            # 根据账户类型判断使用哪个余额字段
             prepay_bal = self._to_float(found.get("prepayBal"))
             sum_money = self._to_float(found.get("sumMoney"))
+            cons_type = found.get("consType")
+            esti_amt_value = found.get("estiAmt")
             
-            # 预付费用户：使用 prepayBal
-            # 后付费用户：使用 sumMoney（可能为负数表示欠费）
-            if prepay_bal is not None:
+            # 判断逻辑：
+            # 1. 如果 consType == "0" 且没有 estiAmt，使用 prepayBal（纯预付费）
+            # 2. 如果 consType == "1" 或有 estiAmt，使用 sumMoney（后付费或混合）
+            # 3. 其他情况：优先 sumMoney，没有则用 prepayBal
+            if cons_type == "0" and not esti_amt_value:
+                # 纯预付费账户
+                balance = prepay_bal
+                _LOGGER.info("[c05/f01] 纯预付费账户，使用预付费余额: %s", balance)
+            elif sum_money is not None:
+                # 后付费或混合账户，使用应缴金额
+                balance = sum_money
+                _LOGGER.info("[c05/f01] 后付费/混合账户，使用应缴金额: %s", balance)
+            elif prepay_bal is not None:
+                # 兜底：使用预付费余额
                 balance = prepay_bal
                 _LOGGER.info("[c05/f01] 使用预付费余额: %s", balance)
-            else:
-                balance = sum_money
-                _LOGGER.info("[c05/f01] 使用应缴金额: %s", balance)
             
-            esti_amt = self._to_float(found.get("estiAmt"))
+            esti_amt = self._to_float(esti_amt_value)
             
             # 提取完整的电费详情数据（只添加有值的字段）
             fee_detail = {}
