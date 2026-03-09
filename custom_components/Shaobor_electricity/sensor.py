@@ -369,6 +369,9 @@ class Shaobor95598DailyUsageSensor(Shaobor95598SensorBase):
         
         attrs: dict[str, str | list] = {}
         
+        # 从配置中读取计费模式
+        billing_mode = self._entry.data.get("billing_mode", "year_ladder")
+        
         # 返回码和消息
         if "returnCode" in daily_usage:
             attrs["返回码"] = daily_usage["returnCode"]
@@ -443,38 +446,78 @@ class Shaobor95598DailyUsageSensor(Shaobor95598SensorBase):
                     if day_str.startswith(current_year):
                         year_accumulated += day_kwh
                     
-                    # 计算当日电费（基于年阶梯）
+                    # 计算当日电费
                     day_cost = 0
-                    if year_accumulated <= LADDER_LEVEL_1:
-                        # 第一阶梯
-                        day_cost = day_kwh * PRICE_1
-                    elif year_accumulated <= LADDER_LEVEL_2:
-                        # 第二阶梯（可能跨阶梯）
-                        if year_accumulated - day_kwh <= LADDER_LEVEL_1:
-                            # 跨阶梯
-                            first_part = LADDER_LEVEL_1 - (year_accumulated - day_kwh)
-                            second_part = day_kwh - first_part
-                            day_cost = first_part * PRICE_1 + second_part * PRICE_2
-                        else:
-                            # 完全在第二阶梯
-                            day_cost = day_kwh * PRICE_2
+                    
+                    # 判断是否使用峰谷电价
+                    if "tou" in billing_mode:
+                        # 峰谷计费模式：使用峰谷电价
+                        price_tip = self._entry.data.get("price_tip", 0)
+                        price_peak = self._entry.data.get("price_peak", 0)
+                        price_flat = self._entry.data.get("price_flat", 0)
+                        price_valley = self._entry.data.get("price_valley", 0)
+                        
+                        # 根据当前档位调整峰谷电价（年阶梯峰平谷）
+                        if billing_mode == "year_ladder_tou":
+                            if year_accumulated <= LADDER_LEVEL_1:
+                                pass  # 第一档，使用原价
+                            elif year_accumulated <= LADDER_LEVEL_2:
+                                # 第二档，加价
+                                price_increase = PRICE_2 - PRICE_1
+                                if price_peak > 0: price_peak += price_increase
+                                if price_tip > 0: price_tip += price_increase
+                                if price_flat > 0: price_flat += price_increase
+                                if price_valley > 0: price_valley += price_increase
+                            else:
+                                # 第三档，加价
+                                price_increase = PRICE_3 - PRICE_1
+                                if price_peak > 0: price_peak += price_increase
+                                if price_tip > 0: price_tip += price_increase
+                                if price_flat > 0: price_flat += price_increase
+                                if price_valley > 0: price_valley += price_increase
+                        
+                        # 计算峰谷电费
+                        thisTPq = float(item.get("thisTPq", 0) or 0)  # 尖峰
+                        thisPPq = float(item.get("thisPPq", 0) or 0)  # 峰
+                        thisFPq = float(item.get("thisFPq", 0) or 0)  # 平
+                        thisVPq = float(item.get("thisVPq", 0) or 0)  # 谷
+                        
+                        day_cost = (thisTPq * price_tip + 
+                                   thisPPq * price_peak + 
+                                   thisFPq * price_flat + 
+                                   thisVPq * price_valley)
                     else:
-                        # 第三阶梯（可能跨阶梯）
-                        if year_accumulated - day_kwh <= LADDER_LEVEL_1:
-                            # 跨越三个阶梯
-                            first_part = LADDER_LEVEL_1 - (year_accumulated - day_kwh)
-                            remaining = day_kwh - first_part
-                            second_part = min(remaining, LADDER_LEVEL_2 - LADDER_LEVEL_1)
-                            third_part = remaining - second_part
-                            day_cost = first_part * PRICE_1 + second_part * PRICE_2 + third_part * PRICE_3
-                        elif year_accumulated - day_kwh <= LADDER_LEVEL_2:
-                            # 跨越第二、第三阶梯
-                            second_part = LADDER_LEVEL_2 - (year_accumulated - day_kwh)
-                            third_part = day_kwh - second_part
-                            day_cost = second_part * PRICE_2 + third_part * PRICE_3
+                        # 非峰谷计费：使用阶梯电价
+                        if year_accumulated <= LADDER_LEVEL_1:
+                            # 第一阶梯
+                            day_cost = day_kwh * PRICE_1
+                        elif year_accumulated <= LADDER_LEVEL_2:
+                            # 第二阶梯（可能跨阶梯）
+                            if year_accumulated - day_kwh <= LADDER_LEVEL_1:
+                                # 跨阶梯
+                                first_part = LADDER_LEVEL_1 - (year_accumulated - day_kwh)
+                                second_part = day_kwh - first_part
+                                day_cost = first_part * PRICE_1 + second_part * PRICE_2
+                            else:
+                                # 完全在第二阶梯
+                                day_cost = day_kwh * PRICE_2
                         else:
-                            # 完全在第三阶梯
-                            day_cost = day_kwh * PRICE_3
+                            # 第三阶梯（可能跨阶梯）
+                            if year_accumulated - day_kwh <= LADDER_LEVEL_1:
+                                # 跨越三个阶梯
+                                first_part = LADDER_LEVEL_1 - (year_accumulated - day_kwh)
+                                remaining = day_kwh - first_part
+                                second_part = min(remaining, LADDER_LEVEL_2 - LADDER_LEVEL_1)
+                                third_part = remaining - second_part
+                                day_cost = first_part * PRICE_1 + second_part * PRICE_2 + third_part * PRICE_3
+                            elif year_accumulated - day_kwh <= LADDER_LEVEL_2:
+                                # 跨越第二、第三阶梯
+                                second_part = LADDER_LEVEL_2 - (year_accumulated - day_kwh)
+                                third_part = day_kwh - second_part
+                                day_cost = second_part * PRICE_2 + third_part * PRICE_3
+                            else:
+                                # 完全在第三阶梯
+                                day_cost = day_kwh * PRICE_3
                     
                     day_data = {
                         "日期": day_str,
@@ -491,27 +534,30 @@ class Shaobor95598DailyUsageSensor(Shaobor95598SensorBase):
                         except (TypeError, ValueError):
                             pass
                     
+                    # thisPPq = Peak（峰/高峰时段），不是平时段
                     thisPPq = item.get("thisPPq", "")
                     if thisPPq and thisPPq != "0" and thisPPq != "-":
                         try:
                             if float(thisPPq) > 0:
-                                day_data["平时段"] = thisPPq
+                                day_data["峰时段"] = thisPPq
                         except (TypeError, ValueError):
                             pass
                     
-                    thisNPq = item.get("thisNPq", "")
-                    if thisNPq and thisNPq != "0" and thisNPq != "-":
+                    # thisTPq = Tip（尖峰时段）
+                    thisTPq = item.get("thisTPq", "")
+                    if thisTPq and thisTPq != "0" and thisTPq != "-":
                         try:
-                            if float(thisNPq) > 0:
-                                day_data["峰时段"] = thisNPq
+                            if float(thisTPq) > 0:
+                                day_data["尖峰时段"] = thisTPq
                         except (TypeError, ValueError):
                             pass
                     
-                    thisDVPq = item.get("thisDVPq", "")
-                    if thisDVPq and thisDVPq != "0" and thisDVPq != "-":
+                    # thisFPq = Flat（平时段）
+                    thisFPq = item.get("thisFPq", "")
+                    if thisFPq and thisFPq != "0" and thisFPq != "-":
                         try:
-                            if float(thisDVPq) > 0:
-                                day_data["尖峰时段"] = thisDVPq
+                            if float(thisFPq) > 0:
+                                day_data["平时段"] = thisFPq
                         except (TypeError, ValueError):
                             pass
                     
@@ -754,28 +800,68 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
             
             # 计算当日电费
             day_cost = 0
-            if year_accumulated <= LADDER_LEVEL_1:
-                day_cost = day_kwh * PRICE_1
-            elif year_accumulated <= LADDER_LEVEL_2:
-                if year_accumulated - day_kwh <= LADDER_LEVEL_1:
-                    first_part = LADDER_LEVEL_1 - (year_accumulated - day_kwh)
-                    second_part = day_kwh - first_part
-                    day_cost = first_part * PRICE_1 + second_part * PRICE_2
-                else:
-                    day_cost = day_kwh * PRICE_2
+            
+            # 判断是否使用峰谷电价
+            if "tou" in billing_mode:
+                # 峰谷计费模式：使用峰谷电价
+                price_tip = self._entry.data.get("price_tip", 0)
+                price_peak = self._entry.data.get("price_peak", 0)
+                price_flat = self._entry.data.get("price_flat", 0)
+                price_valley = self._entry.data.get("price_valley", 0)
+                
+                # 根据当前档位调整峰谷电价（年阶梯峰平谷）
+                if billing_mode == "year_ladder_tou":
+                    if year_accumulated <= LADDER_LEVEL_1:
+                        pass  # 第一档，使用原价
+                    elif year_accumulated <= LADDER_LEVEL_2:
+                        # 第二档，加价
+                        price_increase = PRICE_2 - PRICE_1
+                        if price_peak > 0: price_peak += price_increase
+                        if price_tip > 0: price_tip += price_increase
+                        if price_flat > 0: price_flat += price_increase
+                        if price_valley > 0: price_valley += price_increase
+                    else:
+                        # 第三档，加价
+                        price_increase = PRICE_3 - PRICE_1
+                        if price_peak > 0: price_peak += price_increase
+                        if price_tip > 0: price_tip += price_increase
+                        if price_flat > 0: price_flat += price_increase
+                        if price_valley > 0: price_valley += price_increase
+                
+                # 计算峰谷电费
+                thisTPq = float(item.get("thisTPq", 0) or 0)  # 尖峰
+                thisPPq = float(item.get("thisPPq", 0) or 0)  # 峰
+                thisFPq = float(item.get("thisFPq", 0) or 0)  # 平
+                thisVPq = float(item.get("thisVPq", 0) or 0)  # 谷
+                
+                day_cost = (thisTPq * price_tip + 
+                           thisPPq * price_peak + 
+                           thisFPq * price_flat + 
+                           thisVPq * price_valley)
             else:
-                if year_accumulated - day_kwh <= LADDER_LEVEL_1:
-                    first_part = LADDER_LEVEL_1 - (year_accumulated - day_kwh)
-                    remaining = day_kwh - first_part
-                    second_part = min(remaining, LADDER_LEVEL_2 - LADDER_LEVEL_1)
-                    third_part = remaining - second_part
-                    day_cost = first_part * PRICE_1 + second_part * PRICE_2 + third_part * PRICE_3
-                elif year_accumulated - day_kwh <= LADDER_LEVEL_2:
-                    second_part = LADDER_LEVEL_2 - (year_accumulated - day_kwh)
-                    third_part = day_kwh - second_part
-                    day_cost = second_part * PRICE_2 + third_part * PRICE_3
+                # 非峰谷计费：使用阶梯电价
+                if year_accumulated <= LADDER_LEVEL_1:
+                    day_cost = day_kwh * PRICE_1
+                elif year_accumulated <= LADDER_LEVEL_2:
+                    if year_accumulated - day_kwh <= LADDER_LEVEL_1:
+                        first_part = LADDER_LEVEL_1 - (year_accumulated - day_kwh)
+                        second_part = day_kwh - first_part
+                        day_cost = first_part * PRICE_1 + second_part * PRICE_2
+                    else:
+                        day_cost = day_kwh * PRICE_2
                 else:
-                    day_cost = day_kwh * PRICE_3
+                    if year_accumulated - day_kwh <= LADDER_LEVEL_1:
+                        first_part = LADDER_LEVEL_1 - (year_accumulated - day_kwh)
+                        remaining = day_kwh - first_part
+                        second_part = min(remaining, LADDER_LEVEL_2 - LADDER_LEVEL_1)
+                        third_part = remaining - second_part
+                        day_cost = first_part * PRICE_1 + second_part * PRICE_2 + third_part * PRICE_3
+                    elif year_accumulated - day_kwh <= LADDER_LEVEL_2:
+                        second_part = LADDER_LEVEL_2 - (year_accumulated - day_kwh)
+                        third_part = day_kwh - second_part
+                        day_cost = second_part * PRICE_2 + third_part * PRICE_3
+                    else:
+                        day_cost = day_kwh * PRICE_3
             
             # 构建每日数据 - 只添加非零的时段数据
             day_data = {
@@ -916,20 +1002,75 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
             current_tier = "第3档"
             current_price = PRICE_3
         
-        attrs["计费标准"] = {
-            "计费标准": "年阶梯计费",
+        # 根据 billing_mode 显示正确的计费标准名称
+        billing_mode_names = {
+            "year_ladder_tou": "年阶梯峰平谷计费",
+            "year_ladder": "年阶梯计费",
+            "month_ladder_tou_variable": "月阶梯峰平谷变动价格计费",
+            "month_ladder_tou": "月阶梯峰平谷计费",
+            "month_ladder": "月阶梯计费",
+            "average": "平均单价计费",
+        }
+        billing_mode_name = billing_mode_names.get(billing_mode, "年阶梯计费")
+        
+        # 根据计费模式构建不同的属性
+        billing_attrs = {
+            "计费标准": billing_mode_name,
             "省份": region_name,
             "当前年阶梯档": current_tier,
             "年阶梯累计用电量": round(year_accumulated, 2),
-            "当前电价": current_price,
             "当前年阶梯起始日期": f"{datetime.now().year}.01.01",
             "当前年阶梯结束日期": f"{datetime.now().year}.12.31",
-            "年阶梯第1档电价": PRICE_1,
-            "年阶梯第2档电价": PRICE_2,
-            "年阶梯第3档电价": PRICE_3,
             "年阶梯第2档起始电量": LADDER_LEVEL_1,
             "年阶梯第3档起始电量": LADDER_LEVEL_2,
         }
+        
+        # 如果是峰谷计费模式，显示峰谷电价
+        if "tou" in billing_mode:
+            price_tip = self._entry.data.get("price_tip", 0)
+            price_peak = self._entry.data.get("price_peak", 0)
+            price_flat = self._entry.data.get("price_flat", 0)
+            price_valley = self._entry.data.get("price_valley", 0)
+            
+            # 根据当前档位调整峰谷电价（如果是年阶梯峰平谷）
+            if billing_mode == "year_ladder_tou":
+                # 根据档位调整电价
+                if current_tier == "第2档":
+                    # 第二档电价需要加价
+                    price_increase = PRICE_2 - PRICE_1
+                    if price_peak > 0:
+                        price_peak += price_increase
+                    if price_tip > 0:
+                        price_tip += price_increase
+                    if price_valley > 0:
+                        price_valley += price_increase
+                elif current_tier == "第3档":
+                    # 第三档电价需要加价
+                    price_increase = PRICE_3 - PRICE_1
+                    if price_peak > 0:
+                        price_peak += price_increase
+                    if price_tip > 0:
+                        price_tip += price_increase
+                    if price_valley > 0:
+                        price_valley += price_increase
+            
+            billing_attrs["当前电价"] = "峰谷分时"
+            if price_tip > 0:
+                billing_attrs["尖峰电价"] = price_tip
+            if price_peak > 0:
+                billing_attrs["高峰电价"] = price_peak
+            if price_flat > 0:
+                billing_attrs["平段电价"] = price_flat
+            if price_valley > 0:
+                billing_attrs["低谷电价"] = price_valley
+        else:
+            # 非峰谷计费，显示阶梯电价
+            billing_attrs["当前电价"] = current_price
+            billing_attrs["年阶梯第1档电价"] = PRICE_1
+            billing_attrs["年阶梯第2档电价"] = PRICE_2
+            billing_attrs["年阶梯第3档电价"] = PRICE_3
+        
+        attrs["计费标准"] = billing_attrs
         
         # 6. 其他信息
         attrs["数据源"] = "95598"
