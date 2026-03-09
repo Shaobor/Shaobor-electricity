@@ -448,9 +448,13 @@ class Shaobor95598ApiClient:
         _LOGGER.debug("[登录] c44/f05 原始响应(可能包含非加密错误): %s", raw_f05)
         
         # 检查是否是未加密的业务错误（如频繁操作等）
-        if isinstance(raw_f05, dict) and str(raw_f05.get("code")) not in (None, "1", "0", "00"):
-            msg = raw_f05.get("message") or raw_f05.get("msg") or f"code={raw_f05.get('code')}"
-            raise StateGridAuthError(f"c44/f05 业务异常: {msg}")
+        # 只有当 code 存在且不是成功码时才报错
+        if isinstance(raw_f05, dict):
+            code = raw_f05.get("code")
+            # 如果 code 存在且不是成功码（1, 0, 00, "1", "0", "00"），则报错
+            if code is not None and str(code) not in ("1", "0", "00", "None"):
+                msg = raw_f05.get("message") or raw_f05.get("msg") or f"code={code}"
+                raise StateGridAuthError(f"c44/f05 业务异常: {msg}")
 
         encrypted_f05 = self._get_encrypted_data(raw_f05) or (
             text_f05.strip() if self._is_likely_encrypted(text_f05) else ""

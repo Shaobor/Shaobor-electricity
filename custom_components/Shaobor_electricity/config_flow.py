@@ -185,6 +185,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
             if entry:
                 self.hass.config_entries.async_update_entry(entry, data=data)
+                # 重新加载集成以应用新的认证信息
+                await self.hass.config_entries.async_reload(entry.entry_id)
                 return self.async_abort(reason="reauth_successful")
         # 检查该户号是否已被添加（含旧版未设 unique_id 的条目）
         for entry in self.hass.config_entries.async_entries(DOMAIN):
@@ -574,7 +576,20 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             if entry:
                                 selected_index = entry.data.get(CONF_SELECTED_ACCOUNT_INDEX, 0)
                                 entry_data[CONF_SELECTED_ACCOUNT_INDEX] = selected_index
+                                
+                                # 保留原有的计费配置
+                                for key in [CONF_BILLING_MODE, CONF_LADDER_LEVEL_1, CONF_LADDER_LEVEL_2,
+                                           CONF_LADDER_PRICE_1, CONF_LADDER_PRICE_2, CONF_LADDER_PRICE_3,
+                                           CONF_PRICE_TIP, CONF_PRICE_PEAK, CONF_PRICE_FLAT, CONF_PRICE_VALLEY,
+                                           CONF_AVERAGE_PRICE, CONF_YEAR_LADDER_START]:
+                                    if key in entry.data:
+                                        entry_data[key] = entry.data[key]
+                                
                                 self.hass.config_entries.async_update_entry(entry, data=entry_data)
+                                
+                                # 重新加载集成以应用新的认证信息
+                                await self.hass.config_entries.async_reload(entry.entry_id)
+                                
                                 return self.async_abort(reason="reauth_successful")
                         
                         # 新配置流程:进入户号选择或计费模式配置
@@ -975,7 +990,20 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                     if entry:
                                         selected_index = entry.data.get(CONF_SELECTED_ACCOUNT_INDEX, 0)
                                         entry_data[CONF_SELECTED_ACCOUNT_INDEX] = selected_index
+                                        
+                                        # 保留原有的计费配置
+                                        for key in [CONF_BILLING_MODE, CONF_LADDER_LEVEL_1, CONF_LADDER_LEVEL_2,
+                                                   CONF_LADDER_PRICE_1, CONF_LADDER_PRICE_2, CONF_LADDER_PRICE_3,
+                                                   CONF_PRICE_TIP, CONF_PRICE_PEAK, CONF_PRICE_FLAT, CONF_PRICE_VALLEY,
+                                                   CONF_AVERAGE_PRICE, CONF_YEAR_LADDER_START]:
+                                            if key in entry.data:
+                                                entry_data[key] = entry.data[key]
+                                        
                                         self.hass.config_entries.async_update_entry(entry, data=entry_data)
+                                        
+                                        # 重新加载集成以应用新的认证信息
+                                        await self.hass.config_entries.async_reload(entry.entry_id)
+                                        
                                         return self.async_abort(reason="reauth_successful")
                                 
                                 # 新配置流程:进入户号选择或计费模式配置
@@ -1112,7 +1140,20 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 if entry:
                                     selected_index = entry.data.get(CONF_SELECTED_ACCOUNT_INDEX, 0)
                                     entry_data[CONF_SELECTED_ACCOUNT_INDEX] = selected_index
+                                    
+                                    # 保留原有的计费配置
+                                    for key in [CONF_BILLING_MODE, CONF_LADDER_LEVEL_1, CONF_LADDER_LEVEL_2,
+                                               CONF_LADDER_PRICE_1, CONF_LADDER_PRICE_2, CONF_LADDER_PRICE_3,
+                                               CONF_PRICE_TIP, CONF_PRICE_PEAK, CONF_PRICE_FLAT, CONF_PRICE_VALLEY,
+                                               CONF_AVERAGE_PRICE, CONF_YEAR_LADDER_START]:
+                                        if key in entry.data:
+                                            entry_data[key] = entry.data[key]
+                                    
                                     self.hass.config_entries.async_update_entry(entry, data=entry_data)
+                                    
+                                    # 重新加载集成以应用新的认证信息
+                                    await self.hass.config_entries.async_reload(entry.entry_id)
+                                    
                                     return self.async_abort(reason="reauth_successful")
                             
                             # 新配置流程:进入户号选择或计费模式配置

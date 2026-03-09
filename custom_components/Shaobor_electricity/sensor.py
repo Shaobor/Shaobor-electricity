@@ -707,10 +707,32 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
         if remaining_days:
             attrs["剩余天数"] = remaining_days
         
-        # 2. 预付费状态
+        # 2. 预付费状态和电费详细信息
         electricity_fee_detail = data.get("electricity_fee_detail") or {}
         prepay_bal = electricity_fee_detail.get("prepayBal")
         attrs["预付费"] = "是" if prepay_bal is not None else "否"
+        
+        # 添加电费详细信息（与实时电费传感器保持一致）
+        if prepay_bal is not None:
+            attrs["预付费余额"] = prepay_bal
+        
+        if "totalPq" in electricity_fee_detail and electricity_fee_detail["totalPq"] is not None:
+            attrs["总电量"] = electricity_fee_detail["totalPq"]
+        
+        if "sumMoney" in electricity_fee_detail and electricity_fee_detail["sumMoney"] is not None:
+            attrs["总金额"] = electricity_fee_detail["sumMoney"]
+        
+        if "estiAmt" in electricity_fee_detail and electricity_fee_detail["estiAmt"] is not None:
+            attrs["预估金额"] = electricity_fee_detail["estiAmt"]
+        
+        if "historyOwe" in electricity_fee_detail and electricity_fee_detail["historyOwe"] is not None:
+            attrs["历史欠费"] = electricity_fee_detail["historyOwe"]
+        
+        if "penalty" in electricity_fee_detail and electricity_fee_detail["penalty"] is not None:
+            attrs["违约金"] = electricity_fee_detail["penalty"]
+        
+        if "amtTime" in electricity_fee_detail and electricity_fee_detail["amtTime"]:
+            attrs["刷新时间"] = electricity_fee_detail["amtTime"]
         
         # 3. 使用缓存的历史数据
         # 获取用户配置的户号
