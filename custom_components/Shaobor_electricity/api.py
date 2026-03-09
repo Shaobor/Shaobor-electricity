@@ -1904,17 +1904,26 @@ class Shaobor95598ApiClient:
             
             esti_amt = self._to_float(found.get("estiAmt"))
             
-            # 提取完整的电费详情数据
-            fee_detail = {
-                "prepayBal": found.get("prepayBal"),  # 账户余额（预付费）
-                "totalPq": found.get("totalPq"),  # 总电量
-                "sumMoney": found.get("sumMoney"),  # 应缴金额（后付费）
-                "estiAmt": found.get("estiAmt"),  # 预估金额
-                "historyOwe": found.get("historyOwe"),  # 历史欠费
-                "penalty": found.get("penalty"),  # 滞纳金
-                "amtTime": found.get("amtTime"),  # 数据更新时间
-                "date": found.get("date"),  # 查询时间
-            }
+            # 提取完整的电费详情数据（只添加有值的字段）
+            fee_detail = {}
+            
+            if found.get("prepayBal") is not None:
+                fee_detail["prepayBal"] = found.get("prepayBal")
+            if found.get("totalPq") is not None:
+                fee_detail["totalPq"] = found.get("totalPq")
+            if found.get("sumMoney") is not None:
+                fee_detail["sumMoney"] = found.get("sumMoney")
+            if found.get("estiAmt") is not None:
+                fee_detail["estiAmt"] = found.get("estiAmt")
+            if found.get("historyOwe") is not None:
+                fee_detail["historyOwe"] = found.get("historyOwe")
+            if found.get("penalty") is not None:
+                fee_detail["penalty"] = found.get("penalty")
+            if found.get("amtTime"):
+                fee_detail["amtTime"] = found.get("amtTime")
+            if found.get("date"):
+                fee_detail["date"] = found.get("date")
+            
             _LOGGER.info("[c05/f01] 解析结果 - balance: %s, esti_amt: %s", balance, esti_amt)
         else:
             _LOGGER.warning("[c05/f01] 未找到有效的电费数据")
