@@ -701,11 +701,13 @@ class Shaobor95598ApiClient:
             try:
                 async with self._session.post(
                     f"{SLIDER_API_URL}/match",
-                    json={"image": canvas_src, "template": block_src},
+                    json={"image": canvas_src, "template": block_src, "token": self._encrypt_token},
                     headers={"Content-Type": "application/json"},
                     timeout=aiohttp.ClientTimeout(total=15),
                 ) as resp:
                     resp_text = await resp.text()
+                    if resp.status == 403:
+                        raise StateGridAuthError(f"滑块识别服务 Token 无效或已过期，请在集成配置中更新 Token（HTTP 403）")
                     if resp.status != 200:
                         raise StateGridAuthError(f"Slider API 返回 {resp.status}: {resp_text[:200]}")
                     try:
@@ -722,6 +724,9 @@ class Shaobor95598ApiClient:
                     await asyncio.sleep(1)
                 else:
                     raise StateGridAuthError(f"滑块接口请求失败（重试3次）: {err}") from err
+        
+        if slider_res is None:
+            raise StateGridAuthError("滑块接口无响应")
 
         slider_x = None
         if isinstance(slider_res, dict):
