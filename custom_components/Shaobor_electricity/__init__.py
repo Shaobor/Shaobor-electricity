@@ -9,6 +9,7 @@ from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.exceptions import ConfigEntryAuthFailed  # type: ignore
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed  # type: ignore
 from homeassistant.helpers.aiohttp_client import async_get_clientsession  # type: ignore
+from homeassistant.helpers.storage import Store  # type: ignore
 
 from .const import (
     DOMAIN,
@@ -33,12 +34,46 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[str] = ["sensor"]
 
+async def _async_migrate_stores(hass: HomeAssistant) -> None:
+    """迁移旧的 store 文件到新的子文件夹路径."""
+    
+    # 迁移 auth store: Shaobor_electricity_auth -> Shaobor_electricity/Shaobor_electricity_auth
+    old_auth_store = Store(hass, STORAGE_VERSION, "Shaobor_electricity_auth")
+    old_auth_data = await old_auth_store.async_load()
+    if old_auth_data:
+        _LOGGER.info("[迁移] 发现旧的 auth store，迁移到新路径...")
+        new_auth_store = AuthStore(hass, STORAGE_VERSION, STORAGE_KEY)
+        existing = await new_auth_store.async_load()
+        if not existing:
+            await new_auth_store.async_save(old_auth_data)
+            await old_auth_store.async_remove()
+            _LOGGER.info("[迁移] auth store 迁移完成")
+        else:
+            _LOGGER.info("[迁移] 新路径已有数据，跳过迁移")
+    
+    # 迁移 history store: Shaobor_electricity_history -> Shaobor_electricity/Shaobor_electricity_history
+    old_history_store = Store(hass, version=1, key="Shaobor_electricity_history")
+    old_history_data = await old_history_store.async_load()
+    if old_history_data:
+        _LOGGER.info("[迁移] 发现旧的 history store，迁移到新路径...")
+        new_history_store = Store(hass, version=1, key="Shaobor_electricity/Shaobor_electricity_history")
+        existing_history = await new_history_store.async_load()
+        if not existing_history:
+            await new_history_store.async_save(old_history_data)
+            await old_history_store.async_remove()
+            _LOGGER.info("[迁移] history store 迁移完成")
+        else:
+            _LOGGER.info("[迁移] 新路径已有历史数据，跳过迁移")
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Shaobor_95598 from a config entry."""
     session = async_get_clientsession(hass)
     token = entry.data.get(CONF_AUTH_TOKEN)
     if not token:
         raise ConfigEntryAuthFailed("缺少授权 Token，请重新配置集成")
+
+    # 自动迁移旧 store 文件到新路径（Shaobor_electricity/ 子文件夹）
+    await _async_migrate_stores(hass)
 
     # 从 Store 合并加载（全局变量方式），补充 config entry 可能缺失的字段
     store = AuthStore(hass, STORAGE_VERSION, STORAGE_KEY)
