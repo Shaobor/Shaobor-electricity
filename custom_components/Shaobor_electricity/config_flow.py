@@ -529,6 +529,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 pass
         
         if user_input is not None:
+            # 检查是否点击了「返回选择登录方式」
+            if user_input.get("back_to_login_method"):
+                return await self.async_step_login_method()
             username = user_input[CONF_USERNAME]
             password = user_input[CONF_PASSWORD]
             auto_relogin = user_input.get(CONF_AUTO_RELOGIN, False)
@@ -639,6 +642,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(CONF_USERNAME, default=default_username): str,
                     vol.Required(CONF_PASSWORD, default=default_password): str,
                     vol.Optional(CONF_AUTO_RELOGIN, default=default_auto_relogin): bool,
+                    vol.Optional("back_to_login_method", default=False): bool,
                 }
             ),
             errors=errors,
@@ -907,6 +911,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 description_placeholders={"qr_code_image": ""},
             )
         if user_input is not None:
+            if user_input.get("back_to_login_method"):
+                return await self.async_step_login_method()
             if not self._qr_serial:
                 errors["base"] = "unknown"
             else:
@@ -1075,7 +1081,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="qrcode",
-            data_schema=vol.Schema({}),
+            data_schema=vol.Schema({vol.Optional("back_to_login_method", default=False): bool}),
             description_placeholders={
                 "qr_code_image": self._qr_image_md
             },
@@ -1088,6 +1094,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle SMS login - phase 1 (Input Phone Number)."""
         errors: dict[str, str] = {}
         if user_input is not None:
+            if user_input.get("back_to_login_method"):
+                return await self.async_step_login_method()
             self._phone_number = user_input[CONF_PHONE_NUMBER]
             try:
                 _LOGGER.info("[配置流程] 短信登录步骤1: 发送验证码到 %s", self._phone_number)
@@ -1106,6 +1114,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_PHONE_NUMBER): str,
+                    vol.Optional("back_to_login_method", default=False): bool,
                 }
             ),
             errors=errors,

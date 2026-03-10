@@ -21,18 +21,23 @@
                 "data": {
                     "username": "用户名",
                     "password": "密码",
-                    "auto_relogin": "掉线自动重新登录"
+                    "auto_relogin": "掉线自动重新登录",
+                    "back_to_login_method": "↩ 返回，重新选择登录方式"
                 }
             },
             "qrcode": {
                 "title": "扫码登录",
-                "description": "请扫描二维码登录。\n\n{qr_code_image}\n\n扫描后点击提交。"
+                "description": "请扫描二维码登录。\n\n{qr_code_image}\n\n扫描后点击提交。",
+                "data": {
+                    "back_to_login_method": "↩ 返回，重新选择登录方式"
+                }
             },
             "sms": {
                 "title": "短信验证码登录",
                 "description": "请输入手机号以接收验证码。",
                 "data": {
-                    "phone_number": "手机号"
+                    "phone_number": "手机号",
+                    "back_to_login_method": "↩ 返回，重新选择登录方式"
                 }
             },
             "sms_verify": {
