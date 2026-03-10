@@ -196,12 +196,12 @@ class Shaobor95598PaymentRecordsSensor(Shaobor95598SensorBase):
 
     @property
     def extra_state_attributes(self) -> dict:
-        """完整缴费记录列表 (payList)."""
+        """完整缴费记录列表 (payList)，最多返回50条."""
         records = self.coordinator.data.get("payment_records") or {}
         if isinstance(records, dict):
             pay_list = records.get("payList") or []
             if isinstance(pay_list, list):
-                return {"payList": pay_list}
+                return {"payList": pay_list[:50]}
         return {}
 
 
@@ -605,7 +605,7 @@ class Shaobor95598DailyUsageSensor(Shaobor95598SensorBase):
                     all_days.append(day_data)
             
             if all_days:
-                attrs["每日数据"] = all_days
+                attrs["每日数据"] = all_days[-365:]  # 最多保留最近365天
                 
                 # 添加阶梯信息
                 if year_accumulated <= LADDER_LEVEL_1:
@@ -1106,8 +1106,8 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
             attrs["date"] = amt_time
         else:
             attrs["date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        attrs["daylist"] = sorted(day_list, key=lambda x: x["day"], reverse=True)
-        attrs["monthlist"] = month_list
+        attrs["daylist"] = sorted(day_list, key=lambda x: x["day"], reverse=True)[:365]  # 最多365天
+        attrs["monthlist"] = month_list[:36]  # 最多36个月
         attrs["yearlist"] = year_list
         
         # 5. 计费标准信息
