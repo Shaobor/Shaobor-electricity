@@ -695,21 +695,33 @@ class Shaobor95598ApiClient:
             )
 
         # Step 3: call slider recognition API (cv2.hrbzlyy.com/match) - 传入 image/template（与 flows.json 一致，原样传递 base64）
-        try:
-            async with self._session.post(
-                f"{SLIDER_API_URL}/match",
-                json={"image": canvas_src, "template": block_src},
-                headers={"Content-Type": "application/json"},
-            ) as resp:
-                resp_text = await resp.text()
-                if resp.status != 200:
-                    raise StateGridAuthError(f"Slider API 返回 {resp.status}: {resp_text[:200]}")
-                try:
-                    slider_res = json.loads(resp_text)
-                except json.JSONDecodeError:
-                    raise StateGridAuthError(f"Slider API 返回非 JSON: {resp_text[:200]}")
-        except aiohttp.ClientError as err:
-            raise StateGridAuthError(f"滑块接口请求失败: {err}") from err
+        slider_res = None
+        _slider_last_err = None
+        for _slider_attempt in range(3):
+            try:
+                async with self._session.post(
+                    f"{SLIDER_API_URL}/match",
+                    json={"image": canvas_src, "template": block_src},
+                    headers={"Content-Type": "application/json"},
+                    timeout=aiohttp.ClientTimeout(total=15),
+                ) as resp:
+                    resp_text = await resp.text()
+                    if resp.status != 200:
+                        raise StateGridAuthError(f"Slider API 返回 {resp.status}: {resp_text[:200]}")
+                    try:
+                        slider_res = json.loads(resp_text)
+                    except json.JSONDecodeError:
+                        raise StateGridAuthError(f"Slider API 返回非 JSON: {resp_text[:200]}")
+                break  # 成功则跳出重试循环
+            except StateGridAuthError:
+                raise
+            except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+                _slider_last_err = err
+                if _slider_attempt < 2:
+                    _LOGGER.warning("[滑块] 第%d次请求失败: %s，1秒后重试...", _slider_attempt + 1, err)
+                    await asyncio.sleep(1)
+                else:
+                    raise StateGridAuthError(f"滑块接口请求失败（重试3次）: {err}") from err
 
         slider_x = None
         if isinstance(slider_res, dict):
