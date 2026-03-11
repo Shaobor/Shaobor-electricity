@@ -1002,7 +1002,7 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
             if thisPPq > 0:
                 day_data["dayPPq"] = round(thisPPq, 2)
             if thisFPq > 0:
-                day_data["dayFPq"] = round(thisFPq, 2)
+                day_data["dayNPq"] = round(thisFPq, 2)
             if thisVPq > 0:
                 day_data["dayVPq"] = round(thisVPq, 2)
             
@@ -1017,7 +1017,7 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
                     "monthEleCost": 0,
                     "monthTPq": 0,
                     "monthPPq": 0,
-                    "monthFPq": 0,
+                    "monthNPq": 0,
                     "monthVPq": 0,
                 }
             month_map[month_key]["monthEleNum"] += day_kwh
@@ -1029,7 +1029,7 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
             if thisPPq > 0:
                 month_map[month_key]["monthPPq"] += thisPPq
             if thisFPq > 0:
-                month_map[month_key]["monthFPq"] += thisFPq
+                month_map[month_key]["monthNPq"] += thisFPq
             if thisVPq > 0:
                 month_map[month_key]["monthVPq"] += thisVPq
             
@@ -1042,7 +1042,7 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
                     "yearEleCost": 0,
                     "yearTPq": 0,
                     "yearPPq": 0,
-                    "yearFPq": 0,
+                    "yearNPq": 0,
                     "yearVPq": 0,
                 }
             year_map[year_key]["yearEleNum"] += day_kwh
@@ -1054,7 +1054,7 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
             if thisPPq > 0:
                 year_map[year_key]["yearPPq"] += thisPPq
             if thisFPq > 0:
-                year_map[year_key]["yearFPq"] += thisFPq
+                year_map[year_key]["yearNPq"] += thisFPq
             if thisVPq > 0:
                 year_map[year_key]["yearVPq"] += thisVPq
         
@@ -1073,8 +1073,8 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
                     month_data["monthTPq"] = round(m["monthTPq"], 2)
                 if m["monthPPq"] > 0:
                     month_data["monthPPq"] = round(m["monthPPq"], 2)
-                if m["monthFPq"] > 0:
-                    month_data["monthFPq"] = round(m["monthFPq"], 2)
+                if m["monthNPq"] > 0:
+                    month_data["monthNPq"] = round(m["monthNPq"], 2)
                 if m["monthVPq"] > 0:
                     month_data["monthVPq"] = round(m["monthVPq"], 2)
                 month_list.append(month_data)
@@ -1093,8 +1093,8 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
                     year_data["yearTPq"] = round(y["yearTPq"], 2)
                 if y["yearPPq"] > 0:
                     year_data["yearPPq"] = round(y["yearPPq"], 2)
-                if y["yearFPq"] > 0:
-                    year_data["yearFPq"] = round(y["yearFPq"], 2)
+                if y["yearNPq"] > 0:
+                    year_data["yearNPq"] = round(y["yearNPq"], 2)
                 if y["yearVPq"] > 0:
                     year_data["yearVPq"] = round(y["yearVPq"], 2)
                 year_list.append(year_data)
