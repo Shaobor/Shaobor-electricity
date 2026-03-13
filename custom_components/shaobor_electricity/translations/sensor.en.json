@@ -1,13 +1,13 @@
 {
     "entity": {
         "sensor": {
-            "Shaobor_electricity__balance": {
+            "shaobor_electricity__balance": {
                 "name": "Real-time electricity bill"
             },
-            "Shaobor_electricity__remaining_days": {
+            "shaobor_electricity__remaining_days": {
                 "name": "Estimated available"
             },
-            "Shaobor_electricity__last_update": {
+            "shaobor_electricity__last_update": {
                 "name": "Last update time"
             }
         }

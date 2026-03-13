@@ -1,4 +1,4 @@
-"""API Client for Shaobor_electricity."""
+"""API Client for shaobor_electricity."""
 import asyncio
 import hashlib
 import json
@@ -32,7 +32,7 @@ class StateGridTokenExpiredError(StateGridAuthError):
     """Exception raised when token has expired and needs refresh."""
     pass
 
-STORAGE_KEY = "Shaobor_electricity/Shaobor_electricity_auth"
+STORAGE_KEY = "shaobor_electricity/shaobor_electricity_auth"
 STORAGE_VERSION = 2  # v2: full session (bizrt.token + userInfo + access_token etc.)
 
 
@@ -2236,7 +2236,7 @@ class Shaobor95598ApiClient:
         try:
             # 创建历史数据 Store
             from homeassistant.helpers.storage import Store  # type: ignore
-            history_store = Store(self._hass, version=1, key="Shaobor_electricity/Shaobor_electricity_history")
+            history_store = Store(self._hass, version=1, key="shaobor_electricity/shaobor_electricity_history")
             
             # 读取现有数据
             existing_data = await history_store.async_load() or {}

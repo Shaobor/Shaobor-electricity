@@ -1,4 +1,4 @@
-"""Config flow for Shaobor_electricity."""
+"""Config flow for shaobor_electricity."""
 import logging
 from typing import Any
 

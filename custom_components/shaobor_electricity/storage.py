@@ -1,4 +1,4 @@
-"""Auth storage with migration support for Shaobor_electricity."""
+"""Auth storage with migration support for shaobor_electricity."""
 from __future__ import annotations
 
 from typing import Any

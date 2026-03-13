@@ -1,4 +1,4 @@
-"""The Shaobor_electricity integration."""
+"""The shaobor_electricity integration."""
 from __future__ import annotations
 
 import logging
@@ -37,8 +37,8 @@ PLATFORMS: list[str] = ["sensor"]
 async def _async_migrate_stores(hass: HomeAssistant) -> None:
     """迁移旧的 store 文件到新的子文件夹路径."""
     
-    # 迁移 auth store: Shaobor_electricity_auth -> Shaobor_electricity/Shaobor_electricity_auth
-    old_auth_store = Store(hass, STORAGE_VERSION, "Shaobor_electricity_auth")
+    # 迁移 auth store: shaobor_electricity_auth -> shaobor_electricity/shaobor_electricity_auth
+    old_auth_store = Store(hass, STORAGE_VERSION, "shaobor_electricity_auth")
     old_auth_data = await old_auth_store.async_load()
     if old_auth_data:
         _LOGGER.info("[迁移] 发现旧的 auth store，迁移到新路径...")
@@ -51,12 +51,12 @@ async def _async_migrate_stores(hass: HomeAssistant) -> None:
         else:
             _LOGGER.info("[迁移] 新路径已有数据，跳过迁移")
     
-    # 迁移 history store: Shaobor_electricity_history -> Shaobor_electricity/Shaobor_electricity_history
-    old_history_store = Store(hass, version=1, key="Shaobor_electricity_history")
+    # 迁移 history store: shaobor_electricity_history -> shaobor_electricity/shaobor_electricity_history
+    old_history_store = Store(hass, version=1, key="shaobor_electricity_history")
     old_history_data = await old_history_store.async_load()
     if old_history_data:
         _LOGGER.info("[迁移] 发现旧的 history store，迁移到新路径...")
-        new_history_store = Store(hass, version=1, key="Shaobor_electricity/Shaobor_electricity_history")
+        new_history_store = Store(hass, version=1, key="shaobor_electricity/shaobor_electricity_history")
         existing_history = await new_history_store.async_load()
         if not existing_history:
             await new_history_store.async_save(old_history_data)
@@ -72,7 +72,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not token:
         raise ConfigEntryAuthFailed("缺少授权 Token，请重新配置集成")
 
-    # 自动迁移旧 store 文件到新路径（Shaobor_electricity/ 子文件夹）
+    # 自动迁移旧 store 文件到新路径（shaobor_electricity/ 子文件夹）
     await _async_migrate_stores(hass)
 
     # 从 Store 合并加载（全局变量方式），补充 config entry 可能缺失的字段

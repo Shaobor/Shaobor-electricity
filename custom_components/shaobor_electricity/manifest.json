@@ -1,5 +1,5 @@
 {
-    "domain": "Shaobor_electricity",
+    "domain": "shaobor_electricity",
     "name": "Shaobor electricity",
     "codeowners": [
         "@shaobor"
@@ -13,5 +13,6 @@
     "documentation": "https://github.com/Shaobor/Shaobor-electricity",
     "iot_class": "cloud_polling",
     "issue_tracker": "https://github.com/Shaobor/Shaobor-electricity/issues",
-    "version": "1.2.6"
+    "version": "1.2.6",
+    "integration_type": "hub"
 }
