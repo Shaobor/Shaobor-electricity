@@ -1,7 +1,7 @@
-"""Constants for the Shaobor_electricity integration."""
+"""Constants for the shaobor_electricity integration."""
 from typing import Final
 
-DOMAIN: Final = "Shaobor_electricity"
+DOMAIN: Final = "shaobor_electricity"
 
 CONF_AUTH_TOKEN: Final = "auth_token"
 CONF_LOGIN_METHOD: Final = "login_method"
