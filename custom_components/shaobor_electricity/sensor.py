@@ -1,4 +1,4 @@
-"""Sensor platform for Shaobor_electricity."""
+"""Sensor platform for shaobor_electricity."""
 from __future__ import annotations
 
 import logging
@@ -286,7 +286,7 @@ class Shaobor95598DailyUsageSensor(Shaobor95598SensorBase):
         try:
             # 从 Store 加载历史数据
             from homeassistant.helpers.storage import Store  # type: ignore
-            history_store = Store(self.hass, version=1, key="Shaobor_electricity/Shaobor_electricity_history")
+            history_store = Store(self.hass, version=1, key="shaobor_electricity/shaobor_electricity_history")
             
             monthly_data = await history_store.async_load()
             
@@ -652,7 +652,7 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
         """异步加载历史数据（从 Store 读取）."""
         try:
             # 从 Store 读取历史数据
-            history_store = Store(self.hass, version=1, key="Shaobor_electricity/Shaobor_electricity_history")
+            history_store = Store(self.hass, version=1, key="shaobor_electricity/shaobor_electricity_history")
             
             stored_data = await history_store.async_load()
             if not stored_data:
