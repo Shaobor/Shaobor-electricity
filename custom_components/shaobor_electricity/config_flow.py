@@ -532,104 +532,107 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # 检查是否点击了「返回选择登录方式」
             if user_input.get("back_to_login_method"):
                 return await self.async_step_login_method()
-            username = user_input[CONF_USERNAME]
-            password = user_input[CONF_PASSWORD]
-            auto_relogin = user_input.get(CONF_AUTO_RELOGIN, False)
-            
-            try:
-                result = await self._api.login_with_password(username, password)
-                # 确保 result 是字典类型
-                if not isinstance(result, dict):
-                    _LOGGER.error("[配置流程] login_with_password 返回了非字典类型: %s (类型: %s)", result, type(result))
-                    errors["base"] = "login_error"
-                    errors["error"] = f"Unexpected result type: {type(result).__name__}"
-                elif result.get("success"):
-                    data = result.get("data", {})
-                    # 验证能否成功获取电费数据，成功才创建配置
-                    try:
-                        await self._api.get_electricity_data()
-                    except StateGridAuthError:
-                        errors["base"] = "login_verify_failed"
-                    except Exception:
-                        errors["base"] = "login_verify_failed"
-                    else:
-                        # 登录成功(bizrt.token已获取)，保存所有关键值到 Store(全局变量方式)
-                        await self._save_auth_store(
-                            token=self._auth_token,
-                            user_token=data.get("user_token", ""),
-                            user_id=data.get("user_id"),
-                            access_token=data.get("access_token"),
-                            refresh_token=data.get("refresh_token"),
-                            power_user_list=data.get("power_user_list"),
-                            login_account=data.get("login_account"),
-                            user_info=data.get("user_info"),
-                            username=username if auto_relogin else "",
-                            password=password if auto_relogin else "",
-                            auto_relogin=auto_relogin,
-                        )
-                        entry_data = {
-                            CONF_AUTH_TOKEN: self._auth_token,
-                            CONF_LOGIN_METHOD: self._login_method,
-                            CONF_USERNAME: username,
-                            CONF_PASSWORD: password if auto_relogin else "",  # 只有勾选自动登录才保存密码
-                            CONF_AUTO_RELOGIN: auto_relogin,
-                            CONF_USER_TOKEN: data.get("user_token"),
-                            CONF_USER_ID: data.get("user_id"),
-                            CONF_ACCESS_TOKEN: data.get("access_token"),
-                            CONF_REFRESH_TOKEN: data.get("refresh_token"),
-                            CONF_POWER_USER_LIST: data.get("power_user_list"),
-                            CONF_LOGIN_ACCOUNT: data.get("login_account"),
-                        }
-                        power_list = data.get("power_user_list") or []
-                        
-                        # 如果是 reauth 流程,使用原有的户号选择
-                        if self.context.get("source") == SOURCE_REAUTH:
-                            entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
-                            if entry:
-                                selected_index = entry.data.get(CONF_SELECTED_ACCOUNT_INDEX, 0)
-                                entry_data[CONF_SELECTED_ACCOUNT_INDEX] = selected_index
-                                
-                                # 保留原有的计费配置
-                                for key in [CONF_BILLING_MODE, CONF_LADDER_LEVEL_1, CONF_LADDER_LEVEL_2,
-                                           CONF_LADDER_PRICE_1, CONF_LADDER_PRICE_2, CONF_LADDER_PRICE_3,
-                                           CONF_PRICE_TIP, CONF_PRICE_PEAK, CONF_PRICE_FLAT, CONF_PRICE_VALLEY,
-                                           CONF_AVERAGE_PRICE, CONF_YEAR_LADDER_START]:
-                                    if key in entry.data:
-                                        entry_data[key] = entry.data[key]
-                                
-                                self.hass.config_entries.async_update_entry(entry, data=entry_data)
-                                
-                                # 重新加载集成以应用新的认证信息
-                                await self.hass.config_entries.async_reload(entry.entry_id)
-                                
-                                return self.async_abort(reason="reauth_successful")
-                        
-                        # 新配置流程:进入户号选择或计费模式配置
-                        if len(power_list) > 1:
+            username = user_input.get(CONF_USERNAME)
+            password = user_input.get(CONF_PASSWORD)
+            if not username or not password:
+                if not username: errors[CONF_USERNAME] = "required"
+                if not password: errors[CONF_PASSWORD] = "required"
+            else:
+                auto_relogin = user_input.get(CONF_AUTO_RELOGIN, False)
+                try:
+                    result = await self._api.login_with_password(username, password)
+                    # 确保 result 是字典类型
+                    if not isinstance(result, dict):
+                        _LOGGER.error("[配置流程] login_with_password 返回了非字典类型: %s (类型: %s)", result, type(result))
+                        errors["base"] = "login_error"
+                        errors["error"] = f"Unexpected result type: {type(result).__name__}"
+                    elif result.get("success"):
+                        data = result.get("data", {})
+                        # 验证能否成功获取电费数据，成功才创建配置
+                        try:
+                            await self._api.get_electricity_data()
+                        except StateGridAuthError:
+                            errors["base"] = "login_verify_failed"
+                        except Exception:
+                            errors["base"] = "login_verify_failed"
+                        else:
+                            # 登录成功(bizrt.token已获取)，保存所有关键值到 Store(全局变量方式)
+                            await self._save_auth_store(
+                                token=self._auth_token,
+                                user_token=data.get("user_token", ""),
+                                user_id=data.get("user_id"),
+                                access_token=data.get("access_token"),
+                                refresh_token=data.get("refresh_token"),
+                                power_user_list=data.get("power_user_list"),
+                                login_account=data.get("login_account"),
+                                user_info=data.get("user_info"),
+                                username=username if auto_relogin else "",
+                                password=password if auto_relogin else "",
+                                auto_relogin=auto_relogin,
+                            )
+                            entry_data = {
+                                CONF_AUTH_TOKEN: self._auth_token,
+                                CONF_LOGIN_METHOD: self._login_method,
+                                CONF_USERNAME: username,
+                                CONF_PASSWORD: password if auto_relogin else "",  # 只有勾选自动登录才保存密码
+                                CONF_AUTO_RELOGIN: auto_relogin,
+                                CONF_USER_TOKEN: data.get("user_token"),
+                                CONF_USER_ID: data.get("user_id"),
+                                CONF_ACCESS_TOKEN: data.get("access_token"),
+                                CONF_REFRESH_TOKEN: data.get("refresh_token"),
+                                CONF_POWER_USER_LIST: data.get("power_user_list"),
+                                CONF_LOGIN_ACCOUNT: data.get("login_account"),
+                            }
+                            power_list = data.get("power_user_list") or []
+                            
+                            # 如果是 reauth 流程,使用原有的户号选择
+                            if self.context.get("source") == SOURCE_REAUTH:
+                                entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+                                if entry:
+                                    selected_index = entry.data.get(CONF_SELECTED_ACCOUNT_INDEX, 0)
+                                    entry_data[CONF_SELECTED_ACCOUNT_INDEX] = selected_index
+                                    
+                                    # 保留原有的计费配置
+                                    for key in [CONF_BILLING_MODE, CONF_LADDER_LEVEL_1, CONF_LADDER_LEVEL_2,
+                                               CONF_LADDER_PRICE_1, CONF_LADDER_PRICE_2, CONF_LADDER_PRICE_3,
+                                               CONF_PRICE_TIP, CONF_PRICE_PEAK, CONF_PRICE_FLAT, CONF_PRICE_VALLEY,
+                                               CONF_AVERAGE_PRICE, CONF_YEAR_LADDER_START]:
+                                        if key in entry.data:
+                                            entry_data[key] = entry.data[key]
+                                    
+                                    self.hass.config_entries.async_update_entry(entry, data=entry_data)
+                                    
+                                    # 重新加载集成以应用新的认证信息
+                                    await self.hass.config_entries.async_reload(entry.entry_id)
+                                    
+                                    return self.async_abort(reason="reauth_successful")
+                            
+                            # 新配置流程:进入户号选择或计费模式配置
+                            if len(power_list) > 1:
+                                self._pending_entry_data = {**entry_data, "_title": f"Shaobor_95598 ({username})"}
+                                return await self.async_step_select_account()
+                            entry_data[CONF_SELECTED_ACCOUNT_INDEX] = 0
                             self._pending_entry_data = {**entry_data, "_title": f"Shaobor_95598 ({username})"}
-                            return await self.async_step_select_account()
-                        entry_data[CONF_SELECTED_ACCOUNT_INDEX] = 0
-                        self._pending_entry_data = {**entry_data, "_title": f"Shaobor_95598 ({username})"}
-                        return await self.async_step_billing_mode()
-                else:
-                    if "captcha" in str(result.get("message", "")).lower():
-                        errors["base"] = "password_not_supported"
+                            return await self.async_step_billing_mode()
                     else:
-                        errors["base"] = "invalid_auth"
-                        errors["reason"] = result.get("message", "unknown")
-            except Exception as err:
-                # 记录完整的异常信息到日志
-                _LOGGER.error("[配置流程] 登录异常: %s", err, exc_info=True)
-                err_str = str(err)
-                if "Slider API" in err_str or "x coordinate" in err_str:
-                    errors["base"] = "slider_failed"
-                elif "Captcha missing" in err_str or "canvasSrc" in err_str:
-                    errors["base"] = "captcha_parse_failed"
-                elif "c44/f06" in err_str or "c44/f05" in err_str:
-                    errors["base"] = "login_verify_failed"
-                else:
-                    errors["base"] = "login_error"
-                    errors["error"] = err_str
+                        if "captcha" in str(result.get("message", "")).lower():
+                            errors["base"] = "password_not_supported"
+                        else:
+                            errors["base"] = "invalid_auth"
+                            errors["reason"] = result.get("message", "unknown")
+                except Exception as err:
+                    # 记录完整的异常信息到日志
+                    _LOGGER.error("[配置流程] 登录异常: %s", err, exc_info=True)
+                    err_str = str(err)
+                    if "Slider API" in err_str or "x coordinate" in err_str:
+                        errors["base"] = "slider_failed"
+                    elif "Captcha missing" in err_str or "canvasSrc" in err_str:
+                        errors["base"] = "captcha_parse_failed"
+                    elif "c44/f06" in err_str or "c44/f05" in err_str:
+                        errors["base"] = "login_verify_failed"
+                    else:
+                        errors["base"] = "login_error"
+                        errors["error"] = err_str
 
         placeholders = {}
         if errors.get("error"):
@@ -639,8 +642,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="password",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_USERNAME, default=default_username): str,
-                    vol.Required(CONF_PASSWORD, default=default_password): str,
+                    vol.Optional(CONF_USERNAME, default=default_username): str,
+                    vol.Optional(CONF_PASSWORD, default=default_password): str,
                     vol.Optional(CONF_AUTO_RELOGIN, default=default_auto_relogin): bool,
                     vol.Optional("back_to_login_method", default=False): bool,
                 }
@@ -1096,24 +1099,27 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             if user_input.get("back_to_login_method"):
                 return await self.async_step_login_method()
-            self._phone_number = user_input[CONF_PHONE_NUMBER]
-            try:
-                _LOGGER.info("[配置流程] 短信登录步骤1: 发送验证码到 %s", self._phone_number)
-                await self._api.login_with_sms_step1(self._phone_number)
-                _LOGGER.info("[配置流程] 短信登录步骤1: 验证码发送成功")
-                return await self.async_step_sms_verify()
-            except StateGridAuthError as err:
-                _LOGGER.error("[配置流程] 短信登录失败: %s", err)
-                errors["base"] = "login_error"
-            except Exception as err:
-                _LOGGER.error("[配置流程] 短信登录异常: %s", err, exc_info=True)
-                errors["base"] = "unknown"
+            self._phone_number = user_input.get(CONF_PHONE_NUMBER)
+            if not self._phone_number:
+                errors[CONF_PHONE_NUMBER] = "required"
+            else:
+                try:
+                    _LOGGER.info("[配置流程] 短信登录步骤1: 发送验证码到 %s", self._phone_number)
+                    await self._api.login_with_sms_step1(self._phone_number)
+                    _LOGGER.info("[配置流程] 短信登录步骤1: 验证码发送成功")
+                    return await self.async_step_sms_verify()
+                except StateGridAuthError as err:
+                    _LOGGER.error("[配置流程] 短信登录失败: %s", err)
+                    errors["base"] = "login_error"
+                except Exception as err:
+                    _LOGGER.error("[配置流程] 短信登录异常: %s", err, exc_info=True)
+                    errors["base"] = "unknown"
 
         return self.async_show_form(
             step_id="sms",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_PHONE_NUMBER): str,
+                    vol.Optional(CONF_PHONE_NUMBER): str,
                     vol.Optional("back_to_login_method", default=False): bool,
                 }
             ),
@@ -1126,89 +1132,95 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle SMS login - phase 2 (Input Code)."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            code = user_input[CONF_SMS_CODE]
-            try:
-                result = await self._api.login_with_sms_step2(self._phone_number, code)
-                if result and result.get("success"):
-                    tokens = result.get("tokens", {})
-                    power_user_list = None
-                    try:
-                        power_user_list = await self._api.fetch_power_user_list()
-                    except Exception:
-                        errors["base"] = "power_user_list_failed"
-                    else:
+            if user_input.get("back_to_sms"):
+                return await self.async_step_sms()
+            code = user_input.get(CONF_SMS_CODE)
+            if not code:
+                errors[CONF_SMS_CODE] = "required"
+            else:
+                try:
+                    result = await self._api.login_with_sms_step2(self._phone_number, code)
+                    if result and result.get("success"):
+                        tokens = result.get("tokens", {})
+                        power_user_list = None
                         try:
-                            await self._api.get_electricity_data()
-                        except StateGridAuthError:
-                            errors["base"] = "login_verify_failed"
+                            power_user_list = await self._api.fetch_power_user_list()
                         except Exception:
-                            errors["base"] = "login_verify_failed"
+                            errors["base"] = "power_user_list_failed"
                         else:
-                            # 登录成功(bizrt.token已获取)，保存所有关键值到 Store(全局变量方式)
-                            await self._save_auth_store(
-                                token=self._auth_token,
-                                user_token=tokens.get("user_token", ""),
-                                user_id=self._api.user_id,
-                                access_token=tokens.get("access_token"),
-                                refresh_token=tokens.get("refresh_token"),
-                                power_user_list=power_user_list,
-                                login_account=getattr(self._api, "_login_account", None),
-                                user_info=getattr(self._api, "_user_info", None),
-                            )
-                            entry_data = {
-                                CONF_AUTH_TOKEN: self._auth_token,
-                                CONF_LOGIN_METHOD: self._login_method,
-                                CONF_USER_TOKEN: tokens.get("user_token"),
-                                CONF_USER_ID: self._api.user_id,
-                                CONF_ACCESS_TOKEN: tokens.get("access_token"),
-                                CONF_REFRESH_TOKEN: tokens.get("refresh_token"),
-                                CONF_POWER_USER_LIST: power_user_list,
-                                CONF_LOGIN_ACCOUNT: getattr(self._api, "_login_account", None),
-                            }
-                            
-                            # 如果是 reauth 流程,使用原有的户号选择
-                            if self.context.get("source") == SOURCE_REAUTH:
-                                entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
-                                if entry:
-                                    selected_index = entry.data.get(CONF_SELECTED_ACCOUNT_INDEX, 0)
-                                    entry_data[CONF_SELECTED_ACCOUNT_INDEX] = selected_index
-                                    
-                                    # 保留原有的计费配置
-                                    for key in [CONF_BILLING_MODE, CONF_LADDER_LEVEL_1, CONF_LADDER_LEVEL_2,
-                                               CONF_LADDER_PRICE_1, CONF_LADDER_PRICE_2, CONF_LADDER_PRICE_3,
-                                               CONF_PRICE_TIP, CONF_PRICE_PEAK, CONF_PRICE_FLAT, CONF_PRICE_VALLEY,
-                                               CONF_AVERAGE_PRICE, CONF_YEAR_LADDER_START]:
-                                        if key in entry.data:
-                                            entry_data[key] = entry.data[key]
-                                    
-                                    self.hass.config_entries.async_update_entry(entry, data=entry_data)
-                                    
-                                    # 重新加载集成以应用新的认证信息
-                                    await self.hass.config_entries.async_reload(entry.entry_id)
-                                    
-                                    return self.async_abort(reason="reauth_successful")
-                            
-                            # 新配置流程:进入户号选择或计费模式配置
-                            if len(power_user_list or []) > 1:
+                            try:
+                                await self._api.get_electricity_data()
+                            except StateGridAuthError:
+                                errors["base"] = "login_verify_failed"
+                            except Exception:
+                                errors["base"] = "login_verify_failed"
+                            else:
+                                # 登录成功(bizrt.token已获取)，保存所有关键值到 Store(全局变量方式)
+                                await self._save_auth_store(
+                                    token=self._auth_token,
+                                    user_token=tokens.get("user_token", ""),
+                                    user_id=self._api.user_id,
+                                    access_token=tokens.get("access_token"),
+                                    refresh_token=tokens.get("refresh_token"),
+                                    power_user_list=power_user_list,
+                                    login_account=getattr(self._api, "_login_account", None),
+                                    user_info=getattr(self._api, "_user_info", None),
+                                )
+                                entry_data = {
+                                    CONF_AUTH_TOKEN: self._auth_token,
+                                    CONF_LOGIN_METHOD: self._login_method,
+                                    CONF_USER_TOKEN: tokens.get("user_token"),
+                                    CONF_USER_ID: self._api.user_id,
+                                    CONF_ACCESS_TOKEN: tokens.get("access_token"),
+                                    CONF_REFRESH_TOKEN: tokens.get("refresh_token"),
+                                    CONF_POWER_USER_LIST: power_user_list,
+                                    CONF_LOGIN_ACCOUNT: getattr(self._api, "_login_account", None),
+                                }
+                                
+                                # 如果是 reauth 流程,使用原有的户号选择
+                                if self.context.get("source") == SOURCE_REAUTH:
+                                    entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+                                    if entry:
+                                        selected_index = entry.data.get(CONF_SELECTED_ACCOUNT_INDEX, 0)
+                                        entry_data[CONF_SELECTED_ACCOUNT_INDEX] = selected_index
+                                        
+                                        # 保留原有的计费配置
+                                        for key in [CONF_BILLING_MODE, CONF_LADDER_LEVEL_1, CONF_LADDER_LEVEL_2,
+                                                   CONF_LADDER_PRICE_1, CONF_LADDER_PRICE_2, CONF_LADDER_PRICE_3,
+                                                   CONF_PRICE_TIP, CONF_PRICE_PEAK, CONF_PRICE_FLAT, CONF_PRICE_VALLEY,
+                                                   CONF_AVERAGE_PRICE, CONF_YEAR_LADDER_START]:
+                                            if key in entry.data:
+                                                entry_data[key] = entry.data[key]
+                                        
+                                        self.hass.config_entries.async_update_entry(entry, data=entry_data)
+                                        
+                                        # 重新加载集成以应用新的认证信息
+                                        await self.hass.config_entries.async_reload(entry.entry_id)
+                                        
+                                        return self.async_abort(reason="reauth_successful")
+                                
+                                # 新配置流程:进入户号选择或计费模式配置
+                                if len(power_user_list or []) > 1:
+                                    self._pending_entry_data = {**entry_data, "_title": f"Shaobor_95598 ({self._phone_number})"}
+                                    return await self.async_step_select_account()
+                                entry_data[CONF_SELECTED_ACCOUNT_INDEX] = 0
                                 self._pending_entry_data = {**entry_data, "_title": f"Shaobor_95598 ({self._phone_number})"}
-                                return await self.async_step_select_account()
-                            entry_data[CONF_SELECTED_ACCOUNT_INDEX] = 0
-                            self._pending_entry_data = {**entry_data, "_title": f"Shaobor_95598 ({self._phone_number})"}
-                            return await self.async_step_billing_mode()
-            except StateGridAuthError as err:
-                _LOGGER.error("[配置流程] 短信验证失败: %s", err)
-                errors["base"] = "invalid_code"
-            except Exception as err:
-                _LOGGER.error("[配置流程] 短信验证异常: %s", err, exc_info=True)
-                errors["base"] = "unknown"
-            if not errors:
-                errors["base"] = "invalid_code"
+                                return await self.async_step_billing_mode()
+                except StateGridAuthError as err:
+                    _LOGGER.error("[配置流程] 短信验证失败: %s", err)
+                    errors["base"] = "invalid_code"
+                except Exception as err:
+                    _LOGGER.error("[配置流程] 短信验证异常: %s", err, exc_info=True)
+                    errors["base"] = "unknown"
+                if not errors:
+                    errors["base"] = "invalid_code"
 
         return self.async_show_form(
             step_id="sms_verify",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_SMS_CODE): str,
+                    vol.Optional(CONF_SMS_CODE): str,
+                    vol.Optional("back_to_sms", default=False): bool,
                 }
             ),
             errors=errors,
