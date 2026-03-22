@@ -293,8 +293,13 @@ class Shaobor95598ApiClient:
     def user_token(self) -> str | None:
         return self._user_token
 
-    async def initialize(self) -> None:
+    async def initialize(self, force_new_uuid: bool = False) -> None:
         """Step 1: Initialize the encryption session."""
+        if force_new_uuid:
+            import uuid
+            self._uuid = str(uuid.uuid4()).replace("-", "")
+            _LOGGER.info("[接口初始化] 强制重置 UUID: %s", self._uuid)
+            
         url = f"{ENCRYPT_API_URL}/initialize"
         payload = {"token": self._encrypt_token}  # 使用加密服务的固定 token
         try:
@@ -306,7 +311,7 @@ class Shaobor95598ApiClient:
             inner_data = data.get("data", {})
                 
             # The actual payload says code: 1 is success（支持整数 1 或字符串 "1"）
-            if not success_flag or inner_data.get("code") not in (1, "1"):
+            if not success_flag or inner_data.get("code") not in (1, "1", 0, "0", "00"):
                 msg = inner_data.get("message", "Unknown error")
                 raise StateGridAuthError(f"Init failed: {msg}")
                 
@@ -315,6 +320,7 @@ class Shaobor95598ApiClient:
                 result = {}
             self._key_code = result.get("keyCode") or ""
             self._public_key = result.get("publicKey") or ""
+            _LOGGER.info("[接口初始化] 初始化成功: keyCode=%s", self._key_code[:8] + "...")
         except aiohttp.ClientError as err:
             raise StateGridAuthError(f"Communication error during init: {err}")
 
@@ -352,7 +358,11 @@ class Shaobor95598ApiClient:
                         err_msg = data.get("message") or data.get("msg")
                     if not err_msg:
                         err_msg = f"code={decrypt_code}"
-                    raise StateGridAuthError(f"Decrypt failed: {err_msg}")
+                    
+                    # 如果 code 是 11401 或类似业务错误码，或者消息包含 "验证错误"，则标记为业务异常而不是解密失败
+                    if "验证错误" in str(err_msg) or "验证码" in str(err_msg):
+                        raise StateGridAuthError(f"业务异常: {err_msg} (可能是验证码识别错误或会话已过期)")
+                    raise StateGridAuthError(f"业务异常: {err_msg}")
                 
                 # 检查是否成功
                 is_ok = (
@@ -429,39 +439,60 @@ class Shaobor95598ApiClient:
         )
 
         # Step 2: call 95598 c44/f05 to get captcha
-        headers_f05 = self._get_sgcc_headers(str(encrypt_lf05.get("timestamp", "")))
-        payload_f05 = {
-            "data": encrypt_lf05.get("data"),
-            "skey": encrypt_lf05.get("skey"),
-            "client_id": encrypt_lf05.get("client_id"),
-            "timestamp": encrypt_lf05.get("timestamp"),
-        }
-        async with self._session.post(
-            "https://www.95598.cn/api/osg-web0004/open/c44/f05",
-            json=payload_f05,
-            headers=headers_f05,
-        ) as resp:
-            resp.raise_for_status()
-            text_f05 = await resp.text()
+        for attempt in range(2):
+            headers_f05 = self._get_sgcc_headers(str(encrypt_lf05.get("timestamp", "")))
+            payload_f05 = {
+                "data": encrypt_lf05.get("data"),
+                "skey": encrypt_lf05.get("skey"),
+                "client_id": encrypt_lf05.get("client_id"),
+                "timestamp": encrypt_lf05.get("timestamp"),
+            }
+            async with self._session.post(
+                "https://www.95598.cn/api/osg-web0004/open/c44/f05",
+                json=payload_f05,
+                headers=headers_f05,
+            ) as resp:
+                resp.raise_for_status()
+                text_f05 = await resp.text()
 
-        raw_f05 = self._parse_sgcc_response(text_f05)
-        _LOGGER.debug("[登录] c44/f05 原始响应(可能包含非加密错误): %s", raw_f05)
-        
-        # 检查是否是未加密的业务错误（如频繁操作等）
-        # 只有当 code 存在且不是成功码时才报错
-        if isinstance(raw_f05, dict):
-            code = raw_f05.get("code")
-            # 如果 code 存在且不是成功码（1, 0, 00, "1", "0", "00"），则报错
-            if code is not None and str(code) not in ("1", "0", "00", "None"):
-                msg = raw_f05.get("message") or raw_f05.get("msg") or f"code={code}"
-                raise StateGridAuthError(f"c44/f05 业务异常: {msg}")
+            raw_f05 = self._parse_sgcc_response(text_f05)
+            _LOGGER.debug("[登录] c44/f05 第%d次响应: %s", attempt + 1, raw_f05)
+            
+            # 检查是否有业务错误码且需要重试
+            if isinstance(raw_f05, dict):
+                code = raw_f05.get("code")
+                if code == "GB010" and attempt == 0:
+                    _LOGGER.warning("[登录] 检测到 GB010 错误，可能是加密会话失效，尝试强制重置 UUID 并初始化...")
+                    self._key_code = "" # 清除旧的 keyCode 触发重新初始化
+                    await self.initialize(force_new_uuid=True)
+                    
+                    # 重新加密 lf05
+                    encrypt_lf05 = await self._secure_post_encrypt(
+                        f"{ENCRYPT_API_URL}/encrypt/lf05",
+                        {
+                            "token": self._encrypt_token,
+                            "keyCode": self._key_code,
+                            "uuid": self._uuid,
+                            "publicKey": self._public_key,
+                            "account": username,
+                            "password": password_md5,
+                        },
+                    )
+                    continue # 进行第二次尝试
+                
+                # 如果不是 GB010 或者已经是第二次尝试，则按常规处理业务错误
+                self._check_and_raise_business_error(raw_f05, "c44/f05")
 
-        encrypted_f05 = self._get_encrypted_data(raw_f05) or (
-            text_f05.strip() if self._is_likely_encrypted(text_f05) else ""
-        )
-        if not encrypted_f05:
-            # 如果不是加密字符串也不是 JSON 错误码，则抛出详细日志
-            raise StateGridAuthError(f"c44/f05 响应无法解析，结构: {type(raw_f05).__name__}")
+            encrypted_f05 = self._get_encrypted_data(raw_f05) or (
+                text_f05.strip() if self._is_likely_encrypted(text_f05) else ""
+            )
+            if encrypted_f05:
+                # 提取到加密数据，不再重试
+                break
+            
+            if attempt == 1:
+                # 如果第二次尝试仍然没有加密数据，则抛出异常
+                raise StateGridAuthError(f"c44/f05 响应无法解析，结构: {type(raw_f05).__name__}")
 
         decrypted_captcha = await self._decrypt_to_data(encrypted_f05)
         if not isinstance(decrypted_captcha, dict):
@@ -1190,84 +1221,116 @@ class Shaobor95598ApiClient:
 
     async def get_login_qrcode(self) -> dict[str, Any]:
         """Fetch login QR code and serial number."""
+        if not self._key_code:
+            await self.initialize()
+            
         url = "https://www.95598.cn/api/osg-open-uc0001/member/c8/f24"
-        timestamp = int(time.time() * 1000)
         serial_no = "".join([str(random.randint(0, 9)) for _ in range(28)])
         
-        headers = self._get_sgcc_headers(str(timestamp))
-        payload = {
-            "_access_token": "",
-            "_t": "",
-            "_data": {
-                "uscInfo": {
-                    "devciceIp": "",
-                    "tenant": "state_grid",
-                    "member": "0902",
-                    "devciceId": ""
+        for attempt in range(2):
+            timestamp = int(time.time() * 1000)
+            headers = self._get_sgcc_headers(str(timestamp))
+            payload = {
+                "_access_token": "",
+                "_t": "",
+                "_data": {
+                    "uscInfo": {
+                        "devciceIp": "",
+                        "tenant": "state_grid",
+                        "member": "0902",
+                        "devciceId": ""
+                    },
+                    "quInfo": {
+                        "optType": "01",
+                        "serialNo": serial_no
+                    }
                 },
-                "quInfo": {
-                    "optType": "01",
-                    "serialNo": serial_no
-                }
-            },
-            "timestamp": timestamp
-        }
-        async with self._session.post(url, json=payload, headers=headers) as resp:
-            resp.raise_for_status()
-            text = await resp.text()
+                "timestamp": timestamp
+            }
+            async with self._session.post(url, json=payload, headers=headers) as resp:
+                resp.raise_for_status()
+                text = await resp.text()
+                
             data = self._parse_sgcc_response(text)
-            # The structure might be different if it was raw data
-            inner_data = data.get("data", {}) if isinstance(data, dict) else {}
-            srvrt = inner_data.get("srvrt", {})
-            if str(data.get("code")) != "1" or srvrt.get("resultCode") != "0000":
-                msg = srvrt.get("resultMessage") or data.get("message") or "Unknown error"
-                raise StateGridAuthError(f"Failed to get QR code: {msg}")
+            _LOGGER.debug("[扫码登录] c8/f24 第%d次响应: %s", attempt + 1, data)
             
-            bizrt = data.get("data", {}).get("bizrt", {})
+            if isinstance(data, dict):
+                code = data.get("code")
+                if code == "GB010" and attempt == 0:
+                    _LOGGER.warning("[扫码登录] 获取二维码时检测到 GB010，重新初始化会话...")
+                    self._key_code = ""
+                    await self.initialize(force_new_uuid=True)
+                    continue
+                
+                # Check business code
+                srvrt = (data.get("data") or {}).get("srvrt") if isinstance(data.get("data"), dict) else {}
+                if code is not None and str(code) not in ("1", "0", "00", "None"):
+                    msg = srvrt.get("resultMessage") or data.get("message") or f"code={code}"
+                    raise StateGridAuthError(f"Failed to get QR code: {msg}")
+            
+            bizrt = data.get("data", {}).get("bizrt", {}) if isinstance(data.get("data"), dict) else {}
             qr_code = bizrt.get("qrCode")
             qr_serial = bizrt.get("qrCodeSerial")
             
-            if not qr_code:
+            if qr_code:
+                return {
+                    "qr_code": qr_code,
+                    "serial_no": qr_serial
+                }
+            
+            if attempt == 1:
                 raise StateGridAuthError("Server returned empty QR code")
-                
-            return {
-                "qr_code": qr_code,
-                "serial_no": qr_serial
-            }
+        
+        return {} # Should not reach here
 
     async def check_qrcode_status(self, serial_no: str) -> dict[str, Any]:
         """Check if QR code has been scanned via c50f02."""
         if not self._key_code:
             await self.initialize()
-        encrypt_url = f"{ENCRYPT_API_URL}/encrypt/c50f02"
-        payload = {
-            "token": self._encrypt_token,
-            "uuid": self._uuid,
-            "publicKey": self._public_key,
-            "qrCodeSerial": serial_no
-        }
-        
-        try:
-            encrypt_res = await self._secure_post_encrypt(encrypt_url, payload)
-            
-            # Now call 95598.cn status check
-            url = "https://www.95598.cn/api/osg-web0004/open/c50/f02"
-            headers = self._get_sgcc_headers(str(encrypt_res["timestamp"]))
-            
-            payload_sgcc = {
-                "data": encrypt_res["data"],
-                "skey": encrypt_res["skey"],
-                "timestamp": encrypt_res["timestamp"]
+
+        for attempt in range(2):
+            encrypt_url = f"{ENCRYPT_API_URL}/encrypt/c50f02"
+            payload = {
+                "token": self._encrypt_token,
+                "uuid": self._uuid,
+                "publicKey": self._public_key,
+                "qrCodeSerial": serial_no
             }
             
-            async with self._session.post(url, json=payload_sgcc, headers=headers) as resp:
-                resp.raise_for_status()
-                text = await resp.text()
+            try:
+                encrypt_res = await self._secure_post_encrypt(encrypt_url, payload)
+                
+                # Now call 95598.cn status check
+                url = "https://www.95598.cn/api/osg-web0004/open/c50/f02"
+                headers = self._get_sgcc_headers(str(encrypt_res["timestamp"]))
+                
+                payload_sgcc = {
+                    "data": encrypt_res["data"],
+                    "skey": encrypt_res["skey"],
+                    "timestamp": encrypt_res["timestamp"]
+                }
+                
+                async with self._session.post(url, json=payload_sgcc, headers=headers) as resp:
+                    resp.raise_for_status()
+                    text = await resp.text()
+                    
                 res_data_raw = self._parse_sgcc_response(text)
+                _LOGGER.debug("[扫码登录] c50/f02 第%d次响应: %s", attempt + 1, res_data_raw)
+                
+                if isinstance(res_data_raw, dict):
+                    code = res_data_raw.get("code")
+                    if code == "GB010" and attempt == 0:
+                        _LOGGER.warning("[扫码登录] 检查扫码状态时检测到 GB010，重新初始化会话...")
+                        self._key_code = ""
+                        await self.initialize(force_new_uuid=True)
+                        continue
+                
                 res_data_to_decrypt = self._get_encrypted_data(res_data_raw)
                 if not res_data_to_decrypt:
                     if isinstance(res_data_raw, dict) and str(res_data_raw.get("code")) not in ["None", "1", "0000", "0"]:
                         return {"status": "WAITING", "message": res_data_raw.get("message")}
+                    return {"status": "WAITING"}
+                
                 decrypted = await self._decrypt_to_data(res_data_to_decrypt or text)
 
                 # Node-RED flow expects decrypted payload.data.data to be token string containing '99tt'
@@ -1289,8 +1352,29 @@ class Shaobor95598ApiClient:
                     "status": "WAITING",
                     "message": "Waiting for scan"
                 }
-        except Exception as err:
-            return {"status": "ERROR", "message": str(err)}
+            except Exception as err:
+                if "验证失败" in str(err) or "GB010" in str(err):
+                    if attempt == 0:
+                         _LOGGER.warning("[扫码登录] 检查扫码状态时异常 (%s)，尝试重新初始化...", err)
+                         self._key_code = ""
+                         await self.initialize(force_new_uuid=True)
+                         continue
+                return {"status": "ERROR", "message": str(err)}
+        
+        return {"status": "WAITING"}
+
+    def _check_and_raise_business_error(self, response: dict, context: str = "") -> None:
+        """检查响应中是否存在业务错误并抛出异常."""
+        if not isinstance(response, dict):
+            return
+            
+        code = response.get("code")
+        # 如果 code 存在且不是成功码（1, 0, 00, "1", "0", "00"），则报错
+        # 注意：None（由 .get 返回）不应触发报错
+        if code is not None and str(code) not in ("1", "0", "00", "None"):
+            msg = response.get("message") or response.get("msg") or f"code={code}"
+            prefix = f"{context} " if context else ""
+            raise StateGridAuthError(f"{prefix}业务异常: {msg}")
 
     def _get_sgcc_headers(self, timestamp: str) -> dict[str, str]:
         """Generate headers required for www.95598.cn calls."""
@@ -1441,25 +1525,57 @@ class Shaobor95598ApiClient:
         )
         
         # Step 2: 调用 95598 API 发送短信 (osg-open-uc0001/member/c8/f04 端点)
-        headers = self._get_sgcc_headers(str(encrypt_data.get("timestamp", "")))
-        payload = {
-            "data": encrypt_data.get("data"),
-            "skey": encrypt_data.get("skey"),
-            "timestamp": encrypt_data.get("timestamp"),
-        }
-        
-        async with self._session.post(
-            "https://www.95598.cn/api/osg-open-uc0001/member/c8/f04",
-            json=payload,
-            headers=headers,
-        ) as resp:
-            resp.raise_for_status()
-            text = await resp.text()
-        
-        raw_response = self._parse_sgcc_response(text)
-        encrypted_response = self._get_encrypted_data(raw_response) or (
-            text.strip() if self._is_likely_encrypted(text) else ""
-        )
+        for attempt in range(2):
+            headers = self._get_sgcc_headers(str(encrypt_data.get("timestamp", "")))
+            payload = {
+                "data": encrypt_data.get("data"),
+                "skey": encrypt_data.get("skey"),
+                "timestamp": encrypt_data.get("timestamp"),
+            }
+            
+            async with self._session.post(
+                "https://www.95598.cn/api/osg-open-uc0001/member/c8/f04",
+                json=payload,
+                headers=headers,
+            ) as resp:
+                resp.raise_for_status()
+                text = await resp.text()
+            
+            raw_response = self._parse_sgcc_response(text)
+            _LOGGER.debug("[短信登录] c8/f04 第%d次响应: %s", attempt + 1, raw_response)
+            
+            if isinstance(raw_response, dict):
+                code = raw_response.get("code")
+                if code == "GB010" and attempt == 0:
+                    _LOGGER.warning("[短信登录] 检测到 GB010 错误，自动尝试强制重置 UUID 并初始化...")
+                    self._key_code = ""
+                    await self.initialize(force_new_uuid=True)
+                    
+                    # 重新加密 c8f04
+                    encrypt_data = await self._secure_post_encrypt(
+                        f"{ENCRYPT_API_URL}/encrypt/c8f04",
+                        {
+                            "token": self._encrypt_token,
+                            "keyCode": self._key_code,
+                            "uuid": self._uuid,
+                            "publicKey": self._public_key,
+                            "account": phone,
+                            "sendType": "0",
+                            "businessType": "login",
+                        },
+                    )
+                    continue
+                
+                self._check_and_raise_business_error(raw_response, "c8/f04")
+
+            encrypted_response = self._get_encrypted_data(raw_response) or (
+                text.strip() if self._is_likely_encrypted(text) else ""
+            )
+            if encrypted_response:
+                break
+            
+            if attempt == 1:
+                raise StateGridAuthError(f"发送短信验证码请求异常，未返回加密数据 (c8/f04)。响应: {str(raw_response)[:200]}")
         
         if not encrypted_response:
             raise StateGridAuthError("发送短信验证码失败：未返回加密数据")
@@ -1529,25 +1645,57 @@ class Shaobor95598ApiClient:
         )
         
         # Step 2: 调用 95598 API 验证短信 (osg-uc0013/member/c4/f02 端点)
-        headers = self._get_sgcc_headers(str(encrypt_data.get("timestamp", "")))
-        payload = {
-            "data": encrypt_data.get("data"),
-            "skey": encrypt_data.get("skey"),
-            "timestamp": encrypt_data.get("timestamp"),
-        }
-        
-        async with self._session.post(
-            "https://www.95598.cn/api/osg-uc0013/member/c4/f02",
-            json=payload,
-            headers=headers,
-        ) as resp:
-            resp.raise_for_status()
-            text = await resp.text()
-        
-        raw_response = self._parse_sgcc_response(text)
-        encrypted_response = self._get_encrypted_data(raw_response) or (
-            text.strip() if self._is_likely_encrypted(text) else ""
-        )
+        for attempt in range(2):
+            headers = self._get_sgcc_headers(str(encrypt_data.get("timestamp", "")))
+            payload = {
+                "data": encrypt_data.get("data"),
+                "skey": encrypt_data.get("skey"),
+                "timestamp": encrypt_data.get("timestamp"),
+            }
+            
+            async with self._session.post(
+                "https://www.95598.cn/api/osg-uc0013/member/c4/f02",
+                json=payload,
+                headers=headers,
+            ) as resp:
+                resp.raise_for_status()
+                text = await resp.text()
+            
+            raw_response = self._parse_sgcc_response(text)
+            _LOGGER.debug("[短信登录] c4/f02 第%d次响应: %s", attempt + 1, raw_response)
+            
+            if isinstance(raw_response, dict):
+                code = raw_response.get("code")
+                if code == "GB010" and attempt == 0:
+                    _LOGGER.warning("[短信登录] 验证验证码时检测到 GB010，重新初始化会话...")
+                    self._key_code = ""
+                    await self.initialize(force_new_uuid=True)
+                    
+                    # 重新加密 c4f02
+                    encrypt_data = await self._secure_post_encrypt(
+                        f"{ENCRYPT_API_URL}/encrypt/c4f02",
+                        {
+                            "token": self._encrypt_token,
+                            "keyCode": self._key_code,
+                            "uuid": self._uuid,
+                            "publicKey": self._public_key,
+                            "account": phone,
+                            "code": code,
+                            "codeKey": self._sms_code_key,
+                        },
+                    )
+                    continue
+                
+                self._check_and_raise_business_error(raw_response, "c4/f02")
+
+            encrypted_response = self._get_encrypted_data(raw_response) or (
+                text.strip() if self._is_likely_encrypted(text) else ""
+            )
+            if encrypted_response:
+                break
+            
+            if attempt == 1:
+                raise StateGridAuthError(f"验证验证码请求异常 (c4/f02)。响应: {str(raw_response)[:200]}")
         
         if not encrypted_response:
             raise StateGridAuthError("验证短信验证码失败：未返回加密数据")
@@ -1637,62 +1785,58 @@ class Shaobor95598ApiClient:
         
         # 确保所有参数都是字符串类型，不能是 None（会被序列化为 null）
         # 扫码登录使用 c8/f11 接口，不需要 userId 参数
-        encrypt_payload = {
-            "token": str(self._encrypt_token) if self._encrypt_token else "",
-            "uuid": str(self._uuid) if self._uuid else "",
-            "publicKey": str(self._public_key) if self._public_key else "",
-            # "userId": str(self._user_id) if self._user_id else "",  # c8/f11 不需要 userId
-            "userToken": str(self._user_token) if self._user_token else "",
-            "accessToken": str(self._access_token) if self._access_token else "",
-        }
-        
-        # 输出实际 payload 中的参数值
-        _LOGGER.warning("[c8f11] 实际加密 payload:")
-        for key, value in encrypt_payload.items():
-            if isinstance(value, str) and len(value) > 20:
-                _LOGGER.warning("[c8f11]   - %s: %s... (len=%s, type=%s)", 
-                               key, value[:20], len(value), type(value).__name__)
-            else:
-                _LOGGER.warning("[c8f11]   - %s: '%s' (len=%s, type=%s)", 
-                               key, value, len(value) if isinstance(value, str) else 0, type(value).__name__)
-        
-        # 输出完整的 JSON 请求（用于调试）
-        import json
-        _LOGGER.warning("[c8f11] 完整的 JSON payload: %s", json.dumps(encrypt_payload, ensure_ascii=False))
-        _LOGGER.warning("[c8f11] 请求 URL: %s", f"{ENCRYPT_API_URL}/encrypt/c8f11")
-        
-        encrypted = await self._secure_post_encrypt(f"{ENCRYPT_API_URL}/encrypt/c8f11", encrypt_payload)
-        
-        # 输出加密服务的响应
-        _LOGGER.warning("[c8f11] 加密服务响应: %s", 
-                       {k: (v[:50] + "..." if isinstance(v, str) and len(v) > 50 else v) 
-                        for k, v in encrypted.items()})
+        for attempt in range(2):
+            encrypt_payload = {
+                "token": str(self._encrypt_token) if self._encrypt_token else "",
+                "uuid": str(self._uuid) if self._uuid else "",
+                "publicKey": str(self._public_key) if self._public_key else "",
+                "userToken": str(self._user_token) if self._user_token else "",
+                "accessToken": str(self._access_token) if self._access_token else "",
+            }
+            
+            encrypted = await self._secure_post_encrypt(f"{ENCRYPT_API_URL}/encrypt/c8f11", encrypt_payload)
+            
+            headers = self._get_sgcc_headers(str(encrypted.get("timestamp")))
+            bearer = self._bearer_header()
+            if bearer:
+                headers["Authorization"] = bearer
+            t = self._t_header()
+            if t:
+                headers["t"] = t
 
-        headers = self._get_sgcc_headers(str(encrypted.get("timestamp")))
-        bearer = self._bearer_header()
-        if bearer:
-            headers["Authorization"] = bearer
-        t = self._t_header()
-        if t:
-            headers["t"] = t
+            payload_sgcc = {
+                "data": encrypted.get("data"),
+                "skey": encrypted.get("skey"),
+                "timestamp": encrypted.get("timestamp"),
+            }
+            
+            async with self._session.post(
+                "https://www.95598.cn/api/osg-open-uc0001/member/c8/f11",
+                json=payload_sgcc,
+                headers=headers,
+            ) as resp:
+                resp.raise_for_status()
+                text = await resp.text()
+            
+            raw = self._parse_sgcc_response(text)
+            _LOGGER.debug("[c8f11] 第%d次响应: %s", attempt + 1, raw)
+            
+            if isinstance(raw, dict):
+                code = raw.get("code")
+                if code == "GB010" and attempt == 0:
+                    _LOGGER.warning("[c8f11] 获取个人中心数据时检测到 GB010，重新初始化会话...")
+                    self._key_code = ""
+                    await self.initialize(force_new_uuid=True)
+                    continue
+                
+                self._check_and_raise_business_error(raw, "c8/f11")
 
-        payload_sgcc = {
-            "data": encrypted.get("data"),
-            "skey": encrypted.get("skey"),
-            "timestamp": encrypted.get("timestamp"),
-        }
-        
-        _LOGGER.warning("[c8f11] 准备调用 95598 API: https://www.95598.cn/api/osg-open-uc0001/member/c8/f11")
-        
-        async with self._session.post(
-            "https://www.95598.cn/api/osg-open-uc0001/member/c8/f11",
-            json=payload_sgcc,
-            headers=headers,
-        ) as resp:
-            resp.raise_for_status()
-            text = await resp.text()
-            _LOGGER.warning("[c8f11] 95598 API 响应状态: %s", resp.status)
-            _LOGGER.warning("[c8f11] 95598 API 响应内容(前200字符): %s", text[:200] if text else "空")
+            encrypted_data = self._get_encrypted_data(raw) or (text.strip() if self._is_likely_encrypted(text) else "")
+            if encrypted_data:
+                break
+            
+            if attempt == 1:
+                raise StateGridAuthError(f"获取户号列表失败 (c8f11)。响应: {str(raw)[:200]}")
 
         raw = self._parse_sgcc_response(text)
         encrypted_data = self._get_encrypted_data(raw) or (text.strip() if self._is_likely_encrypted(text) else "")
