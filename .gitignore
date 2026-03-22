@@ -2,34 +2,41 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
+*.pyc
+*.pyo
+*.pyd
 .Python
 
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
 # IDE
-.vscode/
 .idea/
+.vscode/
 *.swp
 *.swo
-*~
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Distribution
+# Distribution / packaging
 dist/
 build/
 *.egg-info/
+*.egg
 
-# Project specific - ignore other files in root
-/ha/
-/state_grid_info/
-/*.js
-/*.json
-/*.md
-!README.md
+# Home Assistant
+homeassistant/
+config/
+*.log
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
