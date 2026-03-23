@@ -3,9 +3,9 @@
         "step": {
             "user": {
                 "title": "认证",
-                "description": "请输入授权令牌以开始。",
+                "description": "请输入授权密钥以开始。",
                 "data": {
-                    "auth_token": "授权令牌"
+                    "auth_token": "授权密钥"
                 }
             },
             "login_method": {
@@ -274,7 +274,7 @@
             }
         },
         "error": {
-            "invalid_token": "授权令牌无效。",
+            "invalid_token": "授权密钥无效。",
             "invalid_auth": "用户名或密码错误。",
             "slider_failed": "滑块识别失败，请重试或使用扫码登录。",
             "captcha_parse_failed": "验证码数据解析失败，请重试。",
@@ -292,8 +292,8 @@
         "abort": {
             "already_configured": "该户号已添加",
             "reauth_successful": "重新认证成功",
-            "missing_token": "缺少授权令牌",
-            "invalid_token": "授权令牌无效"
+            "missing_token": "缺少授权密钥",
+            "invalid_token": "授权密钥无效"
         }
     },
     "options": {
