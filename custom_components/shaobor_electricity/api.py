@@ -151,7 +151,7 @@ def auto_relogin_on_auth_error(func):
                                     if hasattr(self, '_store_update_callback') and self._store_update_callback:
                                         try:
                                             await self._store_update_callback(
-                                                token=self._token,
+                                                token=self._encrypt_token,
                                                 user_token=self._user_token,
                                                 user_id=self._user_id,
                                                 access_token=self._access_token,
@@ -1041,7 +1041,7 @@ class Shaobor95598ApiClient:
                         if hasattr(self, '_store_update_callback') and self._store_update_callback:
                             try:
                                 await self._store_update_callback(
-                                    token=self._token,
+                                    token=self._encrypt_token,
                                     user_token=self._user_token,
                                     user_id=self._user_id,
                                     access_token=self._access_token,
