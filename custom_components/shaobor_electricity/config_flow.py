@@ -297,12 +297,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None, errors: dict[str, str]
     ) -> FlowResult:
         """Implementation of user step to allow exception handling."""
+        # 尝试从 Store 读取已保存的 token 用于预填充
+        stored_token = await self._get_stored_token()
+        # 预填逻辑：优先使用用户刚才输入的值，其次使用存储的值
+        default_token = (user_input or {}).get(CONF_AUTH_TOKEN) or stored_token or ""
+
         # Try to auto-load token if user hasn't input anything yet
         if user_input is None:
-            # 尝试从 Store 读取已保存的 token 用于预填充
-            stored_token = await self._get_stored_token()
-            default_token = stored_token or ""
-            
             # 如果设置了跳过自动加载标志，则重置标志并直接显示表单（带预填充）
             if self._skip_auto_load_token:
                 self._skip_auto_load_token = False
@@ -323,34 +324,45 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         session=async_get_clientsession(self.hass),
                     )
                     await self._api.initialize()
-                    # 登录有效时，若 Store 中已有户号列表，直接进入选择户号（或仅一户则直接创建），跳过「选择登录方式」
+                    # 登录有效时，若 Store 中已有户号列表，尝试校验会话并进入选择户号（或仅一户则直接创建），跳过「选择登录方式」
                     stored_auth = await self._get_stored_auth()
                     if stored_auth and isinstance(stored_auth.get("power_user_list"), list) and len(stored_auth["power_user_list"]) > 0:
-                        self._api.load_auth_state(
-                            user_token=stored_auth.get("user_token"),
-                            user_id=stored_auth.get("user_id"),
-                            access_token=stored_auth.get("access_token"),
-                            refresh_token=stored_auth.get("refresh_token"),
-                            power_user_list=stored_auth.get("power_user_list"),
-                            login_account=stored_auth.get("login_account"),
-                        )
-                        power_list = stored_auth["power_user_list"]
-                        entry_data = {
-                            CONF_AUTH_TOKEN: self._auth_token,
-                            CONF_LOGIN_METHOD: self._login_method or LOGIN_METHOD_PASSWORD,
-                            CONF_USER_TOKEN: stored_auth.get("user_token") or "",
-                            CONF_USER_ID: stored_auth.get("user_id") or "",
-                            CONF_ACCESS_TOKEN: stored_auth.get("access_token") or "",
-                            CONF_REFRESH_TOKEN: stored_auth.get("refresh_token") or "",
-                            CONF_POWER_USER_LIST: power_list,
-                            CONF_LOGIN_ACCOUNT: stored_auth.get("login_account") or "",
-                        }
-                        if len(power_list) == 1:
-                            entry_data[CONF_SELECTED_ACCOUNT_INDEX] = 0
-                            self._pending_entry_data = {**entry_data, "_title": "Shaobor_95598"}
-                            return await self.async_step_billing_mode()
-                        self._pending_entry_data = {**entry_data, "_title": "Shaobor_95598"}
-                        return await self.async_step_select_account()
+                        user_token = stored_auth.get("user_token")
+                        if user_token:
+                            self._api.load_auth_state(
+                                user_token=user_token,
+                                user_id=stored_auth.get("user_id"),
+                                access_token=stored_auth.get("access_token"),
+                                refresh_token=stored_auth.get("refresh_token"),
+                                power_user_list=stored_auth.get("power_user_list"),
+                                login_account=stored_auth.get("login_account"),
+                            )
+                            # 尝试验证会话是否依然有效
+                            try:
+                                await self._api.refresh_access_token()
+                                # 验证成功，准备跳转
+                                power_list = stored_auth["power_user_list"]
+                                entry_data = {
+                                    CONF_AUTH_TOKEN: self._auth_token,
+                                    CONF_LOGIN_METHOD: self._login_method or LOGIN_METHOD_PASSWORD,
+                                    CONF_USER_TOKEN: user_token,
+                                    CONF_USER_ID: stored_auth.get("user_id") or "",
+                                    CONF_ACCESS_TOKEN: self._api._access_token or "",
+                                    CONF_REFRESH_TOKEN: self._api._refresh_token or "",
+                                    CONF_POWER_USER_LIST: power_list,
+                                    CONF_LOGIN_ACCOUNT: stored_auth.get("login_account") or "",
+                                }
+                                if len(power_list) == 1:
+                                    entry_data[CONF_SELECTED_ACCOUNT_INDEX] = 0
+                                    self._pending_entry_data = {**entry_data, "_title": "Shaobor_95598"}
+                                    return await self.async_step_billing_mode()
+                                self._pending_entry_data = {**entry_data, "_title": "Shaobor_95598"}
+                                return await self.async_step_select_account()
+                            except Exception as refresh_err:
+                                # 刷新失败说明登录已过期，继续走常规流程（选择登录方式）
+                                _LOGGER.debug("[配置流程] 自动跳转前校验失败，需要重新登录: %s", refresh_err)
+                                pass
+                        
                     return await self.async_step_login_method()
                 except Exception:
                     pass
@@ -384,7 +396,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_AUTH_TOKEN): str,
+                    vol.Required(CONF_AUTH_TOKEN, default=default_token): str,
                 }
             ),
             errors=errors,
