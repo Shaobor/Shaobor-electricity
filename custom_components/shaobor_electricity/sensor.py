@@ -1130,14 +1130,14 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
         
         # 根据 billing_mode 显示正确的计费标准名称
         billing_mode_names = {
-            "year_ladder_tou": "年阶梯峰平谷计费",
-            "year_ladder": "年阶梯计费",
-            "month_ladder_tou_variable": "月阶梯峰平谷变动价格计费",
-            "month_ladder_tou": "月阶梯峰平谷计费",
-            "month_ladder": "月阶梯计费",
-            "average": "平均单价计费",
+            "year_ladder_tou": "年阶梯峰平谷",
+            "year_ladder": "年阶梯",
+            "month_ladder_tou_variable": "月阶梯峰平谷变动价格",
+            "month_ladder_tou": "月阶梯峰平谷",
+            "month_ladder": "月阶梯",
+            "average": "平均单价",
         }
-        billing_mode_name = billing_mode_names.get(billing_mode, "年阶梯计费")
+        billing_mode_name = billing_mode_names.get(billing_mode, "年阶梯")
         
         # 根据计费模式构建不同的属性
         is_month_ladder = billing_mode in ("month_ladder", "month_ladder_tou", "month_ladder_tou_variable")
