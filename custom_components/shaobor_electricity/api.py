@@ -1111,89 +1111,92 @@ class Shaobor95598ApiClient:
         daily_avg = None
         remaining_days = None
         
-        # 尝试从最近7天的用电量计算最稳健的日均电费（方法A）
+        # 尝试从所有返回的历史记录中，逆序寻找最近 7 个有数据的记录（方法A：历史稳健均值）
         history_daily_avg = None
         if isinstance(daily_usage, dict) and daily_usage.get("sevenEleList"):
-            seven_ele_list = daily_usage.get("sevenEleList", [])
-            recent_days_total = []
-            recent_days_peak = []
-            recent_days_valley = []
+            all_history = daily_usage.get("sevenEleList", [])
+            # 按日期降序排列（确保从最亮的项开始往回找）
+            try:
+                sorted_history = sorted(all_history, key=lambda x: str(x.get("day", "")), reverse=True)
+            except Exception:
+                sorted_history = all_history[::-1] # 回退：直接逆序
+
+            recent_samples = []
+            recent_peaks = []
+            recent_valleys = []
             
-            for day_data in seven_ele_list[:7]:
+            for day_data in sorted_history:
+                if len(recent_samples) >= 7: # 我们只采集最近 7 个有效样本
+                    break
+                    
                 day_ele_pq = day_data.get("dayElePq")
+                # 排除无效字符 "-" 或 0 以及 Null
                 if day_ele_pq and day_ele_pq != "-":
                     try:
                         val = float(day_ele_pq)
-                        if val > 0: # 排除0度电的异常天
-                            recent_days_total.append(val)
-                            peak = day_data.get("thisPPq") or day_data.get("thisTPq") or "0"
-                            valley = day_data.get("thisVPq") or "0"
-                            recent_days_peak.append(float(peak))
-                            recent_days_valley.append(float(valley))
+                        if val > 0: # 必须有实际消耗量才作为样本点
+                            recent_samples.append(val)
+                            # 采集对应的峰谷，如果缺失则补0以便对齐计算
+                            p = day_data.get("thisPPq") or day_data.get("thisTPq") or "0"
+                            v = day_data.get("thisVPq") or "0"
+                            recent_peaks.append(float(p))
+                            recent_valleys.append(float(v))
                     except (ValueError, TypeError):
                         pass
             
-            # 如果有至少3天的历史数据，计算一个稳健的日平均
-            if len(recent_days_total) >= 1:
-                avg_daily_kwh = sum(recent_days_total) / len(recent_days_total)
+            # 只要有至少 1 个有效样本，就开始计算
+            if recent_samples:
+                avg_daily_kwh = sum(recent_samples) / len(recent_samples)
                 billing_mode = self._billing_config.get("billing_mode", "")
                 
-                has_tou_data = len(recent_days_peak) == len(recent_days_total) and len(recent_days_valley) == len(recent_days_total)
-                
-                if "tou" in billing_mode.lower() and has_tou_data:
-                    avg_peak_kwh = sum(recent_days_peak) / len(recent_days_peak)
-                    avg_valley_kwh = sum(recent_days_valley) / len(recent_days_valley)
-                    price_tip = self._billing_config.get("price_tip", 0)
-                    price_peak = self._billing_config.get("price_peak", 0)
-                    price_valley = self._billing_config.get("price_valley", 0)
-                    eff_peak = max(price_tip, price_peak) if price_tip or price_peak else 0.6
-                    eff_valley = price_valley if price_valley else 0.3
-                    history_daily_avg = (avg_peak_kwh * eff_peak) + (avg_valley_kwh * eff_valley)
+                # 如果是峰谷模式且峰谷数据齐全
+                if "tou" in billing_mode.lower() and len(recent_peaks) == len(recent_samples):
+                    avg_peak_kwh = sum(recent_peaks) / len(recent_peaks)
+                    avg_valley_kwh = sum(recent_valleys) / len(recent_valleys)
+                    p_tip = self._billing_config.get("price_tip", 0)
+                    p_peak = self._billing_config.get("price_peak", 0)
+                    p_valley = self._billing_config.get("price_valley", 0)
+                    eff_p = max(p_tip, p_peak) if p_tip or p_peak else 0.6
+                    eff_v = p_valley if p_valley else 0.3
+                    history_daily_avg = (avg_peak_kwh * eff_p) + (avg_valley_kwh * eff_v)
                 elif "average" in billing_mode.lower():
-                    avg_p = self._billing_config.get("average_price", 0.6)
-                    history_daily_avg = avg_daily_kwh * avg_p
-                else:
-                    avg_p = self._billing_config.get("ladder_price_1", 0.6)
-                    history_daily_avg = avg_daily_kwh * avg_p
+                    price = self._billing_config.get("average_price", 0.6)
+                    history_daily_avg = avg_daily_kwh * price
+                else: # 阶梯模式
+                    price = self._billing_config.get("ladder_price_1", 0.6)
+                    history_daily_avg = avg_daily_kwh * price
+                
+                _LOGGER.info("[预计可用] 从最近%d个历史工作日样本中提取日均值: %.2f元/天", len(recent_samples), history_daily_avg)
 
-        # 辅助方法：从 estiAmt 计算（方法B）
+        # 辅助方法：从 estiAmt 计算（方法B：当月快照预估）
         current_month_daily_avg = None
         if isinstance(esti_amt, (int, float)) and esti_amt > 0:
             now = datetime.now()
-            # 在月初（1-3号），estiAmt 可能还没结算或代表上个月，或者仅包含极少数据，极其不准
-            # 我们给出一个平滑处理：计算过去 24h 的推算
             day_of_month = now.day
             if day_of_month == 1:
-                # 1号时，如果 7 天历史不可用，假设已经过了 0.5 天来防止除以极小值
                 current_month_daily_avg = float(esti_amt) / max(0.5, now.hour / 24.0)
             else:
                 current_month_daily_avg = float(esti_amt) / float(day_of_month)
 
-        # 决策逻辑：优先使用历史 7 天平均值，因为它最能反应长期趋势，且不受月初重置影响
+        # 最终决策
         now_day = datetime.now().day
         if history_daily_avg and history_daily_avg > 0:
-            # 如果处于月初（1-5号），此时 estiAmt 极不稳定，强制使用历史平均
-            if now_day <= 5:
+            # 强化处理：每月前 7 天，本月预估数据严重偏低，强制完全信任历史均值
+            if now_day <= 7:
                 daily_avg = history_daily_avg
-                _LOGGER.info("[预计可用] 月初阶段，优先采用最近7天历史日均: %.2f元/天", daily_avg)
-            # 如果不是月初，对比两个值，取较大权重的或均值
             else:
-                # 正常时期，history_daily_avg 和 current_month_daily_avg 应该接近
-                # 我们取两者加权，更信任近期趋势
+                # 稳定期：综合两者（历史稳健，当月实时）
                 if current_month_daily_avg:
-                    daily_avg = (history_daily_avg * 0.7) + (current_month_daily_avg * 0.3)
+                    daily_avg = (history_daily_avg * 0.6) + (current_month_daily_avg * 0.4)
                 else:
                     daily_avg = history_daily_avg
         else:
-            # 只有当历史数据完全没有时才使用本月预估
             daily_avg = current_month_daily_avg
-            if daily_avg:
-                _LOGGER.info("[预计可用] 缺少历史数据， fallback 使用本月预估计算: %.2f元/天", daily_avg)
 
         # 计算预计可用天数 (剩余天数)
         if isinstance(balance, (int, float)) and balance is not None and daily_avg and daily_avg > 0:
             remaining_days = int(float(balance) // float(daily_avg))
-            _LOGGER.info("[预计可用] 余额 %.2f元 ÷ 日均 %.2f元 = %d天", balance, daily_avg, remaining_days)
+            _LOGGER.info("[预计可用] 最终计算 -> 余额 %.2f元 ÷ 日均 %.2f元 = %d天", balance, daily_avg, remaining_days)
 
         # 获取缴费记录（可选功能，失败不影响主要功能）
         payment_records = {"count": 0, "payList": []}
