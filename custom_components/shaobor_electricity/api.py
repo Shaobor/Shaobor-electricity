@@ -1111,82 +1111,87 @@ class Shaobor95598ApiClient:
         daily_avg = None
         remaining_days = None
         
-        # 方法1：使用 estiAmt（本月预估电费）计算日均电费（适用于后付费账户）
-        if isinstance(esti_amt, (int, float)) and esti_amt > 0:
-            day_of_month = datetime.now().day or 1
-            daily_avg = float(esti_amt) / float(day_of_month)
-            _LOGGER.info("[预计可用] 使用 estiAmt 计算日均电费: %.2f元/天", daily_avg)
-        
-        # 方法2：使用最近7天的用电量计算日均电费（适用于预付费账户）
-        elif isinstance(daily_usage, dict) and daily_usage.get("sevenEleList"):
+        # 尝试从最近7天的用电量计算最稳健的日均电费（方法A）
+        history_daily_avg = None
+        if isinstance(daily_usage, dict) and daily_usage.get("sevenEleList"):
             seven_ele_list = daily_usage.get("sevenEleList", [])
-            # 获取最近7天有数据的记录，同时收集峰谷电量
             recent_days_total = []
-            recent_days_peak = []  # 尖峰/高峰电量
-            recent_days_valley = []  # 低谷电量
+            recent_days_peak = []
+            recent_days_valley = []
             
-            for day_data in seven_ele_list[:7]:  # 只取最近7天
+            for day_data in seven_ele_list[:7]:
                 day_ele_pq = day_data.get("dayElePq")
                 if day_ele_pq and day_ele_pq != "-":
                     try:
-                        recent_days_total.append(float(day_ele_pq))
-                        # 收集峰谷电量数据
-                        peak = day_data.get("thisPPq") or day_data.get("thisTPq") or "0"
-                        valley = day_data.get("thisVPq") or "0"
-                        try:
+                        val = float(day_ele_pq)
+                        if val > 0: # 排除0度电的异常天
+                            recent_days_total.append(val)
+                            peak = day_data.get("thisPPq") or day_data.get("thisTPq") or "0"
+                            valley = day_data.get("thisVPq") or "0"
                             recent_days_peak.append(float(peak))
                             recent_days_valley.append(float(valley))
-                        except (ValueError, TypeError):
-                            pass
                     except (ValueError, TypeError):
                         pass
             
-            if len(recent_days_total) >= 3:  # 至少需要3天的数据
+            # 如果有至少3天的历史数据，计算一个稳健的日平均
+            if len(recent_days_total) >= 1:
                 avg_daily_kwh = sum(recent_days_total) / len(recent_days_total)
-                
-                # 从配置中获取电价
                 billing_mode = self._billing_config.get("billing_mode", "")
-                avg_price_per_kwh = 0.6  # 默认电价
                 
-                # 判断是否使用峰谷电价
-                has_tou_data = len(recent_days_peak) >= 3 and len(recent_days_valley) >= 3
+                has_tou_data = len(recent_days_peak) == len(recent_days_total) and len(recent_days_valley) == len(recent_days_total)
                 
                 if "tou" in billing_mode.lower() and has_tou_data:
-                    # 峰谷计费：根据实际峰谷电量加权计算
                     avg_peak_kwh = sum(recent_days_peak) / len(recent_days_peak)
                     avg_valley_kwh = sum(recent_days_valley) / len(recent_days_valley)
-                    
-                    price_tip = self._billing_config.get("price_tip", 0)  # 尖峰电价
-                    price_peak = self._billing_config.get("price_peak", 0)  # 高峰电价
-                    price_valley = self._billing_config.get("price_valley", 0)  # 低谷电价
-                    
-                    # 浙江省只有尖峰和低谷，使用 price_tip 或 price_peak（取较大值）
-                    effective_peak_price = max(price_tip, price_peak) if price_tip or price_peak else 0.6
-                    effective_valley_price = price_valley if price_valley else 0.3
-                    
-                    daily_avg = (avg_peak_kwh * effective_peak_price) + (avg_valley_kwh * effective_valley_price)
-                    _LOGGER.info("[预计可用] 使用峰谷电价计算: 峰%.2f度×%.2f元 + 谷%.2f度×%.2f元 = %.2f元/天", 
-                               avg_peak_kwh, effective_peak_price, avg_valley_kwh, effective_valley_price, daily_avg)
+                    price_tip = self._billing_config.get("price_tip", 0)
+                    price_peak = self._billing_config.get("price_peak", 0)
+                    price_valley = self._billing_config.get("price_valley", 0)
+                    eff_peak = max(price_tip, price_peak) if price_tip or price_peak else 0.6
+                    eff_valley = price_valley if price_valley else 0.3
+                    history_daily_avg = (avg_peak_kwh * eff_peak) + (avg_valley_kwh * eff_valley)
                 elif "average" in billing_mode.lower():
-                    # 平均单价计费
-                    avg_price_per_kwh = self._billing_config.get("average_price", 0.6)
-                    daily_avg = avg_daily_kwh * avg_price_per_kwh
-                    _LOGGER.info("[预计可用] 使用平均单价计算: %.2f度/天 × %.2f元/度 = %.2f元/天", 
-                               avg_daily_kwh, avg_price_per_kwh, daily_avg)
-                elif "ladder" in billing_mode.lower():
-                    # 阶梯计费：使用第一档电价作为估算
-                    avg_price_per_kwh = self._billing_config.get("ladder_price_1", 0.6)
-                    daily_avg = avg_daily_kwh * avg_price_per_kwh
-                    _LOGGER.info("[预计可用] 使用阶梯电价(第一档)计算: %.2f度/天 × %.2f元/度 = %.2f元/天", 
-                               avg_daily_kwh, avg_price_per_kwh, daily_avg)
+                    avg_p = self._billing_config.get("average_price", 0.6)
+                    history_daily_avg = avg_daily_kwh * avg_p
                 else:
-                    # 默认：使用固定电价
-                    daily_avg = avg_daily_kwh * avg_price_per_kwh
-                    _LOGGER.info("[预计可用] 使用默认电价计算: %.2f度/天 × %.2f元/度 = %.2f元/天", 
-                               avg_daily_kwh, avg_price_per_kwh, daily_avg)
-        
-        # 计算预计可用天数
-        if isinstance(balance, (int, float)) and balance is not None and isinstance(daily_avg, (int, float)) and daily_avg > 0:
+                    avg_p = self._billing_config.get("ladder_price_1", 0.6)
+                    history_daily_avg = avg_daily_kwh * avg_p
+
+        # 辅助方法：从 estiAmt 计算（方法B）
+        current_month_daily_avg = None
+        if isinstance(esti_amt, (int, float)) and esti_amt > 0:
+            now = datetime.now()
+            # 在月初（1-3号），estiAmt 可能还没结算或代表上个月，或者仅包含极少数据，极其不准
+            # 我们给出一个平滑处理：计算过去 24h 的推算
+            day_of_month = now.day
+            if day_of_month == 1:
+                # 1号时，如果 7 天历史不可用，假设已经过了 0.5 天来防止除以极小值
+                current_month_daily_avg = float(esti_amt) / max(0.5, now.hour / 24.0)
+            else:
+                current_month_daily_avg = float(esti_amt) / float(day_of_month)
+
+        # 决策逻辑：优先使用历史 7 天平均值，因为它最能反应长期趋势，且不受月初重置影响
+        now_day = datetime.now().day
+        if history_daily_avg and history_daily_avg > 0:
+            # 如果处于月初（1-5号），此时 estiAmt 极不稳定，强制使用历史平均
+            if now_day <= 5:
+                daily_avg = history_daily_avg
+                _LOGGER.info("[预计可用] 月初阶段，优先采用最近7天历史日均: %.2f元/天", daily_avg)
+            # 如果不是月初，对比两个值，取较大权重的或均值
+            else:
+                # 正常时期，history_daily_avg 和 current_month_daily_avg 应该接近
+                # 我们取两者加权，更信任近期趋势
+                if current_month_daily_avg:
+                    daily_avg = (history_daily_avg * 0.7) + (current_month_daily_avg * 0.3)
+                else:
+                    daily_avg = history_daily_avg
+        else:
+            # 只有当历史数据完全没有时才使用本月预估
+            daily_avg = current_month_daily_avg
+            if daily_avg:
+                _LOGGER.info("[预计可用] 缺少历史数据， fallback 使用本月预估计算: %.2f元/天", daily_avg)
+
+        # 计算预计可用天数 (剩余天数)
+        if isinstance(balance, (int, float)) and balance is not None and daily_avg and daily_avg > 0:
             remaining_days = int(float(balance) // float(daily_avg))
             _LOGGER.info("[预计可用] 余额 %.2f元 ÷ 日均 %.2f元 = %d天", balance, daily_avg, remaining_days)
 
