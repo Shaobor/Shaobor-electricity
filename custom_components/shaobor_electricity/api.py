@@ -419,8 +419,9 @@ class Shaobor95598ApiClient:
 
     async def login_with_password(self, username: str, password: str) -> dict[str, Any]:
         """Password login with slider captcha (flows.json: lf05 -> c44/f05 -> decrypt -> cv2/match -> lf06 -> c44/f06)."""
-        if not self._key_code:
-            await self.initialize()
+        # 强制重置会话，防止 reauth 流程中因之前失败的请求污染导致 【GB010】 业务异常
+        self._key_code = ""
+        await self.initialize(force_new_uuid=True)
 
         # 密码需 MD5 加密（与 Node-RED 流程一致，见 flows.json 提示）
         password_md5 = hashlib.md5(password.encode("utf-8")).hexdigest().upper()
@@ -1229,8 +1230,9 @@ class Shaobor95598ApiClient:
 
     async def get_login_qrcode(self) -> dict[str, Any]:
         """Fetch login QR code and serial number."""
-        if not self._key_code:
-            await self.initialize()
+        # 强制重置会话，防止验证失败的状态带入新验证周期
+        self._key_code = ""
+        await self.initialize(force_new_uuid=True)
             
         url = "https://www.95598.cn/api/osg-open-uc0001/member/c8/f24"
         serial_no = "".join([str(random.randint(0, 9)) for _ in range(28)])
@@ -1513,8 +1515,9 @@ class Shaobor95598ApiClient:
         Returns:
             {"success": True}
         """
-        if not self._key_code:
-            await self.initialize()
+        # 强制重置会话，防止验证失败的状态带入新验证周期
+        self._key_code = ""
+        await self.initialize(force_new_uuid=True)
         
         _LOGGER.info("[短信登录] 步骤1: 发送验证码到 %s", phone)
         
