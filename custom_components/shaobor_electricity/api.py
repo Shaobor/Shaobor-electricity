@@ -203,6 +203,7 @@ class Shaobor95598ApiClient:
         session: aiohttp.ClientSession,
         store: Any | None = None,
         hass: Any | None = None,
+        entry_id: str | None = None,
     ) -> None:
         """Initialize the API client."""
         self._encrypt_token = token  # 用于加密服务的固定 token，不应被修改
@@ -210,6 +211,7 @@ class Shaobor95598ApiClient:
         self._session = session
         self._store = store  # 用于持久化存储
         self._hass = hass  # Home Assistant 实例，用于创建 Store
+        self._entry_id = entry_id
         
         # Internal state mimicking Node-RED globals
         self._uuid = str(uuid.uuid4()).replace("-", "")
@@ -2389,9 +2391,10 @@ class Shaobor95598ApiClient:
             return
         
         try:
-            # 创建历史数据 Store
+            # 创建历史数据 Store，使用 entry_id 进行隔离
             from homeassistant.helpers.storage import Store  # type: ignore
-            history_store = Store(self._hass, version=1, key="shaobor_electricity/shaobor_electricity_history")
+            storage_key = f"shaobor_electricity/history_{self._entry_id}" if self._entry_id else "shaobor_electricity/shaobor_electricity_history"
+            history_store = Store(self._hass, version=1, key=storage_key)
             
             # 读取现有数据
             existing_data = await history_store.async_load() or {}
