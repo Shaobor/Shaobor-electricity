@@ -181,6 +181,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except StateGridAuthError as err:
             # API 层已经有 auto_relogin_on_auth_error 装饰器处理自动重连
             # 如果到这里说明自动重连也失败了，触发重新认证流程
+            _LOGGER.warning("认证已过期，实体将保留最后一次的值（Stale Data）。请重新认证以同步最新电费数据。")
             raise ConfigEntryAuthFailed(
                 "登录已过期，请重新配置集成（使用扫码登录）"
             ) from err

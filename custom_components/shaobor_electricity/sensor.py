@@ -60,6 +60,11 @@ class Shaobor95598SensorBase(CoordinatorEntity, SensorEntity):
             "manufacturer": "Shaobor",
         }
 
+    @property
+    def available(self) -> bool:
+        """Return if entity is available. 认证过期时也保持可用，显示最后一次的值."""
+        return self.coordinator.data is not None
+
 class Shaobor95598BalanceSensor(Shaobor95598SensorBase):
     """实时电费（账户余额）."""
 
