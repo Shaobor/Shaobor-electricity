@@ -99,7 +99,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return stored.get(store_key or key)
         return None
 
-    api = Shaobor95598ApiClient(token, session, store, hass)
+    api = Shaobor95598ApiClient(token, session, store, hass, entry_id=entry.entry_id)
     api.load_auth_state(
         user_token=entry_user_token or _merged(CONF_USER_TOKEN, "user_token"),
         user_id=entry.data.get(CONF_USER_ID) or (stored.get("user_id") if stored else None),
