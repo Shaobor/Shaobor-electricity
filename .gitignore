@@ -40,3 +40,9 @@ config/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Integration release exclusions
+ha/
+FIX_SUMMARY.md
+electricity-info-card.js
+flows.json
