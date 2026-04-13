@@ -18,6 +18,9 @@ from homeassistant.helpers.storage import Store  # type: ignore
 from homeassistant.helpers.update_coordinator import (  # type: ignore[import-untyped]
     CoordinatorEntity,
 )
+from homeassistant.const import (  # type: ignore[import-untyped]
+    UnitOfEnergy,
+)
 
 from .const import DOMAIN
 from .regional_prices import get_region_price_config, get_region_name
@@ -70,9 +73,9 @@ class Shaobor95598BalanceSensor(Shaobor95598SensorBase):
 
     _attr_name = "实时电费"
     _attr_translation_key = "balance"
-    _attr_native_unit_of_measurement = "CNY"
+    _attr_native_unit_of_measurement = "元"
     _attr_device_class = SensorDeviceClass.MONETARY
-    _attr_state_class = None
+    _attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def unique_id(self) -> str:
@@ -270,7 +273,7 @@ class Shaobor95598DailyUsageSensor(Shaobor95598SensorBase):
 
     _attr_name = "每日电量"
     _attr_translation_key = "daily_usage"
-    _attr_native_unit_of_measurement = "kWh"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_icon = "mdi:chart-line"
     _attr_state_class = SensorStateClass.TOTAL
 
