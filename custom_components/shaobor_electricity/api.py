@@ -2393,7 +2393,7 @@ class Shaobor95598ApiClient:
         try:
             # 创建历史数据 Store，使用 entry_id 进行隔离
             from homeassistant.helpers.storage import Store  # type: ignore
-            storage_key = f"shaobor_electricity/history_{self._entry_id}" if self._entry_id else "shaobor_electricity/shaobor_electricity_history"
+            storage_key = f"shaobor_electricity/shaobor_history_{self._entry_id}" if self._entry_id else "shaobor_electricity/shaobor_electricity_history"
             history_store = Store(self._hass, version=1, key=storage_key)
             
             # 读取现有数据

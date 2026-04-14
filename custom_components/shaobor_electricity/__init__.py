@@ -66,7 +66,10 @@ async def _async_migrate_stores(hass: HomeAssistant) -> None:
             _LOGGER.info("[迁移] 新路径已有历史数据，跳过迁移")
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Shaobor_95598 from a config entry."""
+    """Set up shaobor_electricity from a config entry."""
+    # 首先确保全局数据字典已就绪，防止 coordinator 刷新时因无法读写标志位而崩溃
+    hass.data.setdefault(DOMAIN, {})
+    
     session = async_get_clientsession(hass)
     token = entry.data.get(CONF_AUTH_TOKEN)
     if not token:
@@ -173,18 +176,78 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         store_update_callback=update_store_callback,
     )
 
+    # 数据存储 Store，用于持久化 coordinator.data（Stale Data）
+    # 增加前缀迁移逻辑：将旧的 coordinator_data_ 迁移到 shaobor_data_
+    old_data_key = f"{DOMAIN}/coordinator_data_{entry.entry_id}"
+    new_data_key = f"{DOMAIN}/shaobor_data_{entry.entry_id}"
+    
+    # 尝试检查并迁移旧数据
+    old_data_store = Store(hass, 1, old_data_key)
+    try:
+        old_data = await old_data_store.async_load()
+        if old_data:
+            new_data_store = Store(hass, 1, new_data_key)
+            await new_data_store.async_save(old_data)
+            await old_data_store.async_remove()
+            _LOGGER.info("已迁移旧版数据备份文件: %s", entry.title)
+        
+        # 同样迁移旧版的 history_ 文件
+        old_history_key = f"{DOMAIN}/history_{entry.entry_id}"
+        new_history_key = f"{DOMAIN}/shaobor_history_{entry.entry_id}"
+        old_hist_store = Store(hass, 1, old_history_key)
+        old_hist_data = await old_hist_store.async_load()
+        if old_hist_data:
+            new_hist_store = Store(hass, 1, new_history_key)
+            await new_hist_store.async_save(old_hist_data)
+            await old_hist_store.async_remove()
+            _LOGGER.info("已迁移旧版历史记录文件: %s", entry.title)
+    except Exception as err:
+        _LOGGER.debug("跳过存储迁移: %s", err)
+
+    data_store = Store(hass, 1, new_data_key)
+    
     async def async_update_data():
         """Fetch data from API. 先刷新 access_token（每10分钟），再请求户号业务."""
         try:
             await api.refresh_access_token()
-            return await api.get_electricity_data()
+            
+            # 成功刷新 Token 后，同步更新 AuthStore，方便其他户号共享
+            # 只有当 token 确实发生了变化时才保存，减少 IO
+            await store.async_save({
+                **entry.data,
+                CONF_USER_TOKEN: api._user_token,
+                CONF_USER_ID: api._user_id,
+                CONF_ACCESS_TOKEN: api._access_token,
+                CONF_REFRESH_TOKEN: api._refresh_token,
+            })
+            
+            data = await api.get_electricity_data()
+            
+            # 成功获取数据后，保存到 Store 中
+            await data_store.async_save(data)
+            return data
         except StateGridAuthError as err:
             # API 层已经有 auto_relogin_on_auth_error 装饰器处理自动重连
             # 如果到这里说明自动重连也失败了，触发重新认证流程
             _LOGGER.warning("认证已过期，实体将保留最后一次的值（Stale Data）。请重新认证以同步最新电费数据。")
-            raise ConfigEntryAuthFailed(
-                "登录已过期，请重新配置集成（使用扫码登录）"
-            ) from err
+            
+            # 避免多账户同时过期导致通知刷屏
+            # 检查是否已经有针对此逻辑账号的重新认证在进行中
+            reauth_key = f"reauth_active_{api._encrypt_token}"
+            if not hass.data[DOMAIN].get(reauth_key):
+                hass.data[DOMAIN][reauth_key] = True
+                _LOGGER.info("触发重新认证流程 (Entry: %s)", entry.title)
+                # 主动触发 HA 的重新认证流程，确保 UI 显示“重新配置”按钮
+                entry.async_start_reauth(hass)
+            
+                # 只有第一个触发的 Entry 抛出 ConfigEntryAuthFailed 以显示修复通知
+                raise ConfigEntryAuthFailed(
+                    "登录已过期，请重新配置集成（使用扫码登录）"
+                ) from err
+            else:
+                # 后续 Entry 发现已有重连请求，仅标记状态为过期，不发送重复通知
+                _LOGGER.debug("已有正在进行的重新认证请求，跳过重复通知 (Entry: %s)", entry.title)
+                raise UpdateFailed("登录已过期，请通过主账户重新配置集成") from err
         except Exception as err:
             raise UpdateFailed(f"Error communicating with API: {err}")
 
@@ -196,9 +259,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         update_interval=timedelta(minutes=10),
     )
 
-    await coordinator.async_config_entry_first_refresh()
+    # 尝试加载历史缓存数据，防止重启后因为认证失败导致实体不可用
+    cached_data = await data_store.async_load()
+    if cached_data:
+        _LOGGER.info("已从未次成功的存储中加载缓存数据 (Stale Data)")
+        coordinator.data = cached_data
 
-    hass.data.setdefault(DOMAIN, {})
+    # 执行初次刷新
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except (ConfigEntryAuthFailed, StateGridAuthError, UpdateFailed):
+        # 即使初次刷新失败（如认证过期），我们也允许集成继续加载
+        # 这样实体就能显示缓存数据，且 UI 不会显示“检查日志”
+        _LOGGER.debug("初次刷新未完全成功（可能由于认证过期），将使用缓存或默认值平衡启动")
+    except Exception as err:
+        _LOGGER.warning("初次刷新遇到意外错误: %s", err)
+
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api,
         "coordinator": coordinator,
@@ -209,8 +285,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unload_ok:
+    # 卸载时清除该账号的 reauth 标志位，确保重新载入后能再次触发
+    if DOMAIN in hass.data:
+        # 尝试从 api 对象获取 token（如果存在）
+        api = hass.data[DOMAIN].get(entry.entry_id, {}).get("api")
+        if api:
+            reauth_key = f"reauth_active_{api._encrypt_token}"
+            if reauth_key in hass.data[DOMAIN]:
+                hass.data[DOMAIN].pop(reauth_key)
+                _LOGGER.debug("已清除重新认证标志位 (Entry: %s)", entry.title)
+
+    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN].pop(entry.entry_id)
 
     return unload_ok
