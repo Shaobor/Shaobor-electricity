@@ -39,7 +39,8 @@
                 "title": "验证短信验证码",
                 "description": "请输入发送到 {phone_number} 的验证码。",
                 "data": {
-                    "sms_code": "短信验证码"
+                    "sms_code": "短信验证码",
+                    "back_to_sms": "返回上一步（重新输入手机号）"
                 }
             },
             "select_account": {

@@ -35,6 +35,7 @@ from .const import (
     CONF_POWER_USER_LIST,
     CONF_SELECTED_ACCOUNT_INDEX,
     CONF_LOGIN_ACCOUNT,
+    CONF_USER_INFO,
     CONF_BILLING_MODE,
     BILLING_STANDARD_YEAR_LADDER_TOU,
     BILLING_STANDARD_YEAR_LADDER,
@@ -187,15 +188,47 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return str(raw).split("-")[0].strip() if raw else ""
 
     async def _finish_entry(self, title: str, data: dict[str, Any]) -> FlowResult:
-        """创建或更新配置项：条目名用户号；若该户号已添加则提示已添加."""
+        """创建或更新配置项：条目名用户号；若该户号已添加则提示已添加."""        # 生成唯一 ID 和名称
         cons_no = self._get_cons_no_from_entry_data(data)
         entry_title = cons_no or title or "Shaobor_95598"
         if self.context.get("source") == SOURCE_REAUTH:
-            entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+            entry_id = self.context.get("entry_id")
+            entry = self.hass.config_entries.async_get_entry(entry_id)
             if entry:
                 self.hass.config_entries.async_update_entry(entry, data=data)
-                # 重新加载集成以应用新的认证信息
-                await self.hass.config_entries.async_reload(entry.entry_id)
+                
+                # 关键修复：强制保存最新认证信息到全局 Store，供其他联动户号读取
+                await self._save_auth_store(
+                    token=data.get(CONF_AUTH_TOKEN),
+                    user_token=data.get(CONF_USER_TOKEN),
+                    user_id=data.get(CONF_USER_ID),
+                    access_token=data.get(CONF_ACCESS_TOKEN),
+                    refresh_token=data.get(CONF_REFRESH_TOKEN),
+                    power_user_list=data.get(CONF_POWER_USER_LIST),
+                    login_account=data.get(CONF_LOGIN_ACCOUNT),
+                    user_info=data.get(CONF_USER_INFO),
+                )
+                
+                # 清除全局重连标志位，允许后续再次触发提醒
+                auth_token = data.get(CONF_AUTH_TOKEN)
+                if auth_token:
+                    reauth_key = f"reauth_active_{auth_token}"
+                    if DOMAIN in self.hass.data and reauth_key in self.hass.data[DOMAIN]:
+                        self.hass.data[DOMAIN].pop(reauth_key)
+                
+                # 重新加载本项目下的所有集成条目，实现联动刷新
+                # 这样用户只需要在一个条目上重新配置，其他同账号条目也会自动恢复
+                login_account = data.get(CONF_LOGIN_ACCOUNT)
+                for other_entry in self.hass.config_entries.async_entries(DOMAIN):
+                    # 通过 auth_token 或 login_account (手机号) 匹配联动
+                    if (auth_token and other_entry.data.get(CONF_AUTH_TOKEN) == auth_token) or \
+                       (login_account and other_entry.data.get(CONF_LOGIN_ACCOUNT) == login_account):
+                        if other_entry.entry_id != entry_id:
+                            _LOGGER.info("检测到同账号条目，自动同步并刷新: %s", other_entry.title)
+                            self.hass.async_create_task(
+                                self.hass.config_entries.async_reload(other_entry.entry_id)
+                            )
+                
                 return self.async_abort(reason="reauth_successful")
         # 检查该户号是否已被添加（含旧版未设 unique_id 的条目）
         for entry in self.hass.config_entries.async_entries(DOMAIN):
@@ -221,8 +254,39 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_create_entry(title=entry_title, data=data)
 
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> FlowResult:
-        """Reauth 时先执行刷新 token：只要能正常返回 access_token 即视为有效，仅失败时才要求重新登录."""
+        """Reauth 时先执行刷新 token：优先尝试从共享 Store 静默修复，失败才要求重新登录."""
         self._auth_token = entry_data.get(CONF_AUTH_TOKEN) or ""
+        
+        # 【静默修复】首先检查是否有其他同账号条目已经更新了全局 AuthStore
+        store = AuthStore(self.hass, STORAGE_VERSION, STORAGE_KEY)
+        stored = await store.async_load()
+        if stored and isinstance(stored, dict) and stored.get("access_token"):
+            current_login = entry_data.get(CONF_LOGIN_ACCOUNT)
+            stored_login = stored.get("login_account")
+            
+            # 如果账号匹配，且存储的 token 看起来比现在的新（或至少存在）
+            if current_login and stored_login == current_login:
+                _LOGGER.info("检测到共享保险箱中有最新授权，尝试为 %s 执行静默修复", entry_data.get(CONF_AUTH_TOKEN))
+                temp_api = Shaobor95598ApiClient(
+                    token=self._auth_token,
+                    session=async_get_clientsession(self.hass),
+                )
+                # 手动注入共享的 access_token 进行验证
+                temp_api._access_token = stored.get("access_token")
+                
+                if await temp_api.validate_token():
+                    _LOGGER.info("静默修复成功！已自动同步授权。")
+                    # 直接合并数据并保存，跳过后续步骤
+                    new_data = {
+                        **entry_data,
+                        CONF_USER_TOKEN: stored.get("user_token"),
+                        CONF_USER_ID: stored.get("user_id"),
+                        CONF_ACCESS_TOKEN: stored.get("access_token"),
+                        CONF_REFRESH_TOKEN: stored.get("refresh_token"),
+                        CONF_POWER_USER_LIST: stored.get("power_user_list"),
+                    }
+                    return await self._finish_entry(None, new_data)
+
         if not self._auth_token:
             return self.async_abort(reason="missing_token")
         self._api = Shaobor95598ApiClient(

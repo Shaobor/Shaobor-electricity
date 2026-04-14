@@ -660,7 +660,7 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
         """异步加载历史数据（从 Store 读取）."""
         try:
             # 从 Store 读取历史数据，使用 entry_id 进行隔离
-            history_store = Store(self.hass, version=1, key=f"shaobor_electricity/history_{self._entry.entry_id}")
+            history_store = Store(self.hass, version=1, key=f"shaobor_electricity/shaobor_history_{self._entry.entry_id}")
             
             stored_data = await history_store.async_load()
             if not stored_data:
