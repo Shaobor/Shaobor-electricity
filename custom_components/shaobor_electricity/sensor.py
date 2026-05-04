@@ -1261,10 +1261,14 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
                     base_flat = self._entry.data.get("price_flat", 0)
                     base_valley = self._entry.data.get("price_valley", 0)
                     
-                    billing_attrs[f"年阶梯第{level}档尖电价"] = round(base_tip + increase, 4) if base_tip > 0 else 0
-                    billing_attrs[f"年阶梯第{level}档峰电价"] = round(base_peak + increase, 4) if base_peak > 0 else 0
-                    billing_attrs[f"年阶梯第{level}档平电价"] = round(base_flat + increase, 4) if base_flat > 0 else 0
-                    billing_attrs[f"年阶梯第{level}档谷电价"] = round(base_valley + increase, 4) if base_valley > 0 else 0
+                    if base_tip > 0:
+                        billing_attrs[f"年阶梯第{level}档尖电价"] = round(base_tip + increase, 4)
+                    if base_peak > 0:
+                        billing_attrs[f"年阶梯第{level}档峰电价"] = round(base_peak + increase, 4)
+                    if base_flat > 0:
+                        billing_attrs[f"年阶梯第{level}档平电价"] = round(base_flat + increase, 4)
+                    if base_valley > 0:
+                        billing_attrs[f"年阶梯第{level}档谷电价"] = round(base_valley + increase, 4)
             
             elif billing_mode == "month_ladder_tou":
                 for level in range(1, 4):
@@ -1277,19 +1281,32 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
                     base_flat = self._entry.data.get("price_flat", 0)
                     base_valley = self._entry.data.get("price_valley", 0)
                     
-                    billing_attrs[f"月阶梯第{level}档尖电价"] = round(base_tip + increase, 4) if base_tip > 0 else 0
-                    billing_attrs[f"月阶梯第{level}档峰电价"] = round(base_peak + increase, 4) if base_peak > 0 else 0
-                    billing_attrs[f"月阶梯第{level}档平电价"] = round(base_flat + increase, 4) if base_flat > 0 else 0
-                    billing_attrs[f"月阶梯第{level}档谷电价"] = round(base_valley + increase, 4) if base_valley > 0 else 0
+                    if base_tip > 0:
+                        billing_attrs[f"月阶梯第{level}档尖电价"] = round(base_tip + increase, 4)
+                    if base_peak > 0:
+                        billing_attrs[f"月阶梯第{level}档峰电价"] = round(base_peak + increase, 4)
+                    if base_flat > 0:
+                        billing_attrs[f"月阶梯第{level}档平电价"] = round(base_flat + increase, 4)
+                    if base_valley > 0:
+                        billing_attrs[f"月阶梯第{level}档谷电价"] = round(base_valley + increase, 4)
                     
             elif billing_mode == "month_ladder_tou_variable":
                 now_month_str = datetime.now().strftime("%m")
                 month_key = f"{int(now_month_str)}月"
                 for level in range(1, 4):
-                    billing_attrs[f"月阶梯第{level}档尖电价"] = self._entry.data.get(f"month_{now_month_str}_ladder_{level}_tip", 0)
-                    billing_attrs[f"月阶梯第{level}档峰电价"] = self._entry.data.get(f"month_{now_month_str}_ladder_{level}_peak", 0)
-                    billing_attrs[f"月阶梯第{level}档平电价"] = self._entry.data.get(f"month_{now_month_str}_ladder_{level}_flat", 0)
-                    billing_attrs[f"{month_key}阶梯第{level}档谷电价"] = self._entry.data.get(f"month_{now_month_str}_ladder_{level}_valley", 0)
+                    tip_val = self._entry.data.get(f"month_{now_month_str}_ladder_{level}_tip", 0)
+                    peak_val = self._entry.data.get(f"month_{now_month_str}_ladder_{level}_peak", 0)
+                    flat_val = self._entry.data.get(f"month_{now_month_str}_ladder_{level}_flat", 0)
+                    valley_val = self._entry.data.get(f"month_{now_month_str}_ladder_{level}_valley", 0)
+                    
+                    if tip_val and float(tip_val) > 0:
+                        billing_attrs[f"月阶梯第{level}档尖电价"] = tip_val
+                    if peak_val and float(peak_val) > 0:
+                        billing_attrs[f"月阶梯第{level}档峰电价"] = peak_val
+                    if flat_val and float(flat_val) > 0:
+                        billing_attrs[f"月阶梯第{level}档平电价"] = flat_val
+                    if valley_val and float(valley_val) > 0:
+                        billing_attrs[f"{month_key}阶梯第{level}档谷电价"] = valley_val
         else:
             # 非峰谷计费，显示阶梯电价
             billing_attrs["当前电价"] = current_price
