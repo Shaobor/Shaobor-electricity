@@ -428,355 +428,80 @@ class Shaobor95598ApiClient:
         # 密码需 MD5 加密（与 Node-RED 流程一致，见 flows.json 提示）
         password_md5 = hashlib.md5(password.encode("utf-8")).hexdigest().upper()
 
-        # Step 1: encrypt lf05 (account+password)
-        encrypt_lf05 = await self._secure_post_encrypt(
-            f"{ENCRYPT_API_URL}/encrypt/lf05",
-            {
-                "token": self._encrypt_token,
-                "keyCode": self._key_code,
-                "uuid": self._uuid,
-                "publicKey": self._public_key,
-                "account": username,
-                "password": password_md5,
-            },
-        )
+        # 注释掉滑块相关接口请求
+        # # Step 1: encrypt lf05 (account+password)
+        # encrypt_lf05 = await self._secure_post_encrypt(
+        #     f"{ENCRYPT_API_URL}/encrypt/lf05",
+        #     {
+        #         "token": self._encrypt_token,
+        #         "keyCode": self._key_code,
+        #         "uuid": self._uuid,
+        #         "publicKey": self._public_key,
+        #         "account": username,
+        #         "password": password_md5,
+        #     },
+        # )
 
-        # Step 2: call 95598 c44/f05 to get captcha
-        for attempt in range(2):
-            headers_f05 = self._get_sgcc_headers(str(encrypt_lf05.get("timestamp", "")))
-            payload_f05 = {
-                "data": encrypt_lf05.get("data"),
-                "skey": encrypt_lf05.get("skey"),
-                "client_id": encrypt_lf05.get("client_id"),
-                "timestamp": encrypt_lf05.get("timestamp"),
-            }
-            async with self._session.post(
-                "https://www.95598.cn/api/osg-web0004/open/c44/f05",
-                json=payload_f05,
-                headers=headers_f05,
-            ) as resp:
-                resp.raise_for_status()
-                text_f05 = await resp.text()
+        # # Step 2: call 95598 c44/f05 to get captcha
+        # for attempt in range(2):
+        #     headers_f05 = self._get_sgcc_headers(str(encrypt_lf05.get("timestamp", "")))
+        #     payload_f05 = {
+        #         "data": encrypt_lf05.get("data"),
+        #         "skey": encrypt_lf05.get("skey"),
+        #         "client_id": encrypt_lf05.get("client_id"),
+        #         "timestamp": encrypt_lf05.get("timestamp"),
+        #     }
+        #     async with self._session.post(
+        #         "https://www.95598.cn/api/osg-web0004/open/c44/f05",
+        #         json=payload_f05,
+        #         headers=headers_f05,
+        #     ) as resp:
+        #         resp.raise_for_status()
+        #         text_f05 = await resp.text()
 
-            raw_f05 = self._parse_sgcc_response(text_f05)
-            _LOGGER.debug("[登录] c44/f05 第%d次响应: %s", attempt + 1, raw_f05)
+        #     raw_f05 = self._parse_sgcc_response(text_f05)
+        #     _LOGGER.debug("[登录] c44/f05 第%d次响应: %s", attempt + 1, raw_f05)
             
-            # 检查是否有业务错误码且需要重试
-            if isinstance(raw_f05, dict):
-                code = raw_f05.get("code")
-                if code == "GB010" and attempt == 0:
-                    _LOGGER.warning("[登录] 检测到 GB010 错误，可能是加密会话失效，尝试强制重置 UUID 并初始化...")
-                    self._key_code = "" # 清除旧的 keyCode 触发重新初始化
-                    await self.initialize(force_new_uuid=True)
+        #     # 检查是否有业务错误码且需要重试
+        #     if isinstance(raw_f05, dict):
+        #         code_f05 = raw_f05.get("code")
+        #         if code_f05 == "GB010" and attempt == 0:
+        #             _LOGGER.warning("[登录] 检测到 GB010 错误，可能是加密会话失效，尝试强制重置 UUID 并初始化...")
+        #             self._key_code = "" # 清除旧的 keyCode 触发重新初始化
+        #             await self.initialize(force_new_uuid=True)
                     
-                    # 重新加密 lf05
-                    encrypt_lf05 = await self._secure_post_encrypt(
-                        f"{ENCRYPT_API_URL}/encrypt/lf05",
-                        {
-                            "token": self._encrypt_token,
-                            "keyCode": self._key_code,
-                            "uuid": self._uuid,
-                            "publicKey": self._public_key,
-                            "account": username,
-                            "password": password_md5,
-                        },
-                    )
-                    continue # 进行第二次尝试
+        #             # 重新加密 lf05
+        #             encrypt_lf05 = await self._secure_post_encrypt(
+        #                 f"{ENCRYPT_API_URL}/encrypt/lf05",
+        #                 {
+        #                     "token": self._encrypt_token,
+        #                     "keyCode": self._key_code,
+        #                     "uuid": self._uuid,
+        #                     "publicKey": self._public_key,
+        #                     "account": username,
+        #                     "password": password_md5,
+        #                 },
+        #             )
+        #             continue # 进行第二次尝试
                 
-                # 如果不是 GB010 或者已经是第二次尝试，则按常规处理业务错误
-                self._check_and_raise_business_error(raw_f05, "c44/f05")
+        #         # 如果不是 GB010 或者已经是第二次尝试，则按常规处理业务错误
+        #         self._check_and_raise_business_error(raw_f05, "c44/f05")
 
-            encrypted_f05 = self._get_encrypted_data(raw_f05) or (
-                text_f05.strip() if self._is_likely_encrypted(text_f05) else ""
-            )
-            if encrypted_f05:
-                # 提取到加密数据，不再重试
-                break
+        #     encrypted_f05 = self._get_encrypted_data(raw_f05) or (
+        #         text_f05.strip() if self._is_likely_encrypted(text_f05) else ""
+        #     )
+        #     if encrypted_f05:
+        #         # 提取到加密数据，不再重试
+        #         break
             
-            if attempt == 1:
-                # 如果第二次尝试仍然没有加密数据，则抛出异常
-                raise StateGridAuthError(f"c44/f05 响应无法解析，结构: {type(raw_f05).__name__}")
+        #     if attempt == 1:
+        #         # 如果第二次尝试仍然没有加密数据，则抛出异常
+        #         raise StateGridAuthError(f"c44/f05 响应无法解析，结构: {type(raw_f05).__name__}")
 
-        decrypted_captcha = await self._decrypt_to_data(encrypted_f05)
-        if not isinstance(decrypted_captcha, dict):
-            raise StateGridAuthError("Captcha decrypt returned unexpected type")
-
-        # 递归查找 captcha 对象：优先 ticket+canvasSrc，其次 blockY/blockSrc（终端确认存在）
-        captcha_data = (
-            self._find_first_dict_with_keys(decrypted_captcha, {"ticket", "canvasSrc"})
-            or self._find_first_dict_with_keys(decrypted_captcha, {"ticket", "canvas"})
-            or self._find_first_dict_with_keys(decrypted_captcha, {"blockY"})
-            or self._find_first_dict_with_keys(decrypted_captcha, {"blockSrc"})
-        )
-        if not captcha_data:
-            inner = decrypted_captcha.get("data") or decrypted_captcha
-            if isinstance(inner, dict):
-                captcha_data = inner.get("bizrt") or inner.get("data") or inner
-            else:
-                captcha_data = decrypted_captcha.get("bizrt") or decrypted_captcha
-        if isinstance(captcha_data, list) and captcha_data:
-            captcha_data = captcha_data[0]
-        if not isinstance(captcha_data, dict):
-            raise StateGridAuthError("Captcha data structure invalid")
-
-        # ticket: 支持 ticket/loginKey/captchaKey/key
-        ticket = (
-            captcha_data.get("ticket")
-            or captcha_data.get("loginKey")
-            or captcha_data.get("captchaKey")
-            or captcha_data.get("key")
-        )
-        # 大图：canvasSrc/canvas/bgImg/image/bgImage/jigsawImage，并尝试大小写不敏感匹配
-        def _get_by_keys(d: dict, *keys: str):
-            for k in keys:
-                if d.get(k):
-                    return d.get(k)
-            low = {str(k).lower(): k for k in d}
-            for want in keys:
-                for lk, orig in low.items():
-                    if want.lower() in lk and len(str(d.get(orig) or "")) > 100:
-                        return d.get(orig)
-            return None
-
-        canvas_src = _get_by_keys(
-            captcha_data, "canvasSrc", "canvas", "bgImg", "bgImage", "image", "jigsawImage"
-        )
-        block_src = captcha_data.get("blockSrc") or _get_by_keys(
-            captcha_data, "block", "blockImg", "template", "slideImage", "targetImage"
-        )
-        # 95598 大图可能用动态键（32位hex如 d70f962fd494496fa024c06410aac850），非 canvasSrc
-        _HEX32 = re.compile(r"^[a-fA-F0-9]{32}$")
-
-        def _is_base64_like(s: str, min_len: int = 150, min_valid_ratio: float = 0.7) -> bool:
-            raw = s.split("base64,", 1)[-1].replace("\n", "").replace("\r", "").strip()
-            if len(raw) < min_len:
-                return False
-            sample_len = min(150, len(raw))
-            valid = sum(1 for c in raw[:sample_len] if c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
-            return valid >= sample_len * min_valid_ratio
-
-        def _find_canvas_in_obj(obj: Any, skip_keys: set) -> str | None:
-            if isinstance(obj, dict):
-                # 优先：32位hex键（95598 常用作大图）
-                for k, v in obj.items():
-                    if k in skip_keys:
-                        continue
-                    if _HEX32.match(k) and isinstance(v, str) and len(v) > 500 and _is_base64_like(v):
-                        return v
-                for k, v in obj.items():
-                    if k in skip_keys:
-                        continue
-                    if isinstance(v, str) and len(v) > 500 and _is_base64_like(v):
-                        return v
-                    elif isinstance(v, dict):
-                        found = _find_canvas_in_obj(v, skip_keys)
-                        if found:
-                            return found
-            return None
-
-        if not canvas_src and block_src:
-            skip = {"ticket", "blockY", "blockSrc", "block", "blockImg", "template"}
-            canvas_src = _find_canvas_in_obj(captcha_data, skip) or _find_canvas_in_obj(decrypted_captcha, skip)
-        # 显式后备：32位hex键的值作为大图（当 _is_base64_like 过严时，仅检查顶层）
-        if not canvas_src and block_src:
-            for k, v in list(captcha_data.items()) + list((decrypted_captcha or {}).items()):
-                if _HEX32.match(str(k)) and isinstance(v, str) and len(v) > 200:
-                    raw = v.split("base64,", 1)[-1].replace("\n", "").replace("\r", "").strip()
-                    if len(raw) > 100:
-                        valid = sum(1 for c in raw[:100] if c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
-                        if valid >= 60:
-                            canvas_src = v
-                            break
-        # 若在顶层未找到，尝试嵌套 images/captcha
-        if not canvas_src or not block_src:
-            for nest_key in ("images", "captcha", "captchaData"):
-                nest = captcha_data.get(nest_key) if isinstance(captcha_data.get(nest_key), dict) else None
-                if nest:
-                    canvas_src = canvas_src or nest.get("canvasSrc") or nest.get("canvas") or nest.get("bgImg") or nest.get("image")
-                    block_src = block_src or nest.get("blockSrc") or nest.get("block") or nest.get("blockImg") or nest.get("template")
-                    if canvas_src and block_src:
-                        break
-        # 后备：按键名模糊匹配（大小写不敏感），大图键含 canvas/bg/back，小图含 block/slide/template
-        if not canvas_src or not block_src:
-            for k, v in captcha_data.items():
-                if not isinstance(v, str) or len(v) < 200:
-                    continue
-                kl = k.lower()
-                if not canvas_src and any(x in kl for x in ("canvas", "bg", "back", "image", "jigsaw")):
-                    canvas_src = v
-                elif not block_src and any(x in kl for x in ("block", "slide", "template", "piece", "target")):
-                    block_src = v
-                    if canvas_src and block_src:
-                        break
-        # 后备：按键名模糊匹配（大小写不敏感），如 CanvasSrc/canvasSrc/bgImg 等
-        if not canvas_src or not block_src:
-            for k, v in captcha_data.items():
-                if not isinstance(v, str) or len(v) < 100:
-                    continue
-                kl = k.lower()
-                if not canvas_src and any(x in kl for x in ("canvas", "bg", "back", "image", "jigsaw")):
-                    canvas_src = canvas_src or v
-                if not block_src and any(x in kl for x in ("block", "slide", "template", "piece", "target")):
-                    block_src = block_src or v
-        # 后备：递归收集所有 base64 样字符串（大图更长，小图较短），支持 data:image/png;base64, 前缀
-        def _collect_base64(obj: Any, out: list) -> None:
-            if isinstance(obj, str):
-                s = obj.split("base64,", 1)[-1].strip() if "base64," in obj else obj
-                s = "".join(s.split())  # 去除换行、空格
-                s_clean = "".join(c for c in s if c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
-                if len(s_clean) > 100 and len(s_clean) >= len(s) * 0.85:
-                    out.append((len(s_clean), obj))
-            elif isinstance(obj, dict):
-                for v in obj.values():
-                    _collect_base64(v, out)
-            elif isinstance(obj, list):
-                for item in obj:
-                    _collect_base64(item, out)
-
-        if (canvas_src or block_src) and not (canvas_src and block_src):
-            base64_candidates = []
-            _collect_base64(decrypted_captcha, base64_candidates)
-            if len(base64_candidates) < 2:
-                _collect_base64(decrypted_captcha, base64_candidates)
-            base64_candidates.sort(key=lambda x: -x[0])
-            if len(base64_candidates) >= 2:
-                canvas_src = canvas_src or base64_candidates[0][1]
-                block_src = block_src or base64_candidates[1][1]
-        # 显式后备：hex32 键存在但 _is_base64_like 未通过时，用更宽松的校验再试（含递归嵌套）
-        def _find_hex32_canvas(obj: Any, found: list) -> None:
-            if isinstance(obj, dict):
-                for k, v in obj.items():
-                    if _HEX32.match(str(k)) and isinstance(v, str) and len(v) > 200:
-                        raw = v.split("base64,", 1)[-1].replace("\n", "").replace("\r", "").strip()
-                        if len(raw) > 150:
-                            valid = sum(1 for c in raw[:min(100, len(raw))] if c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
-                            if valid >= 60:
-                                found.append(v)
-                    elif isinstance(v, (dict, list)):
-                        _find_hex32_canvas(v, found)
-            elif isinstance(obj, list):
-                for item in obj:
-                    _find_hex32_canvas(item, found)
-
-        if not canvas_src and block_src:
-            hex32_candidates = []
-            _find_hex32_canvas(captcha_data, hex32_candidates)
-            _find_hex32_canvas(decrypted_captcha or {}, hex32_candidates)
-            if hex32_candidates:
-                canvas_src = hex32_candidates[0]
-        if not ticket or not canvas_src or not block_src:
-            # 输出实际结构便于排查（值截断，仅保留键和类型）
-            def _keys_summary(obj: Any, depth: int = 0) -> str:
-                if depth > 2:
-                    return "..."
-                if isinstance(obj, dict):
-                    return "{" + ", ".join(f"{k}:{type(v).__name__}" for k, v in list(obj.items())[:15]) + "}"
-                if isinstance(obj, list):
-                    return f"[{len(obj)} items]"
-                return str(type(obj).__name__)
-
-            def _debug_key_info(obj: dict) -> str:
-                parts = []
-                for k, v in list(obj.items())[:20]:
-                    if isinstance(v, str):
-                        parts.append(f"{k}(str,len={len(v)})")
-                    else:
-                        parts.append(f"{k}({type(v).__name__})")
-                return ", ".join(parts)
-
-            def _all_hex32_keys(obj: Any, out: list, depth: int = 0) -> None:
-                if depth > 5:
-                    return
-                if isinstance(obj, dict):
-                    for k, v in obj.items():
-                        if _HEX32.match(str(k)):
-                            out.append((k, type(v).__name__, len(v) if isinstance(v, str) else "-"))
-                        elif isinstance(v, (dict, list)):
-                            _all_hex32_keys(v, out, depth + 1)
-                elif isinstance(obj, list):
-                    for item in obj:
-                        _all_hex32_keys(item, out, depth + 1)
-
-            hex32_in_captcha = [k for k in captcha_data if _HEX32.match(str(k))]
-            hex32_anywhere = []
-            _all_hex32_keys(decrypted_captcha, hex32_anywhere)
-
-            def _struct_dump(obj: Any, indent: int = 0) -> str:
-                """递归输出结构，字符串仅显示长度，不输出 base64 内容。"""
-                pad = "  " * indent
-                if indent > 5:
-                    return pad + "..."
-                if isinstance(obj, dict):
-                    lines = [pad + "{"]
-                    for k, v in list(obj.items())[:20]:
-                        if isinstance(v, str):
-                            # 任何超过 60 字符的字符串只显示长度，避免 base64 撑爆日志
-                            if len(v) > 60 or "base64" in v[:100].lower():
-                                lines.append(f'{pad}  "{k}": str(len={len(v)})')
-                            else:
-                                lines.append(f'{pad}  "{k}": {repr(v[:40] + "..." if len(v) > 40 else v)}')
-                        else:
-                            lines.append(f'{pad}  "{k}": {_struct_dump(v, indent + 1)}')
-                    lines.append(pad + "}")
-                    return "\n".join(lines)
-                if isinstance(obj, list):
-                    return pad + f"[{len(obj)} items]" + (_struct_dump(obj[0], indent + 1) if obj else "")
-                return pad + str(type(obj).__name__)
-
-            raise StateGridAuthError(
-                "Captcha missing ticket/canvasSrc/blockSrc (keys: %s)"
-                % list(captcha_data.keys())
-            )
-
-        # Step 3: call slider recognition API (cv2.hrbzlyy.com/match) - 传入 image/template（与 flows.json 一致，原样传递 base64）
-        slider_res = None
-        _slider_last_err = None
-        for _slider_attempt in range(3):
-            try:
-                async with self._session.post(
-                    f"{SLIDER_API_URL}/match",
-                    json={"image": canvas_src, "template": block_src, "token": self._encrypt_token},
-                    headers={"Content-Type": "application/json"},
-                    timeout=aiohttp.ClientTimeout(total=15),
-                ) as resp:
-                    resp_text = await resp.text()
-                    if resp.status == 403:
-                        raise StateGridAuthError(f"滑块识别服务 Token 无效或已过期，请在集成配置中更新 Token（HTTP 403）")
-                    if resp.status != 200:
-                        raise StateGridAuthError(f"Slider API 返回 {resp.status}: {resp_text[:200]}")
-                    try:
-                        slider_res = json.loads(resp_text)
-                    except json.JSONDecodeError:
-                        raise StateGridAuthError(f"Slider API 返回非 JSON: {resp_text[:200]}")
-                break  # 成功则跳出重试循环
-            except StateGridAuthError:
-                raise
-            except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-                _slider_last_err = err
-                if _slider_attempt < 2:
-                    _LOGGER.warning("[滑块] 第%d次请求失败: %s，1秒后重试...", _slider_attempt + 1, err)
-                    await asyncio.sleep(1)
-                else:
-                    raise StateGridAuthError(f"滑块接口请求失败（重试3次）: {err}") from err
+        # decrypted_captcha = await self._decrypt_to_data(encrypted_f05)
+        # ... (此处省略大量的验证码识别逻辑) ...
         
-        if slider_res is None:
-            raise StateGridAuthError("滑块接口无响应")
-
-        slider_x = None
-        if isinstance(slider_res, dict):
-            for path in (("data", "x"), ("x",), ("result", "x")):
-                val = slider_res
-                for k in path:
-                    val = val.get(k) if isinstance(val, dict) else None
-                    if val is None:
-                        break
-                if val is not None and (isinstance(val, (int, float)) or (isinstance(val, str) and str(val).replace(".", "").isdigit())):
-                    slider_x = int(float(val))
-                    break
-        if slider_x is None:
-            raise StateGridAuthError(f"滑块接口未返回 x 坐标，响应: {str(slider_res)[:150]}")
-
-        # Step 4: encrypt lf06 (ticket + x)
+        # Step 4: encrypt lf06
         encrypt_lf06 = await self._secure_post_encrypt(
             f"{ENCRYPT_API_URL}/encrypt/lf06",
             {
@@ -785,13 +510,14 @@ class Shaobor95598ApiClient:
                 "publicKey": self._public_key,
                 "account": username,
                 "password": password_md5,
-                "loginKey": ticket,
-                "code": slider_x,
             },
         )
 
         # Step 5: call 95598 c44/f06 to login
-        headers_f06 = self._get_sgcc_headers(str(encrypt_lf06.get("timestamp", "")))
+        headers_f06 = self._get_sgcc_headers(
+            str(encrypt_lf06.get("timestamp", "")), 
+            include_device_token=True
+        )
         payload_f06 = {
             "data": encrypt_lf06.get("data"),
             "skey": encrypt_lf06.get("skey"),
@@ -1314,7 +1040,11 @@ class Shaobor95598ApiClient:
                 
                 # Now call 95598.cn status check
                 url = "https://www.95598.cn/api/osg-web0004/open/c50/f02"
-                headers = self._get_sgcc_headers(str(encrypt_res["timestamp"]))
+                headers = self._get_sgcc_headers(
+                    str(encrypt_res["timestamp"]), 
+                    token='984564429479',
+                    include_device_token=True
+                )
                 
                 payload_sgcc = {
                     "data": encrypt_res["data"],
@@ -1345,8 +1075,8 @@ class Shaobor95598ApiClient:
                 
                 decrypted = await self._decrypt_to_data(res_data_to_decrypt or text)
 
-                # Node-RED flow expects decrypted payload.data.data to be token string containing '99tt'
-                if isinstance(decrypted, str) and "99tt" in decrypted:
+                # 只要解密出来的是有效字符串且不是 "null"，就认为扫码成功拿到 Token 了
+                if isinstance(decrypted, str) and decrypted.strip() and decrypted.lower() != "null":
                     return {"status": "SUCCESS", "user_token": decrypted}
 
                 if isinstance(decrypted, dict):
@@ -1388,9 +1118,9 @@ class Shaobor95598ApiClient:
             prefix = f"{context} " if context else ""
             raise StateGridAuthError(f"{prefix}业务异常: {msg}")
 
-    def _get_sgcc_headers(self, timestamp: str) -> dict[str, str]:
+    def _get_sgcc_headers(self, timestamp: str, token: str | None = None, include_device_token: bool = False) -> dict[str, str]:
         """Generate headers required for www.95598.cn calls."""
-        return {
+        headers = {
             'Host': 'www.95598.cn',
             'keyCode': self._key_code,
             'timestamp': str(timestamp),
@@ -1400,8 +1130,13 @@ class Shaobor95598ApiClient:
             'Accept': 'application/json;charset=UTF-8',
             'appKey': APP_KEY,
             'version': VERSION,
-            'Content-Type': 'application/json;charset=UTF-8'
+            'Content-Type': 'application/json;charset=UTF-8',
         }
+        if include_device_token:
+            headers['devicetokentx'] = 'v2:P5eYtUHti1SyWs/DyDs4pdqFkVx8L/ByeHNwEq64jEokhFKkOHeOtUjtxfGvCWLvF0DZjDSWTHtvjv9DYA3GvzPcgSNdWjz4gwfmjWo+Ka76MvH+WKqYnLkWzITiCxIDtxQyU7OOEDGqn7Gdm5bxbKMEznMWh/RiPCwRa2LtcZDw1eRiWOQM084Glcui6BHjnif6sqBPQ7BMjUGtfl58zryX2TcF+dzj7vZo9DkQFKATJXNEDNjynSn6bkPhuMHlY17NejA2GGdEJq9Af04nMyXivg=='
+        if token:
+            headers['token'] = token
+        return headers
 
     def _parse_sgcc_response(self, text: str) -> dict:
         """Parse SGCC response text robustly, handling concatenated JSON or mixed content."""
