@@ -127,20 +127,50 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self._store
 
     async def _get_stored_token(self) -> str | None:
-        """Get token from persistent storage."""
+        """Get token from persistent storage or existing entries."""
+        # 1. 尝试从共享 Store 读取
         try:
             data = await self._get_store().async_load()
-            return data.get("token") if isinstance(data, dict) else None
+            if isinstance(data, dict) and data.get("token"):
+                return data.get("token")
         except Exception:
-            return None
+            pass
+
+        # 2. 兜底：从现有集成条目中查找
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            token = entry.data.get(CONF_AUTH_TOKEN)
+            if token:
+                _LOGGER.debug("[配置流程] 从现有条目 %s 中找到备份 token", entry.title)
+                return token
+        return None
 
     async def _get_stored_auth(self) -> dict[str, Any] | None:
-        """Get full auth session from Store (Node-RED 全局变量 style)."""
+        """Get full auth session from Store or existing entries."""
+        # 1. 尝试从共享 Store 读取
         try:
             data = await self._get_store().async_load()
-            return data if isinstance(data, dict) and data.get("token") else None
+            if isinstance(data, dict) and data.get("token"):
+                return data
         except Exception:
-            return None
+            pass
+
+        # 2. 兜底：从现有集成条目中重建
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            if entry.data.get(CONF_AUTH_TOKEN) and entry.data.get(CONF_USER_TOKEN):
+                _LOGGER.debug("[配置流程] 从现有条目 %s 中重建认证会话", entry.title)
+                return {
+                    "token": entry.data.get(CONF_AUTH_TOKEN),
+                    "user_token": entry.data.get(CONF_USER_TOKEN),
+                    "user_id": entry.data.get(CONF_USER_ID),
+                    "access_token": entry.data.get(CONF_ACCESS_TOKEN),
+                    "refresh_token": entry.data.get(CONF_REFRESH_TOKEN),
+                    "power_user_list": entry.data.get(CONF_POWER_USER_LIST),
+                    "login_account": entry.data.get(CONF_LOGIN_ACCOUNT),
+                    "username": entry.data.get(CONF_USERNAME),
+                    "password": entry.data.get(CONF_PASSWORD),
+                    "auto_relogin": entry.data.get(CONF_AUTO_RELOGIN, False),
+                }
+        return None
 
     async def _save_token(self, token: str) -> None:
         """Save token to persistent storage."""
@@ -424,11 +454,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 return await self.async_step_select_account()
                             except Exception as refresh_err:
                                 # 刷新失败说明登录已过期，继续走常规流程（选择登录方式）
-                                _LOGGER.debug("[配置流程] 自动跳转前校验失败，需要重新登录: %s", refresh_err)
+                                _LOGGER.info("[配置流程] 自动跳转前会话校验失败，需要重新登录: %s", refresh_err)
                                 pass
                         
+                    _LOGGER.info("[配置流程] 找到有效授权码，自动进入登录方式选择")
                     return await self.async_step_login_method()
-                except Exception:
+                except Exception as val_err:
+                    _LOGGER.warning("[配置流程] 自动校验授权码失败: %s", val_err)
                     pass
 
         if user_input is not None:
