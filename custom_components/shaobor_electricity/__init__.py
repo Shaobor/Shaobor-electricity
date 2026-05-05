@@ -26,6 +26,7 @@ from .const import (
     CONF_POWER_USER_LIST,
     CONF_SELECTED_ACCOUNT_INDEX,
     CONF_LOGIN_ACCOUNT,
+    CONF_MACHINE_ID,
 )
 from .api import Shaobor95598ApiClient, StateGridAuthError, STORAGE_KEY, STORAGE_VERSION
 from .storage import AuthStore
@@ -102,7 +103,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return stored.get(store_key or key)
         return None
 
-    api = Shaobor95598ApiClient(token, session, store, hass, entry_id=entry.entry_id)
+    api = Shaobor95598ApiClient(
+        token, 
+        session, 
+        store, 
+        hass, 
+        entry_id=entry.entry_id,
+        machine_id=entry.data.get(CONF_MACHINE_ID) or hass.data.get("core.uuid")
+    )
     api.load_auth_state(
         user_token=entry_user_token or _merged(CONF_USER_TOKEN, "user_token"),
         user_id=entry.data.get(CONF_USER_ID) or (stored.get("user_id") if stored else None),
