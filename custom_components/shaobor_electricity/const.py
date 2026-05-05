@@ -5,6 +5,8 @@ DOMAIN: Final = "shaobor_electricity"
 
 CONF_AUTH_TOKEN: Final = "auth_token"
 CONF_LOGIN_METHOD: Final = "login_method"
+CONF_MACHINE_ID: Final = "machine_id"
+
 
 # Stored auth/session fields
 CONF_USER_TOKEN: Final = "user_token"

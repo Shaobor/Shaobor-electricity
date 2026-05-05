@@ -63,6 +63,7 @@ from .const import (
     CONF_LADDER_PRICE_3_TIP,
     CONF_LADDER_PRICE_3_PEAK,
     CONF_LADDER_PRICE_3_FLAT,
+    CONF_MACHINE_ID,
 )
 try:
     import pyqrcode  # type: ignore[import-untyped]
@@ -83,7 +84,8 @@ class InvalidAuthToken(Exception):
 async def validate_token(hass: HomeAssistant, token: str) -> None:
     """Validate the user input token."""
     session = async_get_clientsession(hass)
-    api = Shaobor95598ApiClient(token=token, session=session)
+    machine_id = hass.data.get("core.uuid")
+    api = Shaobor95598ApiClient(token=token, session=session, machine_id=machine_id)
     valid = await api.validate_token()
     if not valid:
         raise InvalidAuthToken
@@ -190,6 +192,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         username: str | None = None,
         password: str | None = None,
         auto_relogin: bool = False,
+        machine_id: str | None = None,
     ) -> None:
         """Save all key values to Store when bizrt.token obtained (登录成功)."""
         payload: dict[str, Any] = {
@@ -204,6 +207,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "username": username or "",
             "password": password or "",
             "auto_relogin": auto_relogin,
+            "machine_id": machine_id or self.hass.data.get("core.uuid"),
         }
         await self._get_store().async_save(payload)
 
@@ -278,8 +282,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             username=data.get(CONF_USERNAME),
             password=data.get(CONF_PASSWORD),
             auto_relogin=data.get(CONF_AUTO_RELOGIN, False),
+            machine_id=data.get(CONF_MACHINE_ID),
         )
         
+        data[CONF_MACHINE_ID] = data.get(CONF_MACHINE_ID) or self.hass.data.get("core.uuid")
         await self.async_set_unique_id(cons_no or entry_title)
         return self.async_create_entry(title=entry_title, data=data)
 
@@ -300,6 +306,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 temp_api = Shaobor95598ApiClient(
                     token=self._auth_token,
                     session=async_get_clientsession(self.hass),
+                    machine_id=self.hass.data.get("core.uuid"),
                 )
                 # 手动注入共享的 access_token 进行验证
                 temp_api._access_token = stored.get("access_token")
@@ -322,6 +329,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._api = Shaobor95598ApiClient(
             token=self._auth_token,
             session=async_get_clientsession(self.hass),
+            machine_id=self.hass.data.get("core.uuid"),
         )
         try:
             await self._api.initialize()
@@ -416,6 +424,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     self._api = Shaobor95598ApiClient(
                         token=self._auth_token,
                         session=async_get_clientsession(self.hass),
+                        machine_id=self.hass.data.get("core.uuid"),
                     )
                     await self._api.initialize()
                     # 登录有效时，若 Store 中已有户号列表，尝试校验会话并进入选择户号（或仅一户则直接创建），跳过「选择登录方式」
@@ -476,7 +485,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._auth_token = token
                 self._api = Shaobor95598ApiClient(
                     token=self._auth_token, 
-                    session=async_get_clientsession(self.hass)
+                    session=async_get_clientsession(self.hass),
+                    machine_id=self.hass.data.get("core.uuid"),
                 )
                 await self._api.initialize()
                 

@@ -204,6 +204,7 @@ class Shaobor95598ApiClient:
         store: Any | None = None,
         hass: Any | None = None,
         entry_id: str | None = None,
+        machine_id: str | None = None,
     ) -> None:
         """Initialize the API client."""
         self._encrypt_token = token  # 用于加密服务的固定 token，不应被修改
@@ -212,6 +213,7 @@ class Shaobor95598ApiClient:
         self._store = store  # 用于持久化存储
         self._hass = hass  # Home Assistant 实例，用于创建 Store
         self._entry_id = entry_id
+        self._machine_id = machine_id
         
         # Internal state mimicking Node-RED globals
         self._uuid = str(uuid.uuid4()).replace("-", "")
@@ -303,7 +305,10 @@ class Shaobor95598ApiClient:
             _LOGGER.info("[接口初始化] 强制重置 UUID: %s", self._uuid)
             
         url = f"{ENCRYPT_API_URL}/initialize"
-        payload = {"token": self._encrypt_token}  # 使用加密服务的固定 token
+        payload = {
+            "token": self._encrypt_token,
+            "machineId": self._machine_id,
+        }  # 使用加密服务的固定 token
         try:
             async with self._session.post(url, json=payload) as response:
                 response.raise_for_status()
@@ -333,6 +338,7 @@ class Shaobor95598ApiClient:
         payload = {
             "token": self._encrypt_token,  # 使用加密服务的固定 token
             "uuid": use_uuid,
+            "machineId": self._machine_id,
             "encryptData": encrypt_data,
         }
         try:
@@ -507,6 +513,7 @@ class Shaobor95598ApiClient:
             {
                 "token": self._encrypt_token,
                 "uuid": self._uuid,
+                "machineId": self._machine_id,
                 "publicKey": self._public_key,
                 "account": username,
                 "password": password_md5,
@@ -674,6 +681,7 @@ class Shaobor95598ApiClient:
         # Step B: helper encrypt getWebToken
         encrypt_payload = {
             "token": self._encrypt_token,
+            "machineId": self._machine_id,
             "code": code,
             "key_code": self._key_code,
             "uuid": self._uuid,
@@ -1376,6 +1384,7 @@ class Shaobor95598ApiClient:
         # Step 1: 加密手机号和验证码 (使用 c4f02 加密接口)
         encrypt_payload = {
             "token": self._encrypt_token,
+            "machineId": self._machine_id,
             "keyCode": self._key_code,
             "uuid": self._uuid,
             "publicKey": self._public_key,
@@ -1536,6 +1545,7 @@ class Shaobor95598ApiClient:
         for attempt in range(2):
             encrypt_payload = {
                 "token": str(self._encrypt_token) if self._encrypt_token else "",
+                "machineId": self._machine_id,
                 "uuid": str(self._uuid) if self._uuid else "",
                 "publicKey": str(self._public_key) if self._public_key else "",
                 "userToken": str(self._user_token) if self._user_token else "",
@@ -1634,6 +1644,7 @@ class Shaobor95598ApiClient:
         # 构建 c9/f02 的请求 payload
         encrypt_payload_c9f02 = {
             "token": str(self._encrypt_token) if self._encrypt_token else "",
+            "machineId": self._machine_id,
             "uuid": str(self._uuid) if self._uuid else "",
             "publicKey": str(self._public_key) if self._public_key else "",
             "userId": str(self._user_id),
@@ -1727,6 +1738,7 @@ class Shaobor95598ApiClient:
 
         encrypt_payload = {
             "token": self._encrypt_token,
+            "machineId": self._machine_id,
             "uuid": self._uuid,
             "publicKey": self._public_key,
             "proCode": pro_code,
@@ -1881,6 +1893,7 @@ class Shaobor95598ApiClient:
         
         encrypt_payload = {
             "token": self._encrypt_token,
+            "machineId": self._machine_id,
             "uuid": self._uuid,
             "publicKey": self._public_key,
             "consNo": cons_no,
@@ -2052,6 +2065,7 @@ class Shaobor95598ApiClient:
         
         encrypt_payload = {
             "token": self._encrypt_token,
+            "machineId": self._machine_id,
             "uuid": self._uuid,
             "publicKey": self._public_key,
             "consNo": cons_no,
