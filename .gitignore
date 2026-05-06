@@ -43,6 +43,8 @@ htmlcov/
 
 # Integration release exclusions
 ha/
+ha_test_env/
 FIX_SUMMARY.md
 electricity-info-card.js
 flows.json
+start_test_ha.sh

@@ -1060,6 +1060,10 @@ class Shaobor95598ApiClient:
                     "timestamp": encrypt_res["timestamp"]
                 }
                 
+                _LOGGER.debug("[扫码登录] c50/f02 请求 URL: %s", url)
+                _LOGGER.debug("[扫码登录] c50/f02 请求 Headers: %s", headers)
+                _LOGGER.debug("[扫码登录] c50/f02 请求 Payload: %s", payload_sgcc)
+                
                 async with self._session.post(url, json=payload_sgcc, headers=headers) as resp:
                     resp.raise_for_status()
                     text = await resp.text()
@@ -1127,8 +1131,9 @@ class Shaobor95598ApiClient:
             raise StateGridAuthError(f"{prefix}业务异常: {msg}")
 
     def _generate_temp_token(self) -> str:
-        """生成前端随机 Token (98 + 10位随机数字)."""
-        return "98" + "".join([str(random.randint(0, 9)) for _ in range(10)])
+        """生成前端随机 Token (98或99开头 + 10位随机数字)."""
+        prefix = random.choice(["98", "99"])
+        return prefix + "".join([str(random.randint(0, 9)) for _ in range(10)])
 
     def _get_sgcc_headers(self, timestamp: str, token: str | None = None, include_device_token: bool = False) -> dict[str, str]:
         """Generate headers required for www.95598.cn calls."""
