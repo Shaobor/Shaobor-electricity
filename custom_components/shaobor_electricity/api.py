@@ -1050,7 +1050,7 @@ class Shaobor95598ApiClient:
                 url = "https://www.95598.cn/api/osg-web0004/open/c50/f02"
                 headers = self._get_sgcc_headers(
                     str(encrypt_res["timestamp"]), 
-                    token='984564429479',
+                    token=self._generate_temp_token(),
                     include_device_token=True
                 )
                 
@@ -1125,6 +1125,10 @@ class Shaobor95598ApiClient:
             msg = response.get("message") or response.get("msg") or f"code={code}"
             prefix = f"{context} " if context else ""
             raise StateGridAuthError(f"{prefix}业务异常: {msg}")
+
+    def _generate_temp_token(self) -> str:
+        """生成前端随机 Token (98 + 10位随机数字)."""
+        return "98" + "".join([str(random.randint(0, 9)) for _ in range(10)])
 
     def _get_sgcc_headers(self, timestamp: str, token: str | None = None, include_device_token: bool = False) -> dict[str, str]:
         """Generate headers required for www.95598.cn calls."""
