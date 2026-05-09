@@ -75,15 +75,23 @@ class UsageAggregator:
         from .fee_calculator import calculate_daily_fee
         from ..helpers.regional_prices import get_region_price_config
 
-        cons_no = config_data.get("selected_cons_no", "") if config_data else ""
+        # 核心：必须合并 options，否则读不到用户手动设置的电价
+        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        current_data = entry.data if entry else {}
+        current_options = entry.options if entry else {}
+        merged_config = {**(config_data or {}), **current_data, **current_options}
+
+        cons_no = merged_config.get("selected_cons_no", "")
         regional_config = get_region_price_config(cons_no) if cons_no else None
         
-        billing_mode = config_data.get("billing_mode", "year_ladder") if config_data else "year_ladder"
-        L_L1 = config_data.get("ladder_level_1", regional_config["ladder_level_1"] if regional_config else 2040) if config_data else 2040
-        L_L2 = config_data.get("ladder_level_2", regional_config["ladder_level_2"] if regional_config else 3240) if config_data else 3240
-        P1 = config_data.get("ladder_price_1", regional_config["ladder_price_1"] if regional_config else 0.51) if config_data else 0.51
-        P2 = config_data.get("ladder_price_2", regional_config["ladder_price_2"] if regional_config else 0.56) if config_data else 0.56
-        P3 = config_data.get("ladder_price_3", regional_config["ladder_price_3"] if regional_config else 0.81) if config_data else 0.81
+        billing_mode = merged_config.get("billing_mode", "year_ladder")
+        L_L1 = merged_config.get("ladder_level_1", regional_config["ladder_level_1"] if regional_config else 2040)
+        L_L2 = merged_config.get("ladder_level_2", regional_config["ladder_level_2"] if regional_config else 3240)
+        P1 = merged_config.get("ladder_price_1", regional_config["ladder_price_1"] if regional_config else 0.51)
+        P2 = merged_config.get("ladder_price_2", regional_config["ladder_price_2"] if regional_config else 0.56)
+        P3 = merged_config.get("ladder_price_3", regional_config["ladder_price_3"] if regional_config else 0.81)
+
+        calc_config = merged_config
 
         month_map = {}
         year_sum_map = {}
@@ -116,7 +124,7 @@ class UsageAggregator:
                 month_accumulated=running_month_acc,
                 day_str=d_key,
                 item=item_raw,
-                entry_data=config_data or {},
+                entry_data=calc_config,
                 ladder_level_1=L_L1,
                 ladder_level_2=L_L2,
                 price_1=P1,

@@ -49,7 +49,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
+        self._config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -103,14 +103,28 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             ),
         )
 
+    async def _async_save_price_to_db(self, config: dict[str, Any]):
+        """将电价配置保存到数据库."""
+        entry_id = self.config_entry.entry_id
+        if DOMAIN in self.hass.data and entry_id in self.hass.data[DOMAIN]:
+            coordinator = self.hass.data[DOMAIN][entry_id].get("coordinator")
+            if coordinator and hasattr(coordinator, "db"):
+                cons_no = config.get("selected_cons_no") or getattr(coordinator, "cons_no", "")
+                if cons_no:
+                    await coordinator.db.async_save_price_config(cons_no, config)
+
     async def async_step_year_ladder_tou_config(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """配置年阶梯峰平谷计费."""
         if user_input is not None:
-            # 更新配置，确保包含 billing_mode
+            # 更新配置
             new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_YEAR_LADDER_TOU}
             self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+            
+            # 同步保存到数据库
+            await self._async_save_price_to_db(new_data)
+            
             return self.async_create_entry(title="", data={})
 
         current_data = self.config_entry.data
@@ -126,6 +140,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_YEAR_LADDER}
             self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+            
+            # 同步保存到数据库
+            await self._async_save_price_to_db(new_data)
+            
             return self.async_create_entry(title="", data={})
 
         # 根据户号自动获取地区电价配置
@@ -182,9 +200,12 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_MONTH_LADDER_TOU_VARIABLE}
             self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+            
+            # 同步保存到数据库
+            await self._async_save_price_to_db(new_data)
+            
             return self.async_create_entry(title="", data={})
 
-        current_data = self.config_entry.data
         current_data = self.config_entry.data
         return self.async_show_form(
             step_id="month_ladder_tou_variable_config",
@@ -198,9 +219,12 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_MONTH_LADDER_TOU}
             self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+            
+            # 同步保存到数据库
+            await self._async_save_price_to_db(new_data)
+            
             return self.async_create_entry(title="", data={})
 
-        current_data = self.config_entry.data
         current_data = self.config_entry.data
         return self.async_show_form(
             step_id="month_ladder_tou_config",
@@ -214,9 +238,12 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_MONTH_LADDER}
             self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+            
+            # 同步保存到数据库
+            await self._async_save_price_to_db(new_data)
+            
             return self.async_create_entry(title="", data={})
 
-        current_data = self.config_entry.data
         current_data = self.config_entry.data
         return self.async_show_form(
             step_id="month_ladder_config",
@@ -230,6 +257,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_AVERAGE}
             self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+            
+            # 同步保存到数据库
+            await self._async_save_price_to_db(new_data)
+            
             return self.async_create_entry(title="", data={})
 
         current_data = self.config_entry.data

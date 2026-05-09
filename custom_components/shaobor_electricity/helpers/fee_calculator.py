@@ -85,14 +85,15 @@ def calculate_daily_fee(
             price_valley = _safe_float(entry_data.get(f"month_{data_month}_ladder_{tier}_valley", 0.31))
 
         # 计算峰谷电费
-        thisTPq = _safe_float(item.get("thisTPq", 0))
-        thisPPq = _safe_float(item.get("thisPPq", 0))
-        # 平时段 fallback: thisFPq -> thisNPq
-        val_f = item.get("thisFPq")
-        if not val_f or val_f == "-" or val_f == "0":
-            val_f = item.get("thisNPq")
+        # 核心修复：增加对多种字段名 (thisTPq, dayTPq, tpq 等) 的识别，确保能抓到电量
+        thisTPq = _safe_float(item.get("thisTPq") or item.get("dayTPq") or item.get("tpq") or 0)
+        thisPPq = _safe_float(item.get("thisPPq") or item.get("dayPPq") or item.get("ppq") or 0)
+        
+        # 平时段 fallback
+        val_f = item.get("thisFPq") or item.get("thisNPq") or item.get("dayNPq") or item.get("npq") or item.get("flat")
         thisFPq = _safe_float(val_f)
-        thisVPq = _safe_float(item.get("thisVPq", 0))
+        
+        thisVPq = _safe_float(item.get("thisVPq") or item.get("dayVPq") or item.get("vpq") or 0)
 
         day_cost = (
             thisTPq * price_tip
