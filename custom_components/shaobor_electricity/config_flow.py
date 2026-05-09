@@ -12,9 +12,17 @@ from homeassistant.data_entry_flow import FlowResult  # type: ignore[import-unty
 from homeassistant.helpers.aiohttp_client import async_get_clientsession  # type: ignore[import-untyped]
 from homeassistant.helpers.selector import SelectSelector, SelectSelectorConfig, SelectSelectorMode  # type: ignore[import-untyped]
 
-from .api import Shaobor95598ApiClient, StateGridAuthError, STORAGE_KEY, STORAGE_VERSION
+from .client import Shaobor95598ApiClient, StateGridAuthError, STORAGE_KEY, STORAGE_VERSION
 from .storage import AuthStore
 from .login_methods import QRCodeLoginHandler, PasswordLoginHandler, SMSLoginHandler
+from .helpers.schemas import (
+    get_year_ladder_tou_schema,
+    get_year_ladder_schema,
+    get_month_ladder_tou_variable_schema,
+    get_month_ladder_tou_schema,
+    get_month_ladder_schema,
+    get_average_config_schema,
+)
 
 from .const import (
     DOMAIN,
@@ -120,6 +128,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     def async_get_options_flow(config_entry):
         """Get the options flow for this handler."""
+        from .helpers.options_flow import OptionsFlowHandler
         return OptionsFlowHandler(config_entry)
 
     def _get_store(self) -> AuthStore:
@@ -194,7 +203,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         auto_relogin: bool = False,
         machine_id: str | None = None,
     ) -> None:
-        """Save all key values to Store when bizrt.token obtained (登录成功)."""
+        """Save all key values to Store and Database when login successful."""
         payload: dict[str, Any] = {
             "token": token,
             "user_token": user_token,
@@ -209,7 +218,17 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "auto_relogin": auto_relogin,
             "machine_id": machine_id or self.hass.data.get("core.uuid"),
         }
-        await self._get_store().async_save(payload)
+        # 1. 【核心变更】：直接保存到数据库 (2.0.0 单点真值)
+        try:
+            from .helpers.database import StateGridDatabase
+            db_path = self.hass.config.path(".storage", DOMAIN, "shaobor_electricity.db")
+            db = StateGridDatabase(self.hass, db_path)
+            await db.async_init()
+            if login_account:
+                await db.async_save_auth(login_account, payload)
+                _LOGGER.info("[配置流程] 已成功将授权信息同步至 SQLite 数据库")
+        except Exception as e:
+            _LOGGER.error("[配置流程] 同步授权到数据库失败: %s", e)
 
     @staticmethod
     def _get_cons_no_from_entry_data(data: dict[str, Any]) -> str:
@@ -250,18 +269,17 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     if DOMAIN in self.hass.data and reauth_key in self.hass.data[DOMAIN]:
                         self.hass.data[DOMAIN].pop(reauth_key)
                 
-                # 重新加载本项目下的所有集成条目，实现联动刷新
+                # 重新加载本项目下的所有集成条目（包含当前条目），实现联动刷新
                 # 这样用户只需要在一个条目上重新配置，其他同账号条目也会自动恢复
                 login_account = data.get(CONF_LOGIN_ACCOUNT)
                 for other_entry in self.hass.config_entries.async_entries(DOMAIN):
                     # 通过 auth_token 或 login_account (手机号) 匹配联动
                     if (auth_token and other_entry.data.get(CONF_AUTH_TOKEN) == auth_token) or \
                        (login_account and other_entry.data.get(CONF_LOGIN_ACCOUNT) == login_account):
-                        if other_entry.entry_id != entry_id:
-                            _LOGGER.info("检测到同账号条目，自动同步并刷新: %s", other_entry.title)
-                            self.hass.async_create_task(
-                                self.hass.config_entries.async_reload(other_entry.entry_id)
-                            )
+                        _LOGGER.info("正在强制同步并刷新受影响的条目: %s", other_entry.title)
+                        self.hass.async_create_task(
+                            self.hass.config_entries.async_reload(other_entry.entry_id)
+                        )
                 
                 return self.async_abort(reason="reauth_successful")
         # 检查该户号是否已被添加（含旧版未设 unique_id 的条目）
@@ -300,29 +318,35 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             current_login = entry_data.get(CONF_LOGIN_ACCOUNT)
             stored_login = stored.get("login_account")
             
-            # 如果账号匹配，且存储的 token 看起来比现在的新（或至少存在）
+            # 如果账号匹配，且保险箱里的 user_token 确实比我手里的新（或者不同），才尝试修复
             if current_login and stored_login == current_login:
-                _LOGGER.info("检测到共享保险箱中有最新授权，尝试为 %s 执行静默修复", entry_data.get(CONF_AUTH_TOKEN))
-                temp_api = Shaobor95598ApiClient(
-                    token=self._auth_token,
-                    session=async_get_clientsession(self.hass),
-                    machine_id=self.hass.data.get("core.uuid"),
-                )
-                # 手动注入共享的 access_token 进行验证
-                temp_api._access_token = stored.get("access_token")
+                stored_user_token = stored.get("user_token")
+                current_user_token = entry_data.get(CONF_USER_TOKEN)
                 
-                if await temp_api.validate_token():
-                    _LOGGER.info("静默修复成功！已自动同步授权。")
-                    # 直接合并数据并保存，跳过后续步骤
-                    new_data = {
-                        **entry_data,
-                        CONF_USER_TOKEN: stored.get("user_token"),
-                        CONF_USER_ID: stored.get("user_id"),
-                        CONF_ACCESS_TOKEN: stored.get("access_token"),
-                        CONF_REFRESH_TOKEN: stored.get("refresh_token"),
-                        CONF_POWER_USER_LIST: stored.get("power_user_list"),
-                    }
-                    return await self._finish_entry(None, new_data)
+                if stored_user_token and stored_user_token == current_user_token:
+                    _LOGGER.debug("共享保险箱中的授权与当前条目一致（均已失效），跳过静默修复")
+                else:
+                    _LOGGER.info("检测到共享保险箱中有不同授权，尝试执行静默修复")
+                    temp_api = Shaobor95598ApiClient(
+                        token=self._auth_token,
+                        session=async_get_clientsession(self.hass),
+                        machine_id=self.hass.data.get("core.uuid"),
+                    )
+                    # 手动注入共享的 access_token 进行验证
+                    temp_api._access_token = stored.get("access_token")
+                    
+                    if await temp_api.validate_token():
+                        _LOGGER.info("静默修复成功！已自动同步授权。")
+                        # 直接合并数据并保存，跳过后续步骤
+                        new_data = {
+                            **entry_data,
+                            CONF_USER_TOKEN: stored.get("user_token"),
+                            CONF_USER_ID: stored.get("user_id"),
+                            CONF_ACCESS_TOKEN: stored.get("access_token"),
+                            CONF_REFRESH_TOKEN: stored.get("refresh_token"),
+                            CONF_POWER_USER_LIST: stored.get("power_user_list"),
+                        }
+                        return await self._finish_entry(None, new_data)
 
         if not self._auth_token:
             return self.async_abort(reason="missing_token")
@@ -828,7 +852,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return await self._finish_entry(title=title, data=entry_data)
 
         # 根据户号自动获取地区电价配置
-        from .regional_prices import get_region_price_config, get_region_name
+        from .helpers.regional_prices import get_region_price_config, get_region_name
         
         cons_no = ""
         if self._pending_entry_data:
@@ -872,17 +896,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="year_ladder_tou_config",
             description_placeholders={"description": description},
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_LADDER_LEVEL_1, default=default_level_1): int,
-                    vol.Required(CONF_LADDER_LEVEL_2, default=default_level_2): int,
-                    vol.Required(CONF_PRICE_TIP, default=default_price_tip): vol.Coerce(float),
-                    vol.Required(CONF_PRICE_PEAK, default=default_price_peak): vol.Coerce(float),
-                    vol.Required(CONF_PRICE_FLAT, default=default_price_flat): vol.Coerce(float),
-                    vol.Required(CONF_PRICE_VALLEY, default=default_price_valley): vol.Coerce(float),
-                    vol.Optional(CONF_YEAR_LADDER_START, default="0101"): str,
-                }
-            ),
+            data_schema=get_year_ladder_tou_schema({
+                CONF_LADDER_LEVEL_1: default_level_1,
+                CONF_LADDER_LEVEL_2: default_level_2,
+                CONF_PRICE_TIP: default_price_tip,
+                CONF_PRICE_PEAK: default_price_peak,
+                CONF_PRICE_FLAT: default_price_flat,
+                CONF_PRICE_VALLEY: default_price_valley,
+            }),
         )
 
     async def async_step_year_ladder_config(
@@ -898,7 +919,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return await self._finish_entry(title=title, data=entry_data)
 
         # 根据户号自动获取地区电价配置
-        from .regional_prices import get_region_price_config, get_region_name
+        from .helpers.regional_prices import get_region_price_config, get_region_name
         
         cons_no = ""
         if self._pending_entry_data:
@@ -937,16 +958,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="year_ladder_config",
             description_placeholders={"description": description},
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_LADDER_LEVEL_1, default=default_level_1): int,
-                    vol.Required(CONF_LADDER_LEVEL_2, default=default_level_2): int,
-                    vol.Required(CONF_LADDER_PRICE_1, default=default_price_1): vol.Coerce(float),
-                    vol.Required(CONF_LADDER_PRICE_2, default=default_price_2): vol.Coerce(float),
-                    vol.Required(CONF_LADDER_PRICE_3, default=default_price_3): vol.Coerce(float),
-                    vol.Optional(CONF_YEAR_LADDER_START, default="0101"): str,
-                }
-            ),
+            data_schema=get_year_ladder_schema({
+                CONF_LADDER_LEVEL_1: default_level_1,
+                CONF_LADDER_LEVEL_2: default_level_2,
+                CONF_LADDER_PRICE_1: default_price_1,
+                CONF_LADDER_PRICE_2: default_price_2,
+                CONF_LADDER_PRICE_3: default_price_3,
+            }),
         )
 
     async def async_step_month_ladder_tou_variable_config(
@@ -961,32 +979,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._pending_entry_data = None
                 return await self._finish_entry(title=title, data=entry_data)
 
-        current_month = __import__('datetime').datetime.now().month
-        schema_dict = {
-            vol.Required(CONF_LADDER_LEVEL_1, default=200): int,
-            vol.Required(CONF_LADDER_LEVEL_2, default=400): int,
-        }
-        # 每月每档电价（1-12月，每档4个：尖、峰、平、谷）
-        for month in range(1, 13):
-            # 第1档
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_1_tip", default=0.81)] = vol.Coerce(float)
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_1_peak", default=0.56)] = vol.Coerce(float)
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_1_flat", default=0.51)] = vol.Coerce(float)
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_1_valley", default=0.31)] = vol.Coerce(float)
-            # 第2档
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_2_tip", default=0.91)] = vol.Coerce(float)
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_2_peak", default=0.66)] = vol.Coerce(float)
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_2_flat", default=0.61)] = vol.Coerce(float)
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_2_valley", default=0.41)] = vol.Coerce(float)
-            # 第3档
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_3_tip", default=1.01)] = vol.Coerce(float)
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_3_peak", default=0.76)] = vol.Coerce(float)
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_3_flat", default=0.71)] = vol.Coerce(float)
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_3_valley", default=0.51)] = vol.Coerce(float)
-
         return self.async_show_form(
             step_id="month_ladder_tou_variable_config",
-            data_schema=vol.Schema(schema_dict),
+            data_schema=get_month_ladder_tou_variable_schema({}),
         )
 
     async def async_step_month_ladder_tou_config(
@@ -1003,16 +998,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="month_ladder_tou_config",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_LADDER_LEVEL_1, default=200): int,
-                    vol.Required(CONF_LADDER_LEVEL_2, default=400): int,
-                    vol.Required(CONF_PRICE_TIP, default=0.81): vol.Coerce(float),
-                    vol.Required(CONF_PRICE_PEAK, default=0.56): vol.Coerce(float),
-                    vol.Required(CONF_PRICE_FLAT, default=0.51): vol.Coerce(float),
-                    vol.Required(CONF_PRICE_VALLEY, default=0.51): vol.Coerce(float),
-                }
-            ),
+            data_schema=get_month_ladder_tou_schema({}),
         )
 
     async def async_step_month_ladder_config(
@@ -1029,15 +1015,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="month_ladder_config",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_LADDER_LEVEL_1, default=200): int,
-                    vol.Required(CONF_LADDER_LEVEL_2, default=400): int,
-                    vol.Required(CONF_LADDER_PRICE_1, default=0.51): vol.Coerce(float),
-                    vol.Required(CONF_LADDER_PRICE_2, default=0.56): vol.Coerce(float),
-                    vol.Required(CONF_LADDER_PRICE_3, default=0.81): vol.Coerce(float),
-                }
-            ),
+            data_schema=get_month_ladder_schema({}),
         )
 
     async def async_step_average_config(
@@ -1054,11 +1032,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="average_config",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_AVERAGE_PRICE, default=0.51): vol.Coerce(float),
-                }
-            ),
+            data_schema=get_average_config_schema({}),
         )
 
     async def async_step_qrcode(
@@ -1386,244 +1360,4 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
             errors=errors,
             description_placeholders={"phone_number": self._phone_number},
-        )
-
-
-class OptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle options flow for Shaobor_95598."""
-
-    def __init__(self, config_entry: ConfigEntry) -> None:
-        """Initialize options flow."""
-        self._config_entry = config_entry
-
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Manage the options."""
-        if user_input is not None:
-            billing_mode = user_input[CONF_BILLING_MODE]
-            # 根据计费模式跳转到对应的价格配置页面
-            if billing_mode == BILLING_STANDARD_YEAR_LADDER_TOU:
-                return await self.async_step_year_ladder_tou_config()
-            elif billing_mode == BILLING_STANDARD_YEAR_LADDER:
-                return await self.async_step_year_ladder_config()
-            elif billing_mode == BILLING_STANDARD_MONTH_LADDER_TOU_VARIABLE:
-                return await self.async_step_month_ladder_tou_variable_config()
-            elif billing_mode == BILLING_STANDARD_MONTH_LADDER_TOU:
-                return await self.async_step_month_ladder_tou_config()
-            elif billing_mode == BILLING_STANDARD_MONTH_LADDER:
-                return await self.async_step_month_ladder_config()
-            elif billing_mode == BILLING_STANDARD_AVERAGE:
-                return await self.async_step_average_config()
-
-        # 获取当前配置的计费模式
-        current_billing_mode = self.config_entry.data.get(CONF_BILLING_MODE, BILLING_STANDARD_YEAR_LADDER)
-        
-        billing_options = [
-            {"value": BILLING_STANDARD_YEAR_LADDER_TOU, "label": "年阶梯峰平谷计费"},
-            {"value": BILLING_STANDARD_YEAR_LADDER, "label": "年阶梯计费"},
-            {"value": BILLING_STANDARD_MONTH_LADDER_TOU_VARIABLE, "label": "月阶梯峰平谷变动价格计费"},
-            {"value": BILLING_STANDARD_MONTH_LADDER_TOU, "label": "月阶梯峰平谷计费"},
-            {"value": BILLING_STANDARD_MONTH_LADDER, "label": "月阶梯计费"},
-            {"value": BILLING_STANDARD_AVERAGE, "label": "平均单价计费"},
-        ]
-        
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_BILLING_MODE, default=current_billing_mode): SelectSelector(
-                        SelectSelectorConfig(
-                            options=billing_options,
-                            mode=SelectSelectorMode.LIST,
-                        )
-                    )
-                }
-            ),
-        )
-
-    async def async_step_year_ladder_tou_config(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """配置年阶梯峰平谷计费."""
-        if user_input is not None:
-            # 更新配置，确保包含 billing_mode
-            new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_YEAR_LADDER_TOU}
-            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-            return self.async_create_entry(title="", data={})
-
-        # 获取当前配置值
-        current_data = self.config_entry.data
-        return self.async_show_form(
-            step_id="year_ladder_tou_config",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_LADDER_LEVEL_1, default=current_data.get(CONF_LADDER_LEVEL_1, 2040)): int,
-                    vol.Required(CONF_LADDER_LEVEL_2, default=current_data.get(CONF_LADDER_LEVEL_2, 3240)): int,
-                    vol.Required(CONF_PRICE_TIP, default=current_data.get(CONF_PRICE_TIP, 0.81)): vol.Coerce(float),
-                    vol.Required(CONF_PRICE_PEAK, default=current_data.get(CONF_PRICE_PEAK, 0.56)): vol.Coerce(float),
-                    vol.Required(CONF_PRICE_FLAT, default=current_data.get(CONF_PRICE_FLAT, 0.51)): vol.Coerce(float),
-                    vol.Required(CONF_PRICE_VALLEY, default=current_data.get(CONF_PRICE_VALLEY, 0.51)): vol.Coerce(float),
-                    vol.Optional(CONF_YEAR_LADDER_START, default=current_data.get(CONF_YEAR_LADDER_START, "0101")): str,
-                }
-            ),
-        )
-
-    async def async_step_year_ladder_config(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """配置年阶梯计费."""
-        if user_input is not None:
-            new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_YEAR_LADDER}
-            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-            return self.async_create_entry(title="", data={})
-
-        # 根据户号自动获取地区电价配置
-        from .regional_prices import get_region_price_config, get_region_name
-        
-        current_data = self.config_entry.data
-        
-        # 尝试从coordinator获取户号
-        cons_no = ""
-        if DOMAIN in self.hass.data and self.config_entry.entry_id in self.hass.data[DOMAIN]:
-            coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id].get("coordinator")
-            if coordinator and coordinator.data:
-                cons_no = coordinator.data.get("selected_cons_no", "")
-        
-        # 获取地区配置
-        regional_config = get_region_price_config(cons_no) if cons_no else None
-        region_name = get_region_name(cons_no) if cons_no else "未知地区"
-        
-        # 设置默认值
-        if regional_config:
-            default_level_1 = regional_config["ladder_level_1"]
-            default_level_2 = regional_config["ladder_level_2"]
-            default_price_1 = regional_config["ladder_price_1"]
-            default_price_2 = regional_config["ladder_price_2"]
-            default_price_3 = regional_config["ladder_price_3"]
-            description = f"已自动识别地区：{region_name}\n当前配置的电价标准，您可以根据需要修改。"
-        else:
-            default_level_1 = 2040
-            default_level_2 = 3240
-            default_price_1 = 0.51
-            default_price_2 = 0.56
-            default_price_3 = 0.81
-            description = "当前配置的电价标准，您可以根据实际情况修改。"
-        
-        return self.async_show_form(
-            step_id="year_ladder_config",
-            description_placeholders={"description": description},
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_LADDER_LEVEL_1, default=current_data.get(CONF_LADDER_LEVEL_1, default_level_1)): int,
-                    vol.Required(CONF_LADDER_LEVEL_2, default=current_data.get(CONF_LADDER_LEVEL_2, default_level_2)): int,
-                    vol.Required(CONF_LADDER_PRICE_1, default=current_data.get(CONF_LADDER_PRICE_1, default_price_1)): vol.Coerce(float),
-                    vol.Required(CONF_LADDER_PRICE_2, default=current_data.get(CONF_LADDER_PRICE_2, default_price_2)): vol.Coerce(float),
-                    vol.Required(CONF_LADDER_PRICE_3, default=current_data.get(CONF_LADDER_PRICE_3, default_price_3)): vol.Coerce(float),
-                    vol.Optional(CONF_YEAR_LADDER_START, default=current_data.get(CONF_YEAR_LADDER_START, "0101")): str,
-                }
-            ),
-        )
-
-    async def async_step_month_ladder_tou_variable_config(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """配置月阶梯峰平谷变动价格计费."""
-        if user_input is not None:
-            new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_MONTH_LADDER_TOU_VARIABLE}
-            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-            return self.async_create_entry(title="", data={})
-
-        current_data = self.config_entry.data
-        schema_dict = {
-            vol.Required(CONF_LADDER_LEVEL_1, default=current_data.get(CONF_LADDER_LEVEL_1, 200)): int,
-            vol.Required(CONF_LADDER_LEVEL_2, default=current_data.get(CONF_LADDER_LEVEL_2, 400)): int,
-        }
-        # 每月每档电价（1-12月，每档4个：尖、峰、平、谷）
-        for month in range(1, 13):
-            # 第1档
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_1_tip", default=current_data.get(f"month_{month:02d}_ladder_1_tip", 0.81))] = vol.Coerce(float)
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_1_peak", default=current_data.get(f"month_{month:02d}_ladder_1_peak", 0.56))] = vol.Coerce(float)
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_1_flat", default=current_data.get(f"month_{month:02d}_ladder_1_flat", 0.51))] = vol.Coerce(float)
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_1_valley", default=current_data.get(f"month_{month:02d}_ladder_1_valley", 0.31))] = vol.Coerce(float)
-            # 第2档
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_2_tip", default=current_data.get(f"month_{month:02d}_ladder_2_tip", 0.91))] = vol.Coerce(float)
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_2_peak", default=current_data.get(f"month_{month:02d}_ladder_2_peak", 0.66))] = vol.Coerce(float)
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_2_flat", default=current_data.get(f"month_{month:02d}_ladder_2_flat", 0.61))] = vol.Coerce(float)
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_2_valley", default=current_data.get(f"month_{month:02d}_ladder_2_valley", 0.41))] = vol.Coerce(float)
-            # 第3档
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_3_tip", default=current_data.get(f"month_{month:02d}_ladder_3_tip", 1.01))] = vol.Coerce(float)
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_3_peak", default=current_data.get(f"month_{month:02d}_ladder_3_peak", 0.76))] = vol.Coerce(float)
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_3_flat", default=current_data.get(f"month_{month:02d}_ladder_3_flat", 0.71))] = vol.Coerce(float)
-            schema_dict[vol.Required(f"month_{month:02d}_ladder_3_valley", default=current_data.get(f"month_{month:02d}_ladder_3_valley", 0.51))] = vol.Coerce(float)
-
-        return self.async_show_form(
-            step_id="month_ladder_tou_variable_config",
-            data_schema=vol.Schema(schema_dict),
-        )
-
-    async def async_step_month_ladder_tou_config(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """配置月阶梯峰平谷计费."""
-        if user_input is not None:
-            new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_MONTH_LADDER_TOU}
-            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-            return self.async_create_entry(title="", data={})
-
-        current_data = self.config_entry.data
-        return self.async_show_form(
-            step_id="month_ladder_tou_config",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_LADDER_LEVEL_1, default=current_data.get(CONF_LADDER_LEVEL_1, 200)): int,
-                    vol.Required(CONF_LADDER_LEVEL_2, default=current_data.get(CONF_LADDER_LEVEL_2, 400)): int,
-                    vol.Required(CONF_PRICE_TIP, default=current_data.get(CONF_PRICE_TIP, 0.81)): vol.Coerce(float),
-                    vol.Required(CONF_PRICE_PEAK, default=current_data.get(CONF_PRICE_PEAK, 0.56)): vol.Coerce(float),
-                    vol.Required(CONF_PRICE_FLAT, default=current_data.get(CONF_PRICE_FLAT, 0.51)): vol.Coerce(float),
-                    vol.Required(CONF_PRICE_VALLEY, default=current_data.get(CONF_PRICE_VALLEY, 0.51)): vol.Coerce(float),
-                }
-            ),
-        )
-
-    async def async_step_month_ladder_config(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """配置月阶梯计费."""
-        if user_input is not None:
-            new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_MONTH_LADDER}
-            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-            return self.async_create_entry(title="", data={})
-
-        current_data = self.config_entry.data
-        return self.async_show_form(
-            step_id="month_ladder_config",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_LADDER_LEVEL_1, default=current_data.get(CONF_LADDER_LEVEL_1, 200)): int,
-                    vol.Required(CONF_LADDER_LEVEL_2, default=current_data.get(CONF_LADDER_LEVEL_2, 400)): int,
-                    vol.Required(CONF_LADDER_PRICE_1, default=current_data.get(CONF_LADDER_PRICE_1, 0.51)): vol.Coerce(float),
-                    vol.Required(CONF_LADDER_PRICE_2, default=current_data.get(CONF_LADDER_PRICE_2, 0.56)): vol.Coerce(float),
-                    vol.Required(CONF_LADDER_PRICE_3, default=current_data.get(CONF_LADDER_PRICE_3, 0.81)): vol.Coerce(float),
-                }
-            ),
-        )
-
-    async def async_step_average_config(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """配置平均单价计费."""
-        if user_input is not None:
-            new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_AVERAGE}
-            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-            return self.async_create_entry(title="", data={})
-
-        current_data = self.config_entry.data
-        return self.async_show_form(
-            step_id="average_config",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_AVERAGE_PRICE, default=current_data.get(CONF_AVERAGE_PRICE, 0.51)): vol.Coerce(float),
-                }
-            ),
         )

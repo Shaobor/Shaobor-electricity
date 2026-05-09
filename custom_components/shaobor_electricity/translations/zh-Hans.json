@@ -44,7 +44,8 @@
                 "title": "验证短信验证码",
                 "description": "请输入发送到 {phone_number} 的验证码。",
                 "data": {
-                    "sms_code": "短信验证码"
+                    "sms_code": "短信验证码",
+                    "back_to_sms": "↩ 返回，重新输入手机号"
                 }
             },
             "select_account": {
@@ -287,7 +288,8 @@
             "password_not_supported": "密码登录需要交互式验证码验证，请使用扫码登录。",
             "sms_not_supported": "暂不支持短信登录，请使用扫码登录。",
             "unknown": "未知错误。",
-            "already_configured": "该户号已添加"
+            "already_configured": "该户号已添加",
+            "empty_json": "未找到有效的数据记录 (daylist, monthlist 或 yearlist)"
         },
         "abort": {
             "already_configured": "该户号已添加",
@@ -511,6 +513,35 @@
                 "data": {
                     "average_price": "平均电价（元/度）"
                 }
+            },
+            "data_import": {
+                "title": "📥 历史数据导入",
+                "description": "请将历史数据的 JSON 字符串粘贴到下方。支持每日、每月和每年数据格式。",
+                "data": {
+                    "go_back": "↩ 返回上一步",
+                    "json_data": "JSON 数据内容"
+                }
+            },
+            "data_verify": {
+                "title": "✅ 数据校验与确认",
+                "description": "{description}",
+                "data": {
+                    "confirm": "确认导入"
+                }
+            },
+            "data_view": {
+                "title": "🔍 已导入数据汇总",
+                "description": "{data_summary}",
+                "data": {
+                    "delete_task": "选择要删除的导入任务"
+                }
+            },
+            "data_delete_confirm": {
+                "title": "⚠️ 确认删除操作",
+                "description": "你确定要删除以下导入内容吗？\n\n{task_info}\n\n注意：此操作不可撤销，对应的日期数据将从数据库中移除。",
+                "data": {
+                    "confirm": "我确定要删除上述数据"
+                }
             }
         }
     },
@@ -533,7 +564,8 @@
                 "month_ladder_tou_variable": "月阶梯峰平谷变动价格计费",
                 "month_ladder_tou": "月阶梯峰平谷计费",
                 "month_ladder": "月阶梯计费",
-                "average": "平均单价计费"
+                "average": "平均单价计费",
+                "data_import": "📥 历史数据导入 (JSON)"
             }
         }
     },

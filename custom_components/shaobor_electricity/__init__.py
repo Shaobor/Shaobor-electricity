@@ -28,7 +28,7 @@ from .const import (
     CONF_LOGIN_ACCOUNT,
     CONF_MACHINE_ID,
 )
-from .api import Shaobor95598ApiClient, StateGridAuthError, STORAGE_KEY, STORAGE_VERSION
+from .client import Shaobor95598ApiClient, StateGridAuthError, STORAGE_KEY, STORAGE_VERSION
 from .storage import AuthStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -70,6 +70,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up shaobor_electricity from a config entry."""
     # 首先确保全局数据字典已就绪，防止 coordinator 刷新时因无法读写标志位而崩溃
     hass.data.setdefault(DOMAIN, {})
+    if "auth_lock" not in hass.data[DOMAIN]:
+        import asyncio
+        hass.data[DOMAIN]["auth_lock"] = asyncio.Lock()
     
     session = async_get_clientsession(hass)
     token = entry.data.get(CONF_AUTH_TOKEN)
@@ -79,22 +82,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 自动迁移旧 store 文件到新路径（shaobor_electricity/ 子文件夹）
     await _async_migrate_stores(hass)
 
-    # 从 Store 合并加载（全局变量方式），补充 config entry 可能缺失的字段
+    # 1. 优先从数据库加载授权信息 (单点真值)
+    from .helpers.database import StateGridDatabase
+    db_path = hass.config.path(".storage", DOMAIN, "shaobor_electricity.db")
+    db = StateGridDatabase(hass, db_path)
+    await db.async_init()
+    
+    # 获取登录账号用于数据库查询
+    login_acc = entry.data.get(CONF_LOGIN_ACCOUNT)
+    db_auth = await db.async_get_auth(login_acc) if login_acc else None
+
+    # 2. 备选：从旧的 Store 加载 (用于兼容与迁移)
     store = AuthStore(hass, STORAGE_VERSION, STORAGE_KEY)
     stored = await store.async_load()
-    if stored and isinstance(stored, dict) and stored.get("token") == token:
-        entry_user_token = entry.data.get(CONF_USER_TOKEN) or stored.get("user_token")
-        entry_access_token = entry.data.get(CONF_ACCESS_TOKEN) or stored.get("access_token")
+    
+    # 优先使用数据库中的最新 Token
+    if db_auth:
+        _LOGGER.debug("[授权] 成功从数据库加载授权状态")
+        entry_user_token = db_auth.get("user_token") or entry.data.get(CONF_USER_TOKEN)
+        entry_access_token = db_auth.get("access_token") or entry.data.get(CONF_ACCESS_TOKEN)
+        # 合并 stored 数据以便后续 _merged 逻辑使用
+        stored = {**(stored or {}), **db_auth}
     else:
-        entry_user_token = entry.data.get(CONF_USER_TOKEN)
-        entry_access_token = entry.data.get(CONF_ACCESS_TOKEN)
+        if stored and isinstance(stored, dict) and stored.get("token") == token:
+            entry_user_token = entry.data.get(CONF_USER_TOKEN) or stored.get("user_token")
+            entry_access_token = entry.data.get(CONF_ACCESS_TOKEN) or stored.get("access_token")
+        else:
+            entry_user_token = entry.data.get(CONF_USER_TOKEN)
+            entry_access_token = entry.data.get(CONF_ACCESS_TOKEN)
 
     if not entry_user_token or not entry_access_token:
         raise ConfigEntryAuthFailed(
             "登录信息不完整，请删除该集成后重新添加（推荐使用扫码登录）"
         )
 
-    # 合并 entry 与 Store：entry 优先，缺失时用 Store
+    # 合并 entry 与 Store/DB：entry 优先，缺失时用备份
     def _merged(key: str, store_key: str | None = None) -> str | list | None:
         val = entry.data.get(key)
         if val is not None and val != "" and (not isinstance(val, list) or val):
@@ -106,11 +128,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     api = Shaobor95598ApiClient(
         token, 
         session, 
-        store, 
+        None, # 不再传入 store，内部直接对接 db
         hass, 
         entry_id=entry.entry_id,
         machine_id=entry.data.get(CONF_MACHINE_ID) or hass.data.get("core.uuid")
     )
+    api.set_db(db) # 注入数据库
     api.load_auth_state(
         user_token=entry_user_token or _merged(CONF_USER_TOKEN, "user_token"),
         user_id=entry.data.get(CONF_USER_ID) or (stored.get("user_id") if stored else None),
@@ -146,10 +169,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "price_valley": entry.data.get(CONF_PRICE_VALLEY),
     })
     
-    # 创建 Store 更新回调函数
+    # 创建数据库同步更新回调函数
     async def update_store_callback(**kwargs):
-        """Callback to update Store after successful re-login."""
-        await store.async_save(kwargs)
+        """Callback to update Database after successful re-login."""
+        # 同步更新数据库 auth 表
+        if login_acc:
+            await db.async_save_auth(login_acc, kwargs)
+            _LOGGER.debug("[授权] 自动重连成功，已同步 Token 至数据库")
     
     # 加载自动重连配置（优先从 Store 加载，其次从 entry.data）
     # Store 中的数据是最新的，因为每次登录成功都会更新
@@ -214,81 +240,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     data_store = Store(hass, 1, new_data_key)
     
-    async def async_update_data():
-        """Fetch data from API. 先刷新 access_token（每10分钟），再请求户号业务."""
-        try:
-            await api.refresh_access_token()
-            
-            # 成功刷新 Token 后，同步更新 AuthStore，方便其他户号共享
-            # 只有当 token 确实发生了变化时才保存，减少 IO
-            await store.async_save({
-                **entry.data,
-                CONF_USER_TOKEN: api._user_token,
-                CONF_USER_ID: api._user_id,
-                CONF_ACCESS_TOKEN: api._access_token,
-                CONF_REFRESH_TOKEN: api._refresh_token,
-            })
-            
-            data = await api.get_electricity_data()
-            
-            # 成功获取数据后，保存到 Store 中
-            await data_store.async_save(data)
-            return data
-        except StateGridAuthError as err:
-            # API 层已经有 auto_relogin_on_auth_error 装饰器处理自动重连
-            # 如果到这里说明自动重连也失败了，触发重新认证流程
-            _LOGGER.warning("认证已过期，实体将保留最后一次的值（Stale Data）。请重新认证以同步最新电费数据。")
-            
-            # 避免多账户同时过期导致通知刷屏
-            # 检查是否已经有针对此逻辑账号的重新认证在进行中
-            reauth_key = f"reauth_active_{api._encrypt_token}"
-            if not hass.data[DOMAIN].get(reauth_key):
-                hass.data[DOMAIN][reauth_key] = True
-                _LOGGER.info("触发重新认证流程 (Entry: %s)", entry.title)
-                # 主动触发 HA 的重新认证流程，确保 UI 显示“重新配置”按钮
-                entry.async_start_reauth(hass)
-            
-                # 只有第一个触发的 Entry 抛出 ConfigEntryAuthFailed 以显示修复通知
-                raise ConfigEntryAuthFailed(
-                    "登录已过期，请重新配置集成（使用扫码登录）"
-                ) from err
-            else:
-                # 后续 Entry 发现已有重连请求，仅标记状态为过期，不发送重复通知
-                _LOGGER.debug("已有正在进行的重新认证请求，跳过重复通知 (Entry: %s)", entry.title)
-                raise UpdateFailed("登录已过期，请通过主账户重新配置集成") from err
-        except Exception as err:
-            raise UpdateFailed(f"Error communicating with API: {err}")
-
-    coordinator = DataUpdateCoordinator(
-        hass,
-        _LOGGER,
-        name=DOMAIN,
-        update_method=async_update_data,
-        update_interval=timedelta(minutes=10),
+    from .coordinator import Shaobor95598Coordinator
+    coordinator = Shaobor95598Coordinator(
+        hass=hass,
+        entry=entry,
+        api=api,
+        store=store,
+        data_store=data_store,
+        db=db,
     )
 
-    # 尝试加载历史缓存数据，防止重启后因为认证失败导致实体不可用
-    cached_data = await data_store.async_load()
-    if cached_data:
-        _LOGGER.info("已从未次成功的存储中加载缓存数据 (Stale Data)")
-        coordinator.data = cached_data
-
-    # 执行初次刷新
-    try:
-        await coordinator.async_config_entry_first_refresh()
-    except (ConfigEntryAuthFailed, StateGridAuthError, UpdateFailed):
-        # 即使初次刷新失败（如认证过期），我们也允许集成继续加载
-        # 这样实体就能显示缓存数据，且 UI 不会显示“检查日志”
-        _LOGGER.debug("初次刷新未完全成功（可能由于认证过期），将使用缓存或默认值平衡启动")
-    except Exception as err:
-        _LOGGER.warning("初次刷新遇到意外错误: %s", err)
+    # 3. 核心：启动时立即从 SQLite 数据库加载全量数据，确保实体不会变“未知”
+    await coordinator.async_load_from_db()
 
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api,
         "coordinator": coordinator,
     }
 
+    # 挂载数据库日志处理器
+    from .helpers.database import DBLogHandler
+    db_handler = DBLogHandler(hass, coordinator.db)
+    # 为处理器设置格式，方便在数据库中阅读
+    db_handler.setFormatter(logging.Formatter('%(message)s'))
+    # 获取本集成的父级记录器并添加处理器
+    root_logger = logging.getLogger("custom_components.shaobor_electricity")
+    # 防止重复添加
+    if not any(isinstance(h, DBLogHandler) for h in root_logger.handlers):
+        root_logger.addHandler(db_handler)
+        _LOGGER.debug("数据库日志处理器已挂载")
+
+    # 1. 先把平台加载起来（确保实体在 UI 上可见并能显示缓存数据）
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # 2. 异步触发初次刷新。如果刷新抛出认证失败异常，HA 会自动把已加载的卡片标记为红色，显示“重新配置”
+    hass.async_create_task(coordinator.async_config_entry_first_refresh())
+
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -298,10 +285,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # 尝试从 api 对象获取 token（如果存在）
         api = hass.data[DOMAIN].get(entry.entry_id, {}).get("api")
         if api:
-            reauth_key = f"reauth_active_{api._encrypt_token}"
+            login_acc = api._login_account or "default"
+            reauth_key = f"reauth_active_{login_acc}"
             if reauth_key in hass.data[DOMAIN]:
                 hass.data[DOMAIN].pop(reauth_key)
-                _LOGGER.debug("已清除重新认证标志位 (Entry: %s)", entry.title)
+                _LOGGER.debug("已清除全局重新认证标志位 (Account: %s)", login_acc)
 
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN].pop(entry.entry_id)
@@ -309,23 +297,38 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle removal of an entry - clear stored auth data."""
-    _LOGGER.info("删除集成，清除存储的登录状态数据")
+    """Handle removal of an entry - only clear sensitive token, keep DB file."""
+    _LOGGER.info("正在卸载集成实例: %s", entry.title)
     
-    # 清除 Store 中的登录状态数据
-    store = AuthStore(hass, STORAGE_VERSION, STORAGE_KEY)
-    try:
-        # 检查是否还有其他集成实例
-        other_entries = [
-            e for e in hass.config_entries.async_entries(DOMAIN)
-            if e.entry_id != entry.entry_id
-        ]
+    # 检查是否还有其他集成实例
+    other_entries = [
+        e for e in hass.config_entries.async_entries(DOMAIN)
+        if e.entry_id != entry.entry_id
+    ]
+    
+    # 只有在删除最后一个实例时，才清理数据库中的全局敏感信息
+    if not other_entries:
+        _LOGGER.info("最后一个实例已移除，正在清理数据库中的敏感授权 Token...")
+        db_path = hass.config.path(".storage", DOMAIN, "shaobor_electricity.db")
         
-        # 如果没有其他集成实例，清除 Store 数据
-        if not other_entries:
-            await store.async_remove()
-            _LOGGER.info("已清除所有登录状态数据")
-        else:
-            _LOGGER.info("还有其他集成实例，保留登录状态数据")
-    except Exception as err:
-        _LOGGER.warning("清除登录状态数据时出错: %s", err)
+        def _clear_sensitive_data():
+            import sqlite3
+            import os
+            if not os.path.exists(db_path):
+                return
+            try:
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                # 1. 清除全局备份的授权密钥
+                cursor.execute("DELETE FROM shaobor_sys_config WHERE key = 'auth_token'")
+                # 2. 清除所有账号的登录凭据 (Token)
+                cursor.execute("DELETE FROM shaobor_auth_store")
+                conn.commit()
+                conn.close()
+                _LOGGER.info("已成功清除数据库中的敏感授权信息 (保留历史电量数据)")
+            except Exception as e:
+                _LOGGER.error("清除数据库敏感信息失败: %s", e)
+
+        await hass.async_add_executor_job(_clear_sensitive_data)
+    else:
+        _LOGGER.info("仍有其他实例存在，保留授权 Token。")

@@ -6,7 +6,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant  # type: ignore[import-untyped]
 from homeassistant.helpers.storage import Store  # type: ignore[import-untyped]
 
-from .api import STORAGE_KEY, STORAGE_VERSION
+from .client import STORAGE_KEY, STORAGE_VERSION
 
 
 class AuthStore(Store[dict[str, Any]]):

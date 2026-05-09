@@ -41,11 +41,20 @@ REGIONAL_PRICES = {
         "ladder_price_2": 0.57,
         "ladder_price_3": 0.82,
     },
-    # 河北省 (13xx)
+    # 河北省 (13xx) - 河北南网
     "13": {
-        "name": "河北省",
+        "name": "河北省 (南网)",
         "ladder_level_1": 2160,
         "ladder_level_2": 3600,
+        "ladder_price_1": 0.52,
+        "ladder_price_2": 0.57,
+        "ladder_price_3": 0.82,
+    },
+    # 冀北电网 (16xx) - 唐山、张家口等
+    "16": {
+        "name": "河北省 (冀北)",
+        "ladder_level_1": 2160,
+        "ladder_level_2": 3360,
         "ladder_price_1": 0.52,
         "ladder_price_2": 0.57,
         "ladder_price_3": 0.82,

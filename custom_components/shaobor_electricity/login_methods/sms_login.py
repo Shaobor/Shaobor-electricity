@@ -2,7 +2,7 @@
 import logging
 from typing import Any
 
-from ..api import Shaobor95598ApiClient, StateGridAuthError
+from ..client import Shaobor95598ApiClient, StateGridAuthError
 
 _LOGGER = logging.getLogger(__name__)
 
