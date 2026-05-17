@@ -488,12 +488,12 @@ class UsageMixin(BaseStateGridApi):
     @auto_relogin_on_auth_error
     @retry_on_network_error(max_retries=3, delay=2.0)
     async def _fetch_yearly_usage(self, year: int | None = None) -> dict[str, Any]:
-        """获取年度用电量 (020070054)，包含官方年度/月度结算数据"""
+        """获取年度用电量 (020070054)，包含官方年度/月度结算数据。返回的 consList 包含该登录账号下所有户号的数据，调用方需自行匹配。"""
         if year is None:
             year = datetime.now().year
-            
+
         _LOGGER.info("[020070054-yearly] 正在获取 %d 年官方结算数据", year)
-        
+
         encrypt_payload = {
             "token": self._encrypt_token,
             "machineId": self._machine_id,
@@ -605,7 +605,21 @@ class UsageMixin(BaseStateGridApi):
                     
                     cons_list = decrypted.get("consList") or []
                     if cons_list and len(cons_list) > 0:
-                        bill_list = cons_list[0].get("billList") or []
+                        matched = None
+                        for c in cons_list:
+                            # consNoDst 是真实户号，consNo 是 UUID 标识
+                            c_no = c.get("consNoDst") or c.get("consNo_dst") or c.get("consNo") or ""
+                            c_no_plain = str(c_no).split("-")[0].strip()
+                            if c_no_plain == cons_no:
+                                matched = c
+                                break
+                        if not matched:
+                            _LOGGER.warning(
+                                "[历史溯源] consList 中未找到户号 %s，跳过 %s 年官方账单同步",
+                                cons_no, check_year,
+                            )
+                            continue
+                        bill_list = matched.get("billList") or []
                         for bill in bill_list:
                             ym_str = bill.get("ym") # "202512"
                             m_list = bill.get("monthList") or []

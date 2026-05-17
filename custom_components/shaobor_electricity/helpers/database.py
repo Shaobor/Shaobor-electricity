@@ -756,26 +756,38 @@ class StateGridDatabase:
         return await self.hass.async_add_executor_job(_get)
 
 import logging
+import threading
 class DBLogHandler(logging.Handler):
     """自定义日志处理器，将日志写入数据库."""
+
     def __init__(self, hass, db):
         super().__init__()
         self.hass = hass
         self.db = db
-        # 仅处理 INFO 及以上级别的日志
         self.setLevel(logging.INFO)
+        self._writing = threading.Lock()
 
     def emit(self, record):
+        # 防止递归：写数据库的日志不要再触发写数据库
+        if record.module == "shaobor_electricity.helpers.database":
+            return
+        if not self._writing.acquire(blocking=False):
+            return
         try:
             msg = self.format(record)
-            # 使用异步任务写入数据库，避免阻塞主线程
-            if self.hass:
-                self.hass.async_create_task(
-                    self.db.async_add_log(
-                        record.levelname,
-                        record.module,
-                        msg
-                    )
+            if self.hass and self.hass.loop:
+                self.hass.loop.call_soon_threadsafe(
+                    self._schedule_log,
+                    record.levelname,
+                    record.module,
+                    msg,
                 )
         except Exception:
             self.handleError(record)
+        finally:
+            self._writing.release()
+
+    def _schedule_log(self, levelname, module, msg):
+        self.hass.async_create_task(
+            self.db.async_add_log(levelname, module, msg)
+        )

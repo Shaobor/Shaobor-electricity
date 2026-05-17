@@ -184,11 +184,11 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
         
         attrs.update({
             "date": electricity_fee_detail.get("amtTime") or now.strftime("%Y-%m-%d %H:%M:%S"),
-            "daylist": self._cached_daylist, # 恢复全量显示 (不截断)
-            "monthlist": self._cached_monthlist, 
+            "daylist": self._cached_daylist,
+            "monthlist": self._cached_monthlist,
             "yearlist": self._cached_yearlist,
-            "计费标准": billing_attrs, 
-            "数据源": "95598 (数据库驱动)", 
+            "计费标准": billing_attrs,
+            "数据源": "95598 (数据库驱动)",
             "最后同步日期": now.strftime("%Y-%m-%d %H:%M:%S")
         })
         return attrs

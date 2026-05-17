@@ -17,6 +17,7 @@ from .storage import AuthStore
 from .login_methods import QRCodeLoginHandler, PasswordLoginHandler, SMSLoginHandler
 from .helpers.schemas import (
     get_year_ladder_tou_schema,
+    get_charging_pile_schema,
     get_year_ladder_schema,
     get_month_ladder_tou_variable_schema,
     get_month_ladder_tou_schema,
@@ -45,18 +46,20 @@ from .const import (
     CONF_LOGIN_ACCOUNT,
     CONF_USER_INFO,
     CONF_BILLING_MODE,
+    BILLING_STANDARD_CHARGING_PILE,
     BILLING_STANDARD_YEAR_LADDER_TOU,
     BILLING_STANDARD_YEAR_LADDER,
     BILLING_STANDARD_MONTH_LADDER_TOU_VARIABLE,
     BILLING_STANDARD_MONTH_LADDER_TOU,
     BILLING_STANDARD_MONTH_LADDER,
     BILLING_STANDARD_AVERAGE,
+    BILLING_WIDGET_TOKEN,
     CONF_LADDER_LEVEL_1,
     CONF_LADDER_LEVEL_2,
+    CONF_YEAR_LADDER_START,
     CONF_LADDER_PRICE_1,
     CONF_LADDER_PRICE_2,
     CONF_LADDER_PRICE_3,
-    CONF_YEAR_LADDER_START,
     CONF_PRICE_TIP,
     CONF_PRICE_PEAK,
     CONF_PRICE_FLAT,
@@ -813,10 +816,15 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return await self.async_step_month_ladder_tou_config()
             elif billing_mode == BILLING_STANDARD_MONTH_LADDER:
                 return await self.async_step_month_ladder_config()
+            elif billing_mode == BILLING_STANDARD_CHARGING_PILE:
+                return await self.async_step_charging_pile_config()
             elif billing_mode == BILLING_STANDARD_AVERAGE:
                 return await self.async_step_average_config()
+            elif billing_mode == BILLING_WIDGET_TOKEN:
+                return await self.async_step_widget_token()
 
         billing_options = [
+            {"value": BILLING_STANDARD_CHARGING_PILE, "label": "充电桩计费 (无阶梯)"},
             {"value": BILLING_STANDARD_YEAR_LADDER_TOU, "label": "年阶梯峰平谷计费"},
             {"value": BILLING_STANDARD_YEAR_LADDER, "label": "年阶梯计费"},
             {"value": BILLING_STANDARD_MONTH_LADDER_TOU_VARIABLE, "label": "月阶梯峰平谷变动价格计费"},
@@ -837,6 +845,27 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     )
                 }
             ),
+        )
+
+    async def async_step_charging_pile_config(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """配置充电桩计费 (无阶梯)."""
+        if user_input is not None:
+            if self._pending_entry_data:
+                # 强制设置第一档、第二档为 99999，起始日期为 0101
+                user_input[CONF_LADDER_LEVEL_1] = 99999
+                user_input[CONF_LADDER_LEVEL_2] = 99999
+                user_input[CONF_YEAR_LADDER_START] = "0101"
+                self._pending_entry_data.update(user_input)
+                entry_data = {k: v for k, v in self._pending_entry_data.items() if k != "_title"}
+                title = self._pending_entry_data.get("_title", "Shaobor_95598")
+                self._pending_entry_data = None
+                return await self._finish_entry(title=title, data=entry_data)
+
+        return self.async_show_form(
+            step_id="charging_pile_config",
+            data_schema=get_charging_pile_schema({}),
         )
 
     async def async_step_year_ladder_tou_config(
@@ -1033,6 +1062,44 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="average_config",
             data_schema=get_average_config_schema({}),
+        )
+
+    async def async_step_widget_token(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """显示小组件所需的 Token 信息."""
+        if user_input is not None:
+            return await self.async_step_billing_mode()
+
+        token_info = "⚠️ 未能获取到有效的认证信息，请确保已完成登录步骤。"
+        
+        if self._api:
+            api = self._api
+            user_token = getattr(api, "_user_token", "")
+            access_token = getattr(api, "_access_token", "")
+            key_code = getattr(api, "_key_code", "")
+            
+            # 获取当前选中的户号信息
+            idx = int(self._pending_entry_data.get(CONF_SELECTED_ACCOUNT_INDEX, 0)) if self._pending_entry_data else 0
+            power_list = getattr(api, "_power_user_list", [])
+            active_account = power_list[idx] if power_list and idx < len(power_list) else {}
+            
+            cons_no = active_account.get("consNo_dst") or active_account.get("consNoDst") or active_account.get("consNo") or ""
+            
+            token_info = (
+                f"📱 **小组件 Token 获取**\n"
+                f"---------------------------------\n"
+                f"🔹 **户号**: `{cons_no}`\n\n"
+                f"💡 **提示**：下方文本框内为您的长期凭证 `user_token` (rsi)，请全选复制到小组件中使用。"
+            )
+
+        from homeassistant.helpers.selector import TextSelector, TextSelectorConfig # type: ignore
+        return self.async_show_form(
+            step_id="widget_token",
+            data_schema=vol.Schema({
+                vol.Optional("user_token_copy", default=user_token if self._api else ""): TextSelector(
+                    TextSelectorConfig(multiline=False)
+                )
+            }),
+            description_placeholders={"token_info": token_info},
         )
 
     async def async_step_qrcode(

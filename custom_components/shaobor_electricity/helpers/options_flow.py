@@ -14,6 +14,7 @@ from .data_importer import validate_import_json
 from ..const import (
     DOMAIN,
     CONF_BILLING_MODE,
+    BILLING_STANDARD_CHARGING_PILE,
     BILLING_STANDARD_YEAR_LADDER_TOU,
     BILLING_STANDARD_YEAR_LADDER,
     BILLING_STANDARD_MONTH_LADDER_TOU_VARIABLE,
@@ -22,8 +23,10 @@ from ..const import (
     BILLING_STANDARD_AVERAGE,
     BILLING_DATA_IMPORT,
     BILLING_DATA_VIEW,
+    BILLING_WIDGET_TOKEN,
     CONF_LADDER_LEVEL_1,
     CONF_LADDER_LEVEL_2,
+    CONF_YEAR_LADDER_START,
     CONF_LADDER_PRICE_1,
     CONF_LADDER_PRICE_2,
     CONF_LADDER_PRICE_3,
@@ -37,6 +40,7 @@ from ..const import (
 
 from .schemas import (
     get_year_ladder_tou_schema,
+    get_charging_pile_schema,
     get_year_ladder_schema,
     get_month_ladder_tou_variable_schema,
     get_month_ladder_tou_schema,
@@ -68,17 +72,22 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 return await self.async_step_month_ladder_tou_config()
             elif billing_mode == BILLING_STANDARD_MONTH_LADDER:
                 return await self.async_step_month_ladder_config()
+            elif billing_mode == BILLING_STANDARD_CHARGING_PILE:
+                return await self.async_step_charging_pile_config()
             elif billing_mode == BILLING_STANDARD_AVERAGE:
                 return await self.async_step_average_config()
             elif billing_mode == BILLING_DATA_IMPORT:
                 return await self.async_step_data_import()
             elif billing_mode == BILLING_DATA_VIEW:
                 return await self.async_step_data_view()
+            elif billing_mode == BILLING_WIDGET_TOKEN:
+                return await self.async_step_widget_token()
 
         # 获取当前配置的计费模式
         current_billing_mode = self.config_entry.data.get(CONF_BILLING_MODE, BILLING_STANDARD_YEAR_LADDER)
         
         billing_options = [
+            {"value": BILLING_STANDARD_CHARGING_PILE, "label": "充电桩计费 (无阶梯)"},
             {"value": BILLING_STANDARD_YEAR_LADDER_TOU, "label": "年阶梯峰平谷计费"},
             {"value": BILLING_STANDARD_YEAR_LADDER, "label": "年阶梯计费"},
             {"value": BILLING_STANDARD_MONTH_LADDER_TOU_VARIABLE, "label": "月阶梯峰平谷变动价格计费"},
@@ -87,6 +96,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             {"value": BILLING_STANDARD_AVERAGE, "label": "平均单价计费"},
             {"value": BILLING_DATA_IMPORT, "label": "📥 历史数据导入 (JSON)"},
             {"value": BILLING_DATA_VIEW, "label": "🔍 查看已导入数据汇总"},
+            {"value": BILLING_WIDGET_TOKEN, "label": "📱 小组件 Token 获取"},
         ]
         
         return self.async_show_form(
@@ -112,6 +122,29 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 cons_no = config.get("selected_cons_no") or getattr(coordinator, "cons_no", "")
                 if cons_no:
                     await coordinator.db.async_save_price_config(cons_no, config)
+
+    async def async_step_charging_pile_config(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """配置充电桩计费 (无阶梯)."""
+        if user_input is not None:
+            # 强制设置第一档、第二档为 99999，起始日期为 0101
+            user_input[CONF_LADDER_LEVEL_1] = 99999
+            user_input[CONF_LADDER_LEVEL_2] = 99999
+            user_input[CONF_YEAR_LADDER_START] = "0101"
+            new_data = {**self.config_entry.data, **user_input, CONF_BILLING_MODE: BILLING_STANDARD_CHARGING_PILE}
+            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+            
+            # 同步保存到数据库
+            await self._async_save_price_to_db(new_data)
+            
+            return self.async_create_entry(title="", data={})
+
+        current_data = self.config_entry.data
+        return self.async_show_form(
+            step_id="charging_pile_config",
+            data_schema=get_charging_pile_schema(current_data),
+        )
 
     async def async_step_year_ladder_tou_config(
         self, user_input: dict[str, Any] | None = None
@@ -534,4 +567,46 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Required("confirm", default=False): bool,
             }),
             description_placeholders={"task_info": task_info},
+        )
+
+    async def async_step_widget_token(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """显示小组件所需的 Token 信息."""
+        if user_input is not None:
+            return await self.async_step_init()
+
+        # 获取当前认证信息
+        entry_id = self.config_entry.entry_id
+        coordinator = self.hass.data[DOMAIN][entry_id].get("coordinator")
+        
+        token_info = "⚠️ 未能获取到有效的认证信息，请确保集成已成功运行。"
+        
+        if coordinator and hasattr(coordinator, "api"):
+            api = coordinator.api
+            user_token = getattr(api, "_user_token", "")
+            access_token = getattr(api, "_access_token", "")
+            key_code = getattr(api, "_key_code", "")
+            
+            # 获取当前选中的户号信息
+            idx = getattr(api, "_selected_account_index", 0)
+            power_list = getattr(api, "_power_user_list", [])
+            active_account = power_list[idx] if power_list and idx < len(power_list) else {}
+            
+            cons_no = active_account.get("consNo_dst") or active_account.get("consNoDst") or active_account.get("consNo") or ""
+            
+            token_info = (
+                f"📱 **小组件 Token 获取**\n"
+                f"---------------------------------\n"
+                f"🔹 **户号**: `{cons_no}`\n\n"
+                f"💡 **提示**：下方文本框内为您的长期凭证 `user_token` (rsi)，请全选复制到小组件中使用。"
+            )
+
+        from homeassistant.helpers.selector import TextSelector, TextSelectorConfig # type: ignore
+        return self.async_show_form(
+            step_id="widget_token",
+            data_schema=vol.Schema({
+                vol.Optional("user_token_copy", default=user_token if coordinator else ""): TextSelector(
+                    TextSelectorConfig(multiline=False)
+                )
+            }),
+            description_placeholders={"token_info": token_info},
         )

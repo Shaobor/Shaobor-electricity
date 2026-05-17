@@ -28,6 +28,15 @@ def get_year_ladder_tou_schema(defaults: dict[str, Any]) -> vol.Schema:
         vol.Optional(CONF_YEAR_LADDER_START, default=defaults.get(CONF_YEAR_LADDER_START, "0101")): str,
     })
 
+def get_charging_pile_schema(defaults: dict[str, Any]) -> vol.Schema:
+    """Get schema for charging pile config (TOU without ladders)."""
+    return vol.Schema({
+        vol.Required(CONF_PRICE_TIP, default=defaults.get(CONF_PRICE_TIP, 0.81)): vol.Coerce(float),
+        vol.Required(CONF_PRICE_PEAK, default=defaults.get(CONF_PRICE_PEAK, 0.56)): vol.Coerce(float),
+        vol.Required(CONF_PRICE_FLAT, default=defaults.get(CONF_PRICE_FLAT, 0.51)): vol.Coerce(float),
+        vol.Required(CONF_PRICE_VALLEY, default=defaults.get(CONF_PRICE_VALLEY, 0.51)): vol.Coerce(float),
+    })
+
 def get_year_ladder_schema(defaults: dict[str, Any]) -> vol.Schema:
     """Get schema for year ladder config."""
     return vol.Schema({

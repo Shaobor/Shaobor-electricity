@@ -19,7 +19,7 @@ class Shaobor95598DailyUsageSensor(Shaobor95598SensorBase):
     _attr_translation_key = "daily_usage"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_icon = "mdi:chart-line"
-    _attr_state_class = SensorStateClass.TOTAL
+    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_suggested_display_precision = 2
 
     def _safe_float(self, val):

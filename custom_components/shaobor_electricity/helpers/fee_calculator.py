@@ -26,7 +26,7 @@ def calculate_daily_fee(
         except (ValueError, TypeError):
             return 0.0
 
-    if "tou" in billing_mode:
+    if "tou" in billing_mode or billing_mode == "charging_pile":
         # 峰谷计费模式：使用峰谷电价
         price_tip = _safe_float(entry_data.get("price_tip", 0.0))
         price_peak = _safe_float(entry_data.get("price_peak", 0.0))
@@ -34,7 +34,7 @@ def calculate_daily_fee(
         price_valley = _safe_float(entry_data.get("price_valley", 0.0))
 
         # 根据当前档位调整峰谷电价（年阶梯峰平谷）
-        if billing_mode == "year_ladder_tou":
+        if billing_mode in ["year_ladder_tou", "charging_pile"]:
             if year_accumulated <= ladder_level_1:
                 pass
             elif year_accumulated <= ladder_level_2:

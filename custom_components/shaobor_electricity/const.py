@@ -33,6 +33,7 @@ CONF_PHONE_NUMBER: Final = "phone_number"
 CONF_SMS_CODE: Final = "sms_code"
 
 # 计费标准选项
+BILLING_STANDARD_CHARGING_PILE: Final = "charging_pile"  # 充电桩计费
 BILLING_STANDARD_YEAR_LADDER_TOU: Final = "year_ladder_tou"  # 年阶梯峰平谷计费
 BILLING_STANDARD_YEAR_LADDER: Final = "year_ladder"  # 年阶梯计费
 BILLING_STANDARD_MONTH_LADDER_TOU_VARIABLE: Final = "month_ladder_tou_variable"  # 月阶梯峰平谷变动价格计费
@@ -41,6 +42,7 @@ BILLING_STANDARD_MONTH_LADDER: Final = "month_ladder"  # 月阶梯计费
 BILLING_STANDARD_AVERAGE: Final = "average"  # 平均单价计费
 BILLING_DATA_IMPORT: Final = "data_import"  # 数据导入(JSON)
 BILLING_DATA_VIEW: Final = "data_view"      # 数据查看
+BILLING_WIDGET_TOKEN: Final = "widget_token"  # 小组件 Token
 
 # 阶梯价格配置
 CONF_LADDER_LEVEL_1: Final = "ladder_level_1"  # 第1档上限
