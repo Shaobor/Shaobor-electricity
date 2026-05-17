@@ -317,6 +317,24 @@ class StateGridDatabase:
                 conn.close()
         await self.hass.async_add_executor_job(_add)
 
+    async def async_save_price_config(self, cons_no: str, config: dict):
+        """保存电价计费配置 (以 cons_no 为键存储到 sys_config)."""
+        import json
+        key = f"price_config_{cons_no}"
+        await self.async_save_config(key, json.dumps(config))
+
+    async def async_get_price_config(self, cons_no: str) -> dict | None:
+        """读取电价计费配置."""
+        import json
+        key = f"price_config_{cons_no}"
+        val = await self.async_get_config(key)
+        if val:
+            try:
+                return json.loads(val)
+            except Exception:
+                return None
+        return None
+
     async def async_save_config(self, key: str, value: str):
         """保存系统配置 (如授权码)."""
         def _save():

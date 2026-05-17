@@ -115,13 +115,16 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
     async def _async_save_price_to_db(self, config: dict[str, Any]):
         """将电价配置保存到数据库."""
-        entry_id = self.config_entry.entry_id
-        if DOMAIN in self.hass.data and entry_id in self.hass.data[DOMAIN]:
-            coordinator = self.hass.data[DOMAIN][entry_id].get("coordinator")
-            if coordinator and hasattr(coordinator, "db"):
-                cons_no = config.get("selected_cons_no") or getattr(coordinator, "cons_no", "")
-                if cons_no:
-                    await coordinator.db.async_save_price_config(cons_no, config)
+        try:
+            entry_id = self.config_entry.entry_id
+            if DOMAIN in self.hass.data and entry_id in self.hass.data[DOMAIN]:
+                coordinator = self.hass.data[DOMAIN][entry_id].get("coordinator")
+                if coordinator and hasattr(coordinator, "db"):
+                    cons_no = config.get("selected_cons_no") or getattr(coordinator, "cons_no", "")
+                    if cons_no:
+                        await coordinator.db.async_save_price_config(cons_no, config)
+        except Exception as e:
+            _LOGGER.warning("[选项流程] 同步电价到数据库失败 (不影响保存): %s", e)
 
     async def async_step_charging_pile_config(
         self, user_input: dict[str, Any] | None = None

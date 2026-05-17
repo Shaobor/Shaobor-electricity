@@ -139,7 +139,7 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
             current_tier = "第1档" if acc <= L1 else ("第2档" if acc <= L2 else "第3档")
             current_price = P1 if acc <= L1 else (P2 if acc <= L2 else P3)
             
-        billing_names = {"year_ladder_tou": "年阶梯峰平谷", "year_ladder": "年阶梯", "month_ladder_tou_variable": "月阶梯峰平谷变动价格", "month_ladder_tou": "月阶梯峰平谷", "month_ladder": "月阶梯", "average": "平均单价"}
+        billing_names = {"year_ladder_tou": "年阶梯峰平谷", "year_ladder": "年阶梯", "month_ladder_tou_variable": "月阶梯峰平谷变动价格", "month_ladder_tou": "月阶梯峰平谷", "month_ladder": "月阶梯", "average": "平均单价", "charging_pile": "充电桩计费"}
         billing_mode_name = billing_names.get(billing_mode, "年阶梯")
         
         billing_attrs = {"计费标准": billing_mode_name, "省份": region_name}
@@ -148,7 +148,7 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
         else:
             billing_attrs.update({"当前年阶梯档": current_tier, "年阶梯累计用电量": round(year_acc, 2), "当前年阶梯起始日期": cycle_start.strftime("%Y.%m.%d"), "当前年阶梯结束日期": cycle_end.strftime("%Y.%m.%d"), "年阶梯第2档起始电量": L1, "年阶梯第3档起始电量": L2})
 
-        if "tou" in billing_mode:
+        if "tou" in billing_mode or billing_mode == "charging_pile":
             current_month_str = now.strftime("%m")
             tier_num = 1 if acc <= L1 else (2 if acc <= L2 else 3)
             
