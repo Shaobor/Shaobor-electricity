@@ -1,5 +1,5 @@
 # Shaobor Electricity - 电网集成
-
+企鹅群 690711798
 Home Assistant 自定义集成，用于获取电费和用电量数据。
 
 ## 功能特性
