@@ -33,8 +33,24 @@ def calculate_daily_fee(
         price_flat = _safe_float(entry_data.get("price_flat", 0.0))
         price_valley = _safe_float(entry_data.get("price_valley", 0.0))
 
+        # 年阶梯峰平谷季节电价：6-10月为丰水期，其余月份为枯、平水期。
+        # 各季节、各档位均使用独立价格，不能通过统一阶梯加价推导。
+        if billing_mode == "year_ladder_tou_seasonal":
+            data_month = int(day_str[5:7])
+            season = "wet" if 6 <= data_month <= 10 else "dry"
+            if year_accumulated <= ladder_level_1:
+                tier = 1
+            elif year_accumulated <= ladder_level_2:
+                tier = 2
+            else:
+                tier = 3
+            price_tip = _safe_float(entry_data.get(f"season_{season}_ladder_{tier}_tip", 0.0))
+            price_peak = _safe_float(entry_data.get(f"season_{season}_ladder_{tier}_peak", 0.0))
+            price_flat = _safe_float(entry_data.get(f"season_{season}_ladder_{tier}_flat", 0.0))
+            price_valley = _safe_float(entry_data.get(f"season_{season}_ladder_{tier}_valley", 0.0))
+
         # 根据当前档位调整峰谷电价（年阶梯峰平谷）
-        if billing_mode in ["year_ladder_tou", "charging_pile"]:
+        elif billing_mode in ["year_ladder_tou", "charging_pile"]:
             if year_accumulated <= ladder_level_1:
                 pass
             elif year_accumulated <= ladder_level_2:

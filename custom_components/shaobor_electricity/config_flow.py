@@ -7,7 +7,10 @@ import voluptuous as vol  # type: ignore[import-untyped]
 from homeassistant import config_entries  # type: ignore[import-untyped]
 from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntry  # type: ignore[import-untyped]
 from homeassistant.core import HomeAssistant  # type: ignore[import-untyped]
-from homeassistant.data_entry_flow import FlowResult  # type: ignore[import-untyped]
+try:
+    from homeassistant.config_entries import ConfigFlowResult as FlowResult  # type: ignore[import-untyped]
+except ImportError:
+    from homeassistant.data_entry_flow import FlowResult  # type: ignore[import-untyped]
 
 from homeassistant.helpers.aiohttp_client import async_get_clientsession  # type: ignore[import-untyped]
 from homeassistant.helpers.selector import SelectSelector, SelectSelectorConfig, SelectSelectorMode  # type: ignore[import-untyped]
@@ -17,6 +20,7 @@ from .storage import AuthStore
 from .login_methods import QRCodeLoginHandler, PasswordLoginHandler, SMSLoginHandler
 from .helpers.schemas import (
     get_year_ladder_tou_schema,
+    get_year_ladder_tou_seasonal_schema,
     get_charging_pile_schema,
     get_year_ladder_schema,
     get_month_ladder_tou_variable_schema,
@@ -48,6 +52,7 @@ from .const import (
     CONF_BILLING_MODE,
     BILLING_STANDARD_CHARGING_PILE,
     BILLING_STANDARD_YEAR_LADDER_TOU,
+    BILLING_STANDARD_YEAR_LADDER_TOU_SEASONAL,
     BILLING_STANDARD_YEAR_LADDER,
     BILLING_STANDARD_MONTH_LADDER_TOU_VARIABLE,
     BILLING_STANDARD_MONTH_LADDER_TOU,
@@ -808,6 +813,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # 根据计费模式跳转到对应的价格配置页面
             if billing_mode == BILLING_STANDARD_YEAR_LADDER_TOU:
                 return await self.async_step_year_ladder_tou_config()
+            elif billing_mode == BILLING_STANDARD_YEAR_LADDER_TOU_SEASONAL:
+                return await self.async_step_year_ladder_tou_seasonal_config()
             elif billing_mode == BILLING_STANDARD_YEAR_LADDER:
                 return await self.async_step_year_ladder_config()
             elif billing_mode == BILLING_STANDARD_MONTH_LADDER_TOU_VARIABLE:
@@ -826,6 +833,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         billing_options = [
             {"value": BILLING_STANDARD_CHARGING_PILE, "label": "充电桩计费 (无阶梯)"},
             {"value": BILLING_STANDARD_YEAR_LADDER_TOU, "label": "年阶梯峰平谷计费"},
+            {"value": BILLING_STANDARD_YEAR_LADDER_TOU_SEASONAL, "label": "年阶梯峰平谷季节电价计费"},
             {"value": BILLING_STANDARD_YEAR_LADDER, "label": "年阶梯计费"},
             {"value": BILLING_STANDARD_MONTH_LADDER_TOU_VARIABLE, "label": "月阶梯峰平谷变动价格计费"},
             {"value": BILLING_STANDARD_MONTH_LADDER_TOU, "label": "月阶梯峰平谷计费"},
@@ -933,6 +941,23 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_PRICE_FLAT: default_price_flat,
                 CONF_PRICE_VALLEY: default_price_valley,
             }),
+        )
+
+    async def async_step_year_ladder_tou_seasonal_config(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """配置年阶梯峰平谷季节电价计费。"""
+        if user_input is not None:
+            if self._pending_entry_data:
+                self._pending_entry_data.update(user_input)
+                entry_data = {k: v for k, v in self._pending_entry_data.items() if k != "_title"}
+                title = self._pending_entry_data.get("_title", "Shaobor_95598")
+                self._pending_entry_data = None
+                return await self._finish_entry(title=title, data=entry_data)
+
+        return self.async_show_form(
+            step_id="year_ladder_tou_seasonal_config",
+            data_schema=get_year_ladder_tou_seasonal_schema({}),
         )
 
     async def async_step_year_ladder_config(

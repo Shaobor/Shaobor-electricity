@@ -28,6 +28,20 @@ def get_year_ladder_tou_schema(defaults: dict[str, Any]) -> vol.Schema:
         vol.Optional(CONF_YEAR_LADDER_START, default=defaults.get(CONF_YEAR_LADDER_START, "0101")): str,
     })
 
+def get_year_ladder_tou_seasonal_schema(defaults: dict[str, Any]) -> vol.Schema:
+    """Get schema for annual ladder TOU with wet/dry season prices."""
+    schema_dict = {
+        vol.Required(CONF_LADDER_LEVEL_1, default=defaults.get(CONF_LADDER_LEVEL_1, 2400)): int,
+        vol.Required(CONF_LADDER_LEVEL_2, default=defaults.get(CONF_LADDER_LEVEL_2, 3900)): int,
+        vol.Optional(CONF_YEAR_LADDER_START, default=defaults.get(CONF_YEAR_LADDER_START, "0101")): str,
+    }
+    for season in ("wet", "dry"):
+        for tier in range(1, 4):
+            for period in ("tip", "peak", "flat", "valley"):
+                key = f"season_{season}_ladder_{tier}_{period}"
+                schema_dict[vol.Required(key, default=defaults.get(key, 0.0))] = vol.Coerce(float)
+    return vol.Schema(schema_dict)
+
 def get_charging_pile_schema(defaults: dict[str, Any]) -> vol.Schema:
     """Get schema for charging pile config (TOU without ladders)."""
     return vol.Schema({

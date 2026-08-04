@@ -215,8 +215,9 @@ REGIONAL_PRICES = {
     # 四川省 (51xx)
     "51": {
         "name": "四川省",
-        "ladder_level_1": 2160,
-        "ladder_level_2": 3600,
+        # 2026年7月起：7-9月一档260度、二档至460度；其余月份一档180度、二档至280度。
+        "ladder_level_1": 2400,
+        "ladder_level_2": 3900,
         "ladder_price_1": 0.5224,
         "ladder_price_2": 0.6224,
         "ladder_price_3": 0.8224,

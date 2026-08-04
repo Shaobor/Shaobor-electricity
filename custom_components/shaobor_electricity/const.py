@@ -35,6 +35,7 @@ CONF_SMS_CODE: Final = "sms_code"
 # 计费标准选项
 BILLING_STANDARD_CHARGING_PILE: Final = "charging_pile"  # 充电桩计费
 BILLING_STANDARD_YEAR_LADDER_TOU: Final = "year_ladder_tou"  # 年阶梯峰平谷计费
+BILLING_STANDARD_YEAR_LADDER_TOU_SEASONAL: Final = "year_ladder_tou_seasonal"  # 年阶梯峰平谷季节电价计费
 BILLING_STANDARD_YEAR_LADDER: Final = "year_ladder"  # 年阶梯计费
 BILLING_STANDARD_MONTH_LADDER_TOU_VARIABLE: Final = "month_ladder_tou_variable"  # 月阶梯峰平谷变动价格计费
 BILLING_STANDARD_MONTH_LADDER_TOU: Final = "month_ladder_tou"  # 月阶梯峰平谷计费
