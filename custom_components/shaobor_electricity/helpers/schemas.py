@@ -14,6 +14,10 @@ from ..const import (
     CONF_PRICE_VALLEY,
     CONF_YEAR_LADDER_START,
     CONF_AVERAGE_PRICE,
+    CONF_NORMAL_LADDER_LEVEL_1,
+    CONF_NORMAL_LADDER_LEVEL_2,
+    CONF_SUMMER_LADDER_LEVEL_1,
+    CONF_SUMMER_LADDER_LEVEL_2,
 )
 
 def get_year_ladder_tou_schema(defaults: dict[str, Any]) -> vol.Schema:
@@ -28,18 +32,23 @@ def get_year_ladder_tou_schema(defaults: dict[str, Any]) -> vol.Schema:
         vol.Optional(CONF_YEAR_LADDER_START, default=defaults.get(CONF_YEAR_LADDER_START, "0101")): str,
     })
 
-def get_year_ladder_tou_seasonal_schema(defaults: dict[str, Any]) -> vol.Schema:
-    """Get schema for annual ladder TOU with wet/dry season prices."""
+def get_month_ladder_tou_seasonal_schema(defaults: dict[str, Any]) -> vol.Schema:
+    """Get schema for monthly ladder TOU with seasonal prices and thresholds."""
     schema_dict = {
-        vol.Required(CONF_LADDER_LEVEL_1, default=defaults.get(CONF_LADDER_LEVEL_1, 2400)): int,
-        vol.Required(CONF_LADDER_LEVEL_2, default=defaults.get(CONF_LADDER_LEVEL_2, 3900)): int,
-        vol.Optional(CONF_YEAR_LADDER_START, default=defaults.get(CONF_YEAR_LADDER_START, "0101")): str,
+        vol.Required(CONF_NORMAL_LADDER_LEVEL_1, default=defaults.get(CONF_NORMAL_LADDER_LEVEL_1, 180)): int,
+        vol.Required(CONF_NORMAL_LADDER_LEVEL_2, default=defaults.get(CONF_NORMAL_LADDER_LEVEL_2, 280)): int,
+        vol.Required(CONF_SUMMER_LADDER_LEVEL_1, default=defaults.get(CONF_SUMMER_LADDER_LEVEL_1, 260)): int,
+        vol.Required(CONF_SUMMER_LADDER_LEVEL_2, default=defaults.get(CONF_SUMMER_LADDER_LEVEL_2, 460)): int,
+    }
+    default_prices = {
+        "wet": ((0, 0.5224, 0.5224, 0.175), (0, 0.6224, 0.6224, 0.275), (0, 0.8224, 0.8224, 0.475)),
+        "dry": ((0, 0.5224, 0.5224, 0.2535), (0, 0.6224, 0.6224, 0.3535), (0, 0.8224, 0.8224, 0.5535)),
     }
     for season in ("wet", "dry"):
         for tier in range(1, 4):
-            for period in ("tip", "peak", "flat", "valley"):
+            for index, period in enumerate(("tip", "peak", "flat", "valley")):
                 key = f"season_{season}_ladder_{tier}_{period}"
-                schema_dict[vol.Required(key, default=defaults.get(key, 0.0))] = vol.Coerce(float)
+                schema_dict[vol.Required(key, default=defaults.get(key, default_prices[season][tier - 1][index]))] = vol.Coerce(float)
     return vol.Schema(schema_dict)
 
 def get_charging_pile_schema(defaults: dict[str, Any]) -> vol.Schema:

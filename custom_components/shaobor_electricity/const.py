@@ -35,7 +35,9 @@ CONF_SMS_CODE: Final = "sms_code"
 # 计费标准选项
 BILLING_STANDARD_CHARGING_PILE: Final = "charging_pile"  # 充电桩计费
 BILLING_STANDARD_YEAR_LADDER_TOU: Final = "year_ladder_tou"  # 年阶梯峰平谷计费
-BILLING_STANDARD_YEAR_LADDER_TOU_SEASONAL: Final = "year_ladder_tou_seasonal"  # 年阶梯峰平谷季节电价计费
+# 2.2.2 曾发布的错误模式标识；保留用于将既有配置迁移为月阶梯模式。
+BILLING_STANDARD_YEAR_LADDER_TOU_SEASONAL: Final = "year_ladder_tou_seasonal"
+BILLING_STANDARD_MONTH_LADDER_TOU_SEASONAL: Final = "month_ladder_tou_seasonal"  # 月阶梯峰平谷季节电价计费
 BILLING_STANDARD_YEAR_LADDER: Final = "year_ladder"  # 年阶梯计费
 BILLING_STANDARD_MONTH_LADDER_TOU_VARIABLE: Final = "month_ladder_tou_variable"  # 月阶梯峰平谷变动价格计费
 BILLING_STANDARD_MONTH_LADDER_TOU: Final = "month_ladder_tou"  # 月阶梯峰平谷计费
@@ -51,6 +53,10 @@ CONF_LADDER_LEVEL_2: Final = "ladder_level_2"  # 第2档上限
 CONF_LADDER_PRICE_1: Final = "ladder_price_1"  # 第1档电价
 CONF_LADDER_PRICE_2: Final = "ladder_price_2"  # 第2档电价
 CONF_LADDER_PRICE_3: Final = "ladder_price_3"  # 第3档电价
+CONF_NORMAL_LADDER_LEVEL_1: Final = "normal_ladder_level_1"  # 常规月第1档上限
+CONF_NORMAL_LADDER_LEVEL_2: Final = "normal_ladder_level_2"  # 常规月第2档上限
+CONF_SUMMER_LADDER_LEVEL_1: Final = "summer_ladder_level_1"  # 夏季月第1档上限
+CONF_SUMMER_LADDER_LEVEL_2: Final = "summer_ladder_level_2"  # 夏季月第2档上限
 CONF_YEAR_LADDER_START: Final = "year_ladder_start"  # 年阶梯起始日期（MMDD格式）
 
 # 峰平谷价格配置

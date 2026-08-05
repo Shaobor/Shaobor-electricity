@@ -20,7 +20,7 @@ from .storage import AuthStore
 from .login_methods import QRCodeLoginHandler, PasswordLoginHandler, SMSLoginHandler
 from .helpers.schemas import (
     get_year_ladder_tou_schema,
-    get_year_ladder_tou_seasonal_schema,
+    get_month_ladder_tou_seasonal_schema,
     get_charging_pile_schema,
     get_year_ladder_schema,
     get_month_ladder_tou_variable_schema,
@@ -53,6 +53,7 @@ from .const import (
     BILLING_STANDARD_CHARGING_PILE,
     BILLING_STANDARD_YEAR_LADDER_TOU,
     BILLING_STANDARD_YEAR_LADDER_TOU_SEASONAL,
+    BILLING_STANDARD_MONTH_LADDER_TOU_SEASONAL,
     BILLING_STANDARD_YEAR_LADDER,
     BILLING_STANDARD_MONTH_LADDER_TOU_VARIABLE,
     BILLING_STANDARD_MONTH_LADDER_TOU,
@@ -813,7 +814,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # 根据计费模式跳转到对应的价格配置页面
             if billing_mode == BILLING_STANDARD_YEAR_LADDER_TOU:
                 return await self.async_step_year_ladder_tou_config()
-            elif billing_mode == BILLING_STANDARD_YEAR_LADDER_TOU_SEASONAL:
+            elif billing_mode in (BILLING_STANDARD_YEAR_LADDER_TOU_SEASONAL, BILLING_STANDARD_MONTH_LADDER_TOU_SEASONAL):
                 return await self.async_step_year_ladder_tou_seasonal_config()
             elif billing_mode == BILLING_STANDARD_YEAR_LADDER:
                 return await self.async_step_year_ladder_config()
@@ -833,7 +834,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         billing_options = [
             {"value": BILLING_STANDARD_CHARGING_PILE, "label": "充电桩计费 (无阶梯)"},
             {"value": BILLING_STANDARD_YEAR_LADDER_TOU, "label": "年阶梯峰平谷计费"},
-            {"value": BILLING_STANDARD_YEAR_LADDER_TOU_SEASONAL, "label": "年阶梯峰平谷季节电价计费"},
+            {"value": BILLING_STANDARD_MONTH_LADDER_TOU_SEASONAL, "label": "月阶梯峰平谷季节电价计费"},
             {"value": BILLING_STANDARD_YEAR_LADDER, "label": "年阶梯计费"},
             {"value": BILLING_STANDARD_MONTH_LADDER_TOU_VARIABLE, "label": "月阶梯峰平谷变动价格计费"},
             {"value": BILLING_STANDARD_MONTH_LADDER_TOU, "label": "月阶梯峰平谷计费"},
@@ -946,7 +947,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_year_ladder_tou_seasonal_config(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """配置年阶梯峰平谷季节电价计费。"""
+        """配置月阶梯峰平谷季节电价计费。"""
         if user_input is not None:
             if self._pending_entry_data:
                 self._pending_entry_data.update(user_input)
@@ -957,7 +958,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="year_ladder_tou_seasonal_config",
-            data_schema=get_year_ladder_tou_seasonal_schema({}),
+            data_schema=get_month_ladder_tou_seasonal_schema({}),
         )
 
     async def async_step_year_ladder_config(

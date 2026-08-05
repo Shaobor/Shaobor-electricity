@@ -16,6 +16,9 @@ def calculate_daily_fee(
     price_3: float,
 ) -> float:
     """Calculate the electricity fee for a single day based on billing mode."""
+    # 兼容 2.2.2 中短暂发布的错误年阶梯模式标识。
+    if billing_mode == "year_ladder_tou_seasonal":
+        billing_mode = "month_ladder_tou_seasonal"
     day_cost = 0.0
 
     def _safe_float(val):
@@ -33,14 +36,28 @@ def calculate_daily_fee(
         price_flat = _safe_float(entry_data.get("price_flat", 0.0))
         price_valley = _safe_float(entry_data.get("price_valley", 0.0))
 
-        # 年阶梯峰平谷季节电价：6-10月为丰水期，其余月份为枯、平水期。
-        # 各季节、各档位均使用独立价格，不能通过统一阶梯加价推导。
-        if billing_mode == "year_ladder_tou_seasonal":
+        # 月阶梯峰平谷季节电价：夏季阶梯与丰水期谷价的月份范围并不相同。
+        if billing_mode == "month_ladder_tou_seasonal":
             data_month = int(day_str[5:7])
             season = "wet" if 6 <= data_month <= 10 else "dry"
-            if year_accumulated <= ladder_level_1:
+            normal_l1 = _safe_float(entry_data.get("normal_ladder_level_1", 180))
+            normal_l2 = _safe_float(entry_data.get("normal_ladder_level_2", 280))
+            summer_l1 = _safe_float(entry_data.get("summer_ladder_level_1", 260))
+            summer_l2 = _safe_float(entry_data.get("summer_ladder_level_2", 460))
+            month_l1 = summer_l1 if 7 <= data_month <= 9 else normal_l1
+            month_l2 = summer_l2 if 7 <= data_month <= 9 else normal_l2
+
+            # 2027年起，未用完的一、二档电量可逐月结转至年内后续月份。
+            if int(day_str[:4]) >= 2027:
+                first_limit = sum(summer_l1 if 7 <= month <= 9 else normal_l1 for month in range(1, data_month + 1))
+                second_limit = sum(summer_l2 if 7 <= month <= 9 else normal_l2 for month in range(1, data_month + 1))
+                accumulated = year_accumulated
+            else:
+                first_limit, second_limit, accumulated = month_l1, month_l2, month_accumulated
+
+            if accumulated <= first_limit:
                 tier = 1
-            elif year_accumulated <= ladder_level_2:
+            elif accumulated <= second_limit:
                 tier = 2
             else:
                 tier = 3

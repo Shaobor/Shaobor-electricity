@@ -99,6 +99,8 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
         
         cons_no = data.get("selected_cons_no", "")
         billing_mode = self._entry.data.get("billing_mode", "year_ladder")
+        if billing_mode == "year_ladder_tou_seasonal":
+            billing_mode = "month_ladder_tou_seasonal"
         regional_config = get_region_price_config(cons_no) if cons_no else None
         region_name = get_region_name(cons_no) if cons_no else "未知地区"
         
@@ -130,8 +132,25 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
             if cycle_start_str <= d_s <= cycle_end_str: year_acc += kwh
             if item.get("day", "").startswith(curr_ym): month_acc += kwh
 
+        if billing_mode == "month_ladder_tou_seasonal":
+            if 7 <= now.month <= 9:
+                L1 = self._safe_float(self._entry.data.get("summer_ladder_level_1", 260))
+                L2 = self._safe_float(self._entry.data.get("summer_ladder_level_2", 460))
+            else:
+                L1 = self._safe_float(self._entry.data.get("normal_ladder_level_1", 180))
+                L2 = self._safe_float(self._entry.data.get("normal_ladder_level_2", 280))
+
         is_month_ladder = "month_ladder" in billing_mode
         acc = month_acc if is_month_ladder else year_acc
+        is_annual_rollover = billing_mode == "month_ladder_tou_seasonal" and now.year >= 2027
+        if is_annual_rollover:
+            normal_l1 = self._safe_float(self._entry.data.get("normal_ladder_level_1", 180))
+            normal_l2 = self._safe_float(self._entry.data.get("normal_ladder_level_2", 280))
+            summer_l1 = self._safe_float(self._entry.data.get("summer_ladder_level_1", 260))
+            summer_l2 = self._safe_float(self._entry.data.get("summer_ladder_level_2", 460))
+            L1 = sum(summer_l1 if 7 <= month <= 9 else normal_l1 for month in range(1, now.month + 1))
+            L2 = sum(summer_l2 if 7 <= month <= 9 else normal_l2 for month in range(1, now.month + 1))
+            acc = year_acc
         
         if billing_mode == "average":
             current_tier, current_price = "-", self._entry.data.get("average_price", 0.51)
@@ -139,11 +158,13 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
             current_tier = "第1档" if acc <= L1 else ("第2档" if acc <= L2 else "第3档")
             current_price = P1 if acc <= L1 else (P2 if acc <= L2 else P3)
             
-        billing_names = {"year_ladder_tou": "年阶梯峰平谷", "year_ladder_tou_seasonal": "年阶梯峰平谷季节电价", "year_ladder": "年阶梯", "month_ladder_tou_variable": "月阶梯峰平谷变动价格", "month_ladder_tou": "月阶梯峰平谷", "month_ladder": "月阶梯", "average": "平均单价", "charging_pile": "充电桩计费"}
+        billing_names = {"year_ladder_tou": "年阶梯峰平谷", "month_ladder_tou_seasonal": "月阶梯峰平谷季节电价", "year_ladder": "年阶梯", "month_ladder_tou_variable": "月阶梯峰平谷变动价格", "month_ladder_tou": "月阶梯峰平谷", "month_ladder": "月阶梯", "average": "平均单价", "charging_pile": "充电桩计费"}
         billing_mode_name = billing_names.get(billing_mode, "年阶梯")
         
         billing_attrs = {"计费标准": billing_mode_name, "省份": region_name}
-        if is_month_ladder:
+        if is_annual_rollover:
+            billing_attrs.update({"当前年内阶梯档": current_tier, "年内阶梯累计用电量": round(year_acc, 2), "年内第2档累计上限": L1, "年内第3档累计上限": L2})
+        elif is_month_ladder:
             billing_attrs.update({"当前月阶梯档": current_tier, "月阶梯累计用电量": round(month_acc, 2), "月阶梯第2档起始电量": L1, "月阶梯第3档起始电量": L2})
         else:
             billing_attrs.update({"当前年阶梯档": current_tier, "年阶梯累计用电量": round(year_acc, 2), "当前年阶梯起始日期": cycle_start.strftime("%Y.%m.%d"), "当前年阶梯结束日期": cycle_end.strftime("%Y.%m.%d"), "年阶梯第2档起始电量": L1, "年阶梯第3档起始电量": L2})
@@ -152,7 +173,7 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
             current_month_str = now.strftime("%m")
             tier_num = 1 if acc <= L1 else (2 if acc <= L2 else 3)
             
-            if billing_mode == "year_ladder_tou_seasonal":
+            if billing_mode == "month_ladder_tou_seasonal":
                 season = "wet" if 6 <= now.month <= 10 else "dry"
                 season_name = "丰水期（6-10月）" if season == "wet" else "枯、平水期（11月-次年5月）"
                 p_t = self._safe_float(self._entry.data.get(f"season_{season}_ladder_{tier_num}_tip", 0))
@@ -177,7 +198,7 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
 
             prefix = "月阶梯" if is_month_ladder else "年阶梯"
             for lv in range(1, 4):
-                if billing_mode == "year_ladder_tou_seasonal":
+                if billing_mode == "month_ladder_tou_seasonal":
                     season = "wet" if 6 <= now.month <= 10 else "dry"
                     bt = self._safe_float(self._entry.data.get(f"season_{season}_ladder_{lv}_tip", 0))
                     bp = self._safe_float(self._entry.data.get(f"season_{season}_ladder_{lv}_peak", 0))

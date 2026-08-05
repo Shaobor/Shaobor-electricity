@@ -86,10 +86,10 @@
                 }
             },
             "year_ladder_tou_seasonal_config": {
-                "title": "年阶梯峰平谷季节电价计费配置",
-                "description": "请分别配置丰水期（6-10月）和枯、平水期（11月-次年5月）的各档峰平谷电价。如没有该时段请填写0。",
+                "title": "月阶梯峰平谷季节电价计费配置",
+                "description": "请配置常规月（1-6、10-12月）及夏季（7-9月）的阶梯上限，并分别配置丰水期（6-10月）和枯、平水期（11月-次年5月）的各档峰平谷电价。如没有该时段请填写0。",
                 "data": {
-                    "ladder_level_1": "第1档上限（度）", "ladder_level_2": "第2档上限（度）", "year_ladder_start": "年阶梯起始日期（MMDD格式，如0101）",
+                    "normal_ladder_level_1": "常规月第1档上限（度）", "normal_ladder_level_2": "常规月第2档上限（度）", "summer_ladder_level_1": "夏季第1档上限（度）", "summer_ladder_level_2": "夏季第2档上限（度）",
                     "season_wet_ladder_1_tip": "丰水期第1档尖峰电价（元/度）", "season_wet_ladder_1_peak": "丰水期第1档峰时电价（元/度）", "season_wet_ladder_1_flat": "丰水期第1档平时电价（元/度）", "season_wet_ladder_1_valley": "丰水期第1档谷时电价（元/度）",
                     "season_wet_ladder_2_tip": "丰水期第2档尖峰电价（元/度）", "season_wet_ladder_2_peak": "丰水期第2档峰时电价（元/度）", "season_wet_ladder_2_flat": "丰水期第2档平时电价（元/度）", "season_wet_ladder_2_valley": "丰水期第2档谷时电价（元/度）",
                     "season_wet_ladder_3_tip": "丰水期第3档尖峰电价（元/度）", "season_wet_ladder_3_peak": "丰水期第3档峰时电价（元/度）", "season_wet_ladder_3_flat": "丰水期第3档平时电价（元/度）", "season_wet_ladder_3_valley": "丰水期第3档谷时电价（元/度）",
@@ -361,10 +361,10 @@
                 }
             },
             "year_ladder_tou_seasonal_config": {
-                "title": "年阶梯峰平谷季节电价计费配置",
-                "description": "请分别配置丰水期（6-10月）和枯、平水期（11月-次年5月）的各档峰平谷电价。如没有该时段请填写0。",
+                "title": "月阶梯峰平谷季节电价计费配置",
+                "description": "请配置常规月（1-6、10-12月）及夏季（7-9月）的阶梯上限，并分别配置丰水期（6-10月）和枯、平水期（11月-次年5月）的各档峰平谷电价。如没有该时段请填写0。",
                 "data": {
-                    "ladder_level_1": "第1档上限（度）", "ladder_level_2": "第2档上限（度）", "year_ladder_start": "年阶梯起始日期（MMDD格式，如0101）",
+                    "normal_ladder_level_1": "常规月第1档上限（度）", "normal_ladder_level_2": "常规月第2档上限（度）", "summer_ladder_level_1": "夏季第1档上限（度）", "summer_ladder_level_2": "夏季第2档上限（度）",
                     "season_wet_ladder_1_tip": "丰水期第1档尖峰电价（元/度）", "season_wet_ladder_1_peak": "丰水期第1档峰时电价（元/度）", "season_wet_ladder_1_flat": "丰水期第1档平时电价（元/度）", "season_wet_ladder_1_valley": "丰水期第1档谷时电价（元/度）",
                     "season_wet_ladder_2_tip": "丰水期第2档尖峰电价（元/度）", "season_wet_ladder_2_peak": "丰水期第2档峰时电价（元/度）", "season_wet_ladder_2_flat": "丰水期第2档平时电价（元/度）", "season_wet_ladder_2_valley": "丰水期第2档谷时电价（元/度）",
                     "season_wet_ladder_3_tip": "丰水期第3档尖峰电价（元/度）", "season_wet_ladder_3_peak": "丰水期第3档峰时电价（元/度）", "season_wet_ladder_3_flat": "丰水期第3档平时电价（元/度）", "season_wet_ladder_3_valley": "丰水期第3档谷时电价（元/度）",
@@ -621,7 +621,7 @@
             "options": {
                 "charging_pile": "充电桩计费 (无阶梯)",
                 "year_ladder_tou": "年阶梯峰平谷计费",
-                "year_ladder_tou_seasonal": "年阶梯峰平谷季节电价计费",
+                "month_ladder_tou_seasonal": "月阶梯峰平谷季节电价计费",
                 "year_ladder": "年阶梯计费",
                 "month_ladder_tou_variable": "月阶梯峰平谷变动价格计费",
                 "month_ladder_tou": "月阶梯峰平谷计费",
