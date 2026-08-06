@@ -9,6 +9,9 @@
             },
             "shaobor_electricity__last_update": {
                 "name": "Last update time"
+            },
+            "shaobor_electricity__electricity_price": {
+                "name": "Electricity price"
             }
         }
     }

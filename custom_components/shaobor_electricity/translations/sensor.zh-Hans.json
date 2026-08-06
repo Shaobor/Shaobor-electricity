@@ -9,6 +9,9 @@
             },
             "shaobor_electricity__last_update": {
                 "name": "最后更新时间"
+            },
+            "shaobor_electricity__electricity_price": {
+                "name": "电费单价"
             }
         }
     }
