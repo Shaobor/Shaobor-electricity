@@ -101,6 +101,12 @@ class Shaobor95598ElectricityPriceSensor(Shaobor95598SensorBase):
     def _current_period(self, mode: str, now: datetime, data: dict[str, Any]) -> str:
         """Return the configured TOU period; unconfigured time defaults to flat."""
         if mode == "charging_pile":
+            # 自动兼容旧版保存的通用时段，黑龙江用户改用当地充电桩官方时段。
+            if data.get("price_peak_periods") == "07:00-23:00" and data.get("price_valley_periods") == "23:00-07:00":
+                cons_no = (self.coordinator.data or {}).get("selected_cons_no", "")
+                regional = get_region_price_config(cons_no) if cons_no else None
+                if regional and regional.get("charging_pile"):
+                    data = {**data, **regional["charging_pile"]}
             for period in ("tip", "peak", "valley", "flat"):
                 if self._in_periods(data.get(f"price_{period}_periods"), now):
                     return period
@@ -157,13 +163,19 @@ class Shaobor95598ElectricityPriceSensor(Shaobor95598SensorBase):
                 "当前时段": "不分时计价",
                 "说明": "当前阶梯档位的固定电价；能源面板可将此实体作为电价实体。",
             }
-        period = self._current_period(mode, now, self._entry.data)
+        period_data = self._entry.data
+        if mode == "charging_pile" and period_data.get("price_peak_periods") == "07:00-23:00" and period_data.get("price_valley_periods") == "23:00-07:00":
+            cons_no = (self.coordinator.data or {}).get("selected_cons_no", "")
+            regional = get_region_price_config(cons_no) if cons_no else None
+            if regional and regional.get("charging_pile"):
+                period_data = {**period_data, **regional["charging_pile"]}
+        period = self._current_period(mode, now, period_data)
         labels = {"tip": "尖峰", "peak": "峰", "flat": "平", "valley": "低谷"}
         attrs = {"当前时段": labels[period], "说明": "当前生效电价；能源面板可将此实体作为电价实体。"}
         if mode == "charging_pile":
-            attrs["峰时段"] = self._entry.data.get("price_peak_periods", "")
-            attrs["平时段"] = self._entry.data.get("price_flat_periods", "其余时段") or "其余时段"
-            attrs["谷时段"] = self._entry.data.get("price_valley_periods", "")
+            attrs["峰时段"] = period_data.get("price_peak_periods", "")
+            attrs["平时段"] = period_data.get("price_flat_periods", "其余时段") or "其余时段"
+            attrs["谷时段"] = period_data.get("price_valley_periods", "")
         else:
             attrs["低谷时段"] = "23:00-07:00"
         return attrs

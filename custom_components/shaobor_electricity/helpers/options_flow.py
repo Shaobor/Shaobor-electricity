@@ -153,9 +153,20 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data={})
 
         current_data = self.config_entry.data
+        defaults = dict(current_data)
+        coordinator_data = {}
+        if DOMAIN in self.hass.data and self.config_entry.entry_id in self.hass.data[DOMAIN]:
+            coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id].get("coordinator")
+            coordinator_data = coordinator.data or {} if coordinator else {}
+        from .regional_prices import get_region_price_config
+        regional_config = get_region_price_config(str(coordinator_data.get("selected_cons_no", "")))
+        charging_defaults = (regional_config or {}).get("charging_pile", {})
+        # 将 v2.2.5 之前保存的通用时段迁移为黑龙江官方充电桩时段。
+        if charging_defaults and defaults.get("price_peak_periods") == "07:00-23:00" and defaults.get("price_valley_periods") == "23:00-07:00":
+            defaults.update(charging_defaults)
         return self.async_show_form(
             step_id="charging_pile_config",
-            data_schema=get_charging_pile_schema(current_data),
+            data_schema=get_charging_pile_schema(defaults),
         )
 
     async def async_step_year_ladder_tou_config(
