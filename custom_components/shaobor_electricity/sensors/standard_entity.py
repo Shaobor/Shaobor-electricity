@@ -103,6 +103,17 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
             billing_mode = "month_ladder_tou_seasonal"
         regional_config = get_region_price_config(cons_no) if cons_no else None
         region_name = get_region_name(cons_no) if cons_no else "未知地区"
+        tariff_data = self._entry.data
+        # 兼容旧版保存的通用充电桩时段：黑龙江账户直接使用当地预置电价，
+        # 避免标准实体的阶梯价格属性显示为 0。
+        if (
+            billing_mode == "charging_pile"
+            and regional_config
+            and regional_config.get("charging_pile")
+            and tariff_data.get("price_peak_periods") == "07:00-23:00"
+            and tariff_data.get("price_valley_periods") == "23:00-07:00"
+        ):
+            tariff_data = {**tariff_data, **regional_config["charging_pile"]}
         
         if regional_config:
             L1 = self._entry.data.get("ladder_level_1", regional_config["ladder_level_1"])
@@ -188,7 +199,7 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
                 p_v = self._safe_float(self._entry.data.get(f"month_{current_month_str}_ladder_{tier_num}_valley", 0.31))
             else:
                 inc = (P2 - P1) if tier_num == 2 else ((P3 - P1) if tier_num == 3 else 0)
-                p_t, p_p, p_f, p_v = [self._safe_float(self._entry.data.get(k, 0)) for k in ["price_tip", "price_peak", "price_flat", "price_valley"]]
+                p_t, p_p, p_f, p_v = [self._safe_float(tariff_data.get(k, 0)) for k in ["price_tip", "price_peak", "price_flat", "price_valley"]]
                 p_t, p_p, p_f, p_v = p_t + inc, p_p + inc, p_f + inc, p_v + inc
 
             if p_t: billing_attrs["尖峰电价"] = round(p_t, 4)
@@ -207,7 +218,7 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
                     inc_lv = 0
                 else:
                     inc_lv = (P2 - P1) if lv == 2 else ((P3 - P1) if lv == 3 else 0)
-                    bt, bp, bf, bv = [self._safe_float(self._entry.data.get(k, 0)) for k in ["price_tip", "price_peak", "price_flat", "price_valley"]]
+                    bt, bp, bf, bv = [self._safe_float(tariff_data.get(k, 0)) for k in ["price_tip", "price_peak", "price_flat", "price_valley"]]
                 if bt: billing_attrs[f"{prefix}第{lv}档尖电价"] = round(bt + inc_lv, 4)
                 if bp: billing_attrs[f"{prefix}第{lv}档峰电价"] = round(bp + inc_lv, 4)
                 if bf: billing_attrs[f"{prefix}第{lv}档平电价"] = round(bf + inc_lv, 4)
