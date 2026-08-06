@@ -103,6 +103,16 @@ REGIONAL_PRICES = {
         "ladder_price_1": 0.51,
         "ladder_price_2": 0.56,
         "ladder_price_3": 0.81,
+        "charging_pile": {
+            "price_tip": 0,
+            "price_peak": 0.766238,
+            "price_flat": 0.513,
+            "price_valley": 0.259763,
+            "price_tip_periods": "",
+            "price_peak_periods": "07:00-08:00,09:00-11:30,15:30-20:00",
+            "price_flat_periods": "",
+            "price_valley_periods": "12:00-14:00,23:30-05:30",
+        },
     },
     # 江苏省 (32xx)
     "32": {

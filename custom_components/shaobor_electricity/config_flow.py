@@ -872,9 +872,18 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._pending_entry_data = None
                 return await self._finish_entry(title=title, data=entry_data)
 
+        defaults = {}
+        if self._pending_entry_data:
+            power_list = self._pending_entry_data.get(CONF_POWER_USER_LIST) or []
+            index = self._pending_entry_data.get(CONF_SELECTED_ACCOUNT_INDEX, 0)
+            if power_list and 0 <= index < len(power_list) and isinstance(power_list[index], dict):
+                cons_no = str(power_list[index].get("consNo_dst") or power_list[index].get("consNoDst") or power_list[index].get("consNo") or "").split("-")[0]
+                from .helpers.regional_prices import get_region_price_config
+                defaults = (get_region_price_config(cons_no) or {}).get("charging_pile", {})
+
         return self.async_show_form(
             step_id="charging_pile_config",
-            data_schema=get_charging_pile_schema({}),
+            data_schema=get_charging_pile_schema(defaults),
         )
 
     async def async_step_year_ladder_tou_config(

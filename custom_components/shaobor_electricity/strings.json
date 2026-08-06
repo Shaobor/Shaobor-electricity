@@ -56,12 +56,16 @@
             },
             "charging_pile_config": {
                 "title": "充电桩计费配置",
-                "description": "请配置充电桩峰平谷电价参数 (无阶梯)。如没有该时段 请填写0",
+                "description": "请配置充电桩峰平谷电价及分时时段（多个时段用英文逗号分隔；未覆盖的其余时间按平时段计）。如没有该时段请填写0或留空。",
                 "data": {
                     "price_tip": "尖峰电价（元/度）",
                     "price_peak": "峰时电价（元/度）",
                     "price_flat": "平时电价（元/度）",
-                    "price_valley": "谷时电价（元/度）"
+                    "price_valley": "谷时电价（元/度）",
+                    "price_tip_periods": "尖峰时段（HH:MM-HH:MM）",
+                    "price_peak_periods": "峰时段（HH:MM-HH:MM，多个用逗号分隔）",
+                    "price_flat_periods": "平时段（可留空，表示其余时间）",
+                    "price_valley_periods": "谷时段（HH:MM-HH:MM，多个用逗号分隔）"
                 }
             }
         },

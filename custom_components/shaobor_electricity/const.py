@@ -64,6 +64,10 @@ CONF_PRICE_TIP: Final = "price_tip"  # 尖峰电价
 CONF_PRICE_PEAK: Final = "price_peak"  # 峰时电价
 CONF_PRICE_FLAT: Final = "price_flat"  # 平时电价
 CONF_PRICE_VALLEY: Final = "price_valley"  # 谷时电价
+CONF_PRICE_TIP_PERIODS: Final = "price_tip_periods"  # 尖峰时段（HH:MM-HH:MM）
+CONF_PRICE_PEAK_PERIODS: Final = "price_peak_periods"  # 峰时段（HH:MM-HH:MM）
+CONF_PRICE_FLAT_PERIODS: Final = "price_flat_periods"  # 平时段（HH:MM-HH:MM）
+CONF_PRICE_VALLEY_PERIODS: Final = "price_valley_periods"  # 谷时段（HH:MM-HH:MM）
 
 # 月阶梯各档独立的尖/峰/平电价（用于 month_ladder_tou 和 month_ladder_tou_variable）
 # 格式：ladder_price_1_tip, ladder_price_1_peak, ladder_price_1_flat

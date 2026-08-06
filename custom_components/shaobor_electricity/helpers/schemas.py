@@ -12,6 +12,10 @@ from ..const import (
     CONF_PRICE_PEAK,
     CONF_PRICE_FLAT,
     CONF_PRICE_VALLEY,
+    CONF_PRICE_TIP_PERIODS,
+    CONF_PRICE_PEAK_PERIODS,
+    CONF_PRICE_FLAT_PERIODS,
+    CONF_PRICE_VALLEY_PERIODS,
     CONF_YEAR_LADDER_START,
     CONF_AVERAGE_PRICE,
     CONF_NORMAL_LADDER_LEVEL_1,
@@ -58,6 +62,10 @@ def get_charging_pile_schema(defaults: dict[str, Any]) -> vol.Schema:
         vol.Required(CONF_PRICE_PEAK, default=defaults.get(CONF_PRICE_PEAK, 0.56)): vol.Coerce(float),
         vol.Required(CONF_PRICE_FLAT, default=defaults.get(CONF_PRICE_FLAT, 0.51)): vol.Coerce(float),
         vol.Required(CONF_PRICE_VALLEY, default=defaults.get(CONF_PRICE_VALLEY, 0.51)): vol.Coerce(float),
+        vol.Optional(CONF_PRICE_TIP_PERIODS, default=defaults.get(CONF_PRICE_TIP_PERIODS, "")): str,
+        vol.Optional(CONF_PRICE_PEAK_PERIODS, default=defaults.get(CONF_PRICE_PEAK_PERIODS, "07:00-23:00")): str,
+        vol.Optional(CONF_PRICE_FLAT_PERIODS, default=defaults.get(CONF_PRICE_FLAT_PERIODS, "")): str,
+        vol.Optional(CONF_PRICE_VALLEY_PERIODS, default=defaults.get(CONF_PRICE_VALLEY_PERIODS, "23:00-07:00")): str,
     })
 
 def get_year_ladder_schema(defaults: dict[str, Any]) -> vol.Schema:
