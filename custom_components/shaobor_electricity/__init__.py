@@ -4,6 +4,9 @@ from __future__ import annotations
 import logging
 
 from datetime import timedelta
+from pathlib import Path
+from homeassistant.components import frontend  # type: ignore
+from homeassistant.components.http import StaticPathConfig  # type: ignore
 from homeassistant.config_entries import ConfigEntry  # type: ignore
 from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.exceptions import ConfigEntryAuthFailed  # type: ignore
@@ -34,6 +37,17 @@ from .storage import AuthStore
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[str] = ["sensor"]
+CARD_URL = f"/{DOMAIN}/electricity-info-card.js"
+CARD_PATH = Path(__file__).parent / "www" / "electricity-info-card.js"
+
+
+async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
+    """Register and load the bundled Lovelace electricity card."""
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(CARD_URL, str(CARD_PATH), cache_headers=False)]
+    )
+    frontend.add_extra_js_url(hass, CARD_URL)
+    return True
 
 async def _async_migrate_stores(hass: HomeAssistant) -> None:
     """迁移旧的 store 文件到新的子文件夹路径."""

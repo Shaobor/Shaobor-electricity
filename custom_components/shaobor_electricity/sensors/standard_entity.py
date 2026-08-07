@@ -207,6 +207,13 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
             if p_f: billing_attrs["平段电价"] = round(p_f, 4)
             if p_v: billing_attrs["低谷电价"] = round(p_v, 4)
 
+            # 将用户配置的时段提供给内置卡片，以便各地区按当前时刻显示电价。
+            if billing_mode == "charging_pile":
+                billing_attrs["尖峰时段"] = tariff_data.get("price_tip_periods", "")
+                billing_attrs["峰时段"] = tariff_data.get("price_peak_periods", "")
+                billing_attrs["平时段"] = tariff_data.get("price_flat_periods", "")
+                billing_attrs["谷时段"] = tariff_data.get("price_valley_periods", "")
+
             prefix = "月阶梯" if is_month_ladder else "年阶梯"
             for lv in range(1, 4):
                 if billing_mode == "month_ladder_tou_seasonal":
