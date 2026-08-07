@@ -47,11 +47,22 @@ Home Assistant 自定义集成，用于获取电费和用电量数据。
 
 集成已内置“用电信息卡片”。安装并重启 Home Assistant 后，卡片脚本会自动加载，无需在“仪表盘资源”页面单独添加 JavaScript。
 
-在仪表盘编辑页添加“用电信息卡片”，并选择对应户号的“电网标准实体”。也可以在 YAML 中使用：
+在仪表盘编辑页添加“用电信息卡片”，并选择对应户号的“电网标准实体”。以下为完整 YAML 示例（请按自己的实体 ID 修改）：
 
 ```yaml
 type: custom:electricity-info-card
-entity: sensor.你的电网标准实体
+theme: input_select.theme
+dark_light_theme: darkgray,light
+name: 国网电费
+multiclass:
+  "1":
+    utility_type: ele
+    info: My
+    # 替换为自己的“电网标准实体”
+    entity: sensor.你的电网标准实体
+    # 替换为自己的“缴费记录实体”
+    jiaofei_entity: >-
+      sensor.你的缴费记录实体,[node:payList,date:payDate,pay_amount:rcvAmt,pay_mode:chanCls]
 ```
 
 卡片会按当前尖峰、峰、平、谷时段显示电价；充电桩模式同时显示各阶梯的峰平谷价格。
