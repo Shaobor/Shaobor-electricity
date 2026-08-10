@@ -18,6 +18,7 @@ from .sensors import (
     Shaobor95598MonthlyUsageSensor,
     Shaobor95598YearlyUsageSensor,
     Shaobor95598ElectricityPriceSensor,
+    Shaobor95598PowerGridMaintenanceSensor,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -40,5 +41,6 @@ async def async_setup_entry(
         Shaobor95598YearlyUsageSensor(coordinator, entry),
         Shaobor95598ElectricityPriceSensor(coordinator, entry),
         Shaobor95598StandardEntitySensor(coordinator, entry),
+        Shaobor95598PowerGridMaintenanceSensor(coordinator, entry),
     ]
     async_add_entities(sensors)

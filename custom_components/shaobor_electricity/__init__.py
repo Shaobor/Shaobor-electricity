@@ -32,6 +32,7 @@ from .const import (
     CONF_MACHINE_ID,
 )
 from .client import Shaobor95598ApiClient, StateGridAuthError, STORAGE_KEY, STORAGE_VERSION
+from .helpers.division_mapping import async_load_division_mapping
 from .storage import AuthStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -84,6 +85,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up shaobor_electricity from a config entry."""
     # 首先确保全局数据字典已就绪，防止 coordinator 刷新时因无法读写标志位而崩溃
     hass.data.setdefault(DOMAIN, {})
+    if "division_mapping" not in hass.data[DOMAIN]:
+        hass.data[DOMAIN]["division_mapping"] = await async_load_division_mapping(hass)
     if "auth_lock" not in hass.data[DOMAIN]:
         import asyncio
         hass.data[DOMAIN]["auth_lock"] = asyncio.Lock()

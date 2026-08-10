@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from .base import Shaobor95598SensorBase
+from ..const import DOMAIN
 from ..helpers.regional_prices import get_region_name
 
 class Shaobor95598ElectricityFeeSensor(Shaobor95598SensorBase):
@@ -55,7 +56,13 @@ class Shaobor95598ElectricityFeeSensor(Shaobor95598SensorBase):
         org_no = data.get("selected_org_no") or ""
         if org_no:
             attrs["供电所编号"] = org_no
+
+            mapping = self.hass.data.get(DOMAIN, {}).get("division_mapping")
+            match = mapping.lookup_org_no(org_no) if mapping else None
+            if match:
+                attrs["实际归属地区"] = match.display_name
+                attrs["行政区划代码"] = match.district_code or match.city_code or match.province_code
+                attrs["匹配供电单位编号"] = match.org_code
         
         return attrs
-
 

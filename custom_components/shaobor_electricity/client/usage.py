@@ -12,6 +12,7 @@ from .base import BaseStateGridApi
 from .const import ENCRYPT_API_URL, SGCC_HOST, APP_KEY, VERSION
 from .exceptions import StateGridAuthError
 from .decorators import auto_relogin_on_auth_error, retry_on_network_error
+from ..const import DOMAIN
 
 # 移除旧的 Store 导入，全面转向数据库
 Store = None 
@@ -240,6 +241,95 @@ class UsageMixin(BaseStateGridApi):
         """Public wrapper to fetch and cache power user list."""
         self._power_user_list = await self._fetch_power_user_list()
         return self._power_user_list
+
+    @staticmethod
+    def _extract_maintenance_notices(payload: Any) -> list[dict[str, Any]]:
+        """Extract a notice list while accepting the known 95598 response variants."""
+        if isinstance(payload, list):
+            return [item for item in payload if isinstance(item, dict)]
+        if not isinstance(payload, dict):
+            return []
+
+        for key in (
+            "powerCutList", "powercutList", "powerCutInfoList", "noticeList",
+            "records", "list", "resultList",
+        ):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+
+        for key in ("data", "bizrt", "result"):
+            notices = UsageMixin._extract_maintenance_notices(payload.get(key))
+            if notices:
+                return notices
+        return []
+
+    async def _fetch_power_grid_maintenance_notices(
+        self, active_account: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Fetch maintenance notices for the active account's mapped district."""
+        raw_org_no = str(active_account.get("orgNo") or active_account.get("org_no") or "")
+        target = str(active_account.get("proNo") or active_account.get("proCode") or "")
+        mapping = None
+        if self._hass:
+            mapping = self._hass.data.get(DOMAIN, {}).get("division_mapping")
+        match = mapping.lookup_org_no(raw_org_no) if mapping and raw_org_no else None
+
+        if not target or not match or not match.district_code:
+            return {
+                "notices": [],
+                "error": "当前账户缺少可匹配的供电地区信息",
+                "org_no": raw_org_no,
+            }
+
+        encrypt_payload = {
+            "token": self._encrypt_token,
+            "machineId": self._machine_id,
+            "uuid": self._uuid,
+            "publicKey": self._public_key,
+            "target": target,
+            # 95598 停电公告接口使用地区映射中最长匹配到的供电单位编号。
+            "orgNo": match.org_code,
+            "powerCutNo": "02",
+            "areaNo": match.district_code,
+            "pageSize": "20",
+            "pageNo": 1,
+            "keyWord": "",
+        }
+        encrypted = await self._secure_post_encrypt(
+            f"{ENCRYPT_API_URL}/encrypt/c4f08", encrypt_payload
+        )
+        headers = self._get_sgcc_headers(str(encrypted.get("timestamp")))
+        payload_sgcc = {
+            "data": encrypted.get("data"),
+            "skey": encrypted.get("skey"),
+            "timestamp": encrypted.get("timestamp"),
+        }
+
+        async with self._session.post(
+            "https://www.95598.cn/api/osg-web0004/member/c4/f08",
+            json=payload_sgcc,
+            headers=headers,
+        ) as response:
+            response.raise_for_status()
+            text = await response.text()
+
+        raw = self._parse_sgcc_response(text)
+        encrypted_data = self._get_encrypted_data(raw) or (
+            text.strip() if self._is_likely_encrypted(text) else ""
+        )
+        if not encrypted_data:
+            raise StateGridAuthError("c4/f08 did not return decryptable payload")
+        decrypted = await self._decrypt_to_data(encrypted_data)
+        notices = self._extract_maintenance_notices(decrypted)
+
+        return {
+            "notices": notices,
+            "region": match.display_name,
+            "area_no": match.district_code,
+            "org_no": match.org_code,
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+        }
 
     @auto_relogin_on_auth_error
     @retry_on_network_error(max_retries=3, delay=2.0)
@@ -840,6 +930,14 @@ class UsageMixin(BaseStateGridApi):
         except Exception as e:
             _LOGGER.debug("无法获取每日用电量: %s", e)
 
+        maintenance_notices: dict[str, Any] = {"notices": []}
+        try:
+            maintenance_notices = await self._fetch_power_grid_maintenance_notices(active)
+        except Exception as e:
+            # 公告查询失败不应影响电费、余额等核心实体刷新。
+            _LOGGER.debug("无法获取电网检修公告: %s", e)
+            maintenance_notices = {"notices": [], "error": str(e)}
+
         # 2. 异步同步往年历史
         if self._hass and cons_no:
             self._hass.async_create_task(self._async_sync_historical_years(cons_no))
@@ -970,7 +1068,7 @@ class UsageMixin(BaseStateGridApi):
             "selected_elec_addr": active.get("elecAddr") or active.get("elec_addr") or "",
             "selected_org_name": active.get("orgName") or active.get("org_name") or "",
             "selected_org_no": active.get("orgNo") or active.get("org_no") or "",
+            "power_grid_maintenance_notices": maintenance_notices,
             "daily_usage": daily_usage,
             "payment_records": payment_records,
         }
-
