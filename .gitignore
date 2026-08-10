@@ -47,3 +47,6 @@ ha_test_env/
 ignored_extras/
 FIX_SUMMARY.md
 CLAUDE.md
+
+# Local development tools and downloaded source data
+scripts/
