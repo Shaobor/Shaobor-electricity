@@ -195,7 +195,7 @@ template.innerHTML = `
       order: 2;
       gap: 5px;
     }
-    
+
     .balance-item {
       display: flex;
       flex-direction: column;
@@ -218,7 +218,9 @@ template.innerHTML = `
       overflow: hidden;
     }
 
-    /* 45度角白色光带扫过动画 */
+    /* 45度角白色光带扫过动画
+       性能说明：仅动画 transform（GPU 合成层属性），不触发 layout/paint；
+       配合 will-change 提前提升为独立合成层，动画全程 GPU 加速。 */
     .balance-amount::before {
       content: '';
       position: absolute;
@@ -234,6 +236,7 @@ template.innerHTML = `
       );
       transform: rotate(45deg);
       animation: lightSweep 2s infinite;
+      will-change: transform;
     }
 
     @keyframes lightSweep {
@@ -242,6 +245,13 @@ template.innerHTML = `
       }
       100% {
         transform: rotate(45deg) translateX(100%);
+      }
+    }
+
+    /* 系统开启"减少动态效果"时，禁用余额闪光动画以进一步节省资源 */
+    @media (prefers-reduced-motion: reduce) {
+      .balance-amount::before {
+        animation: none;
       }
     }
 
@@ -280,6 +290,124 @@ template.innerHTML = `
       min-width: 0;
     }
 
+    /* 电网公告信息 - 与 electricity-price-display 完全一致的样式 */
+    .notice-display {
+      display: flex;
+      align-items: center;
+      font-size: 16px;
+      font-weight: 600;
+      color: #ff9800;
+      background: var(--card-button-bg);
+      padding: 3px 6px;
+      border-radius: 8px;
+      flex: 1;
+      justify-content: flex-start;
+      min-width: 0;
+      cursor: pointer;
+    }
+
+    .notice-display.hidden {
+      display: none;
+    }
+
+    .notice-scroll {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      height: 20px;
+      justify-content: flex-start;
+      align-items: flex-start;
+      flex: 1;
+      min-width: 0;
+      transform: translateZ(0);
+      will-change: transform;
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+    }
+
+    .notice-scroll .notice-track {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: flex-start;
+      flex: 0 0 auto;
+      width: 100%;
+      transform: translateZ(0);
+      will-change: transform;
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+    }
+
+    .notice-scroll .notice-track.transitioning {
+      transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+
+    .notice-scroll .notice-row {
+      display: flex;
+      align-items: center;
+      flex: 0 0 auto;
+      height: 20px;
+      line-height: 20px;
+      width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--card-value-color);
+      gap: 3px;
+    }
+
+    .notice-scroll .notice-row .notice-badge {
+      flex-shrink: 0;
+      font-size: 10px;
+      background: rgba(255, 152, 0, 0.15);
+      color: #ff9800;
+      padding: 0 4px;
+      border-radius: 3px;
+      line-height: 16px;
+    }
+
+    .notice-scroll .notice-row .notice-type-text {
+      flex-shrink: 0;
+      font-weight: 600;
+      color: #ff9800;
+    }
+
+    .notice-scroll .notice-row.notice-row-attention {
+      color: #f44336;
+    }
+
+    .notice-scroll .notice-row.notice-row-attention .notice-type-text {
+      color: #f44336;
+    }
+
+    .notice-scroll .notice-row.notice-row-attention .notice-badge {
+      background: rgba(244, 67, 54, 0.15);
+      color: #f44336;
+    }
+
+    .notice-scroll .notice-row.notice-row-attention .notice-range-text {
+      color: #f44336;
+    }
+
+    .notice-scroll .notice-row .notice-range-text {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .notice-count-badge {
+      font-size: 10px;
+      background: rgba(255, 152, 0, 0.15);
+      color: #ff9800;
+      padding: 0 5px;
+      border-radius: 8px;
+      margin-left: 4px;
+      line-height: 16px;
+    }
+
     .price-label {
       font-size: 12px;
       opacity: 0.7;
@@ -299,6 +427,74 @@ template.innerHTML = `
       margin-left: 2px;
       color: var(--button-color);
       margin-top: 2px;
+    }
+
+    /* 电价多单价竖向滚动列表（GPU合成加速滚动，降低CPU占用） */
+    .price-list {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      overflow: hidden;
+      transform: translateZ(0);
+      will-change: transform;
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+    }
+
+    /* 多单价自动滚动：容器固定单行高度，内部轨道用 transform 位移实现 GPU 合成滚动 */
+    .price-list.multi {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      height: 20px;
+      justify-content: flex-start;
+      align-items: flex-start;
+      transform: translateZ(0);
+      will-change: transform;
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+    }
+
+    .price-list.multi .price-track {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: flex-start;
+      flex: 0 0 auto;
+      transform: translateZ(0);
+      will-change: transform;
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+    }
+
+    .price-list.multi .price-track.transitioning {
+      transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+
+    .price-list.multi .price-row {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      flex: 0 0 auto;
+      height: 20px;
+      line-height: 20px;
+      white-space: nowrap;
+      transform: translateZ(0);
+    }
+
+    .price-list.multi .price-row .price-value,
+    .price-list.multi .price-row .price-name,
+    .price-list.multi .price-row .price-unit {
+      line-height: 20px;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .price-list.multi .price-name {
+      font-size: 11px;
+      font-weight: 700;
+      margin-right: 4px;
+      flex: 0 0 auto;
     }
 
     .date-info {
@@ -368,7 +564,7 @@ template.innerHTML = `
     .tier-indicator-container {
       position: relative;
       width: 100%;
-      max-width: 420px; 
+      max-width: 420px;
       margin: 0 auto;
     }
     .tier-label {
@@ -464,32 +660,68 @@ template.innerHTML = `
       margin-left: -10px;
     }
 
-    /* 红色竖线指示器 - 放在tiers-container中，与current-indicator相同的定位基准 */
+    /* 红色竖线指示器 - 放在tiers-container中，与current-indicator相同的定位基准
+       颜色跟随当前阶梯，并用白色边框+外发光形成对比，避免与同色阶梯块融为一体 */
     .red-line-indicator {
       position: absolute;
       top: 13px;
       left: 0;
-      width: 3px;
+      width: 4px;
       height: 15px;
       background-color: #ff0000;
+      border: 1px solid #fff;
+      border-radius: 2px;
+      box-sizing: border-box;
       z-index: 2;
-      box-shadow: 0 0 3px rgba(255, 0, 0, 0.7);
+      box-shadow: 0 0 3px rgba(0, 0, 0, 0.4);
       transform: translateX(-50%);
     }
 
-    /* 水波纹涟漪动画效果 */
+    /* 阶梯指示器颜色跟随当前阶梯 */
+    .red-line-indicator.tier-1 {
+      background-color: rgb(85, 197, 147);
+    }
+    .red-line-indicator.tier-2 {
+      background-color: rgb(248, 195, 55);
+    }
+    .red-line-indicator.tier-3 {
+      background-color: rgb(247, 147, 53);
+    }
+
+    /* 水波纹涟漪动画效果
+       性能优化：仅使用 transform 和 opacity（GPU 合成层属性），
+       避免动画 width/height（触发 layout 回流）和 box-shadow（触发 paint），
+       大幅降低 CPU/内存占用。 */
     .red-line-indicator::before,
     .red-line-indicator::after {
       content: '';
       position: absolute;
       top: 50%;
       left: 50%;
-      width: 3px;
+      width: 4px;
       height: 15px;
       background-color: #ff0000;
+      border: 1px solid #fff;
       border-radius: 2px;
-      transform: translate(-50%, -50%);
+      box-sizing: border-box;
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 1;
       animation: ripple 2s infinite;
+      will-change: transform, opacity;
+    }
+
+    /* 阶梯指示器涟漪颜色跟随当前阶梯 */
+    .red-line-indicator.tier-1::before,
+    .red-line-indicator.tier-1::after {
+      background-color: rgb(85, 197, 147);
+    }
+    .red-line-indicator.tier-2::before,
+    .red-line-indicator.tier-2::after {
+      background-color: rgb(248, 195, 55);
+    }
+    .red-line-indicator.tier-3::before,
+    .red-line-indicator.tier-3::after {
+      background-color: rgb(247, 147, 53);
     }
 
     .red-line-indicator::after {
@@ -498,19 +730,15 @@ template.innerHTML = `
 
     @keyframes ripple {
       0% {
-        width: 3px;
-        height: 15px;
+        transform: translate(-50%, -50%) scale(1, 1);
         opacity: 1;
-        box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7);
       }
       50% {
-        opacity: 0.7;
+        opacity: 0.6;
       }
       100% {
-        width: 25px;
-        height: 35px;
+        transform: translate(-50%, -50%) scale(8, 4);
         opacity: 0;
-        box-shadow: 0 0 0 8px rgba(255, 0, 0, 0);
       }
     }
 
@@ -620,6 +848,13 @@ template.innerHTML = `
       /* 确保指示器不会超出容器边界 */
       max-width: calc(100% - 16px); /* 左右各保留8px边距 */
       overflow: visible;
+    }
+
+    /* 当前阶梯已使用百分比 - 与用量数值区分显示 */
+    .current-indicator #current-percent {
+      font-size: 10px;
+      font-weight: 500;
+      opacity: 0.85;
     }
 
     /* 根据当前阶梯设置背景色 */
@@ -781,7 +1016,7 @@ template.innerHTML = `
       overflow: hidden;
       display: flex;
       margin-top: -4px;
-      position: relative; 
+      position: relative;
     }
 
     .time-distribution-bar.empty {
@@ -802,7 +1037,7 @@ template.innerHTML = `
       overflow: hidden;
       font-size: 9px;
       font-weight: 600;
-      color: white; 
+      color: white;
       text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.5);
       min-width: 20px;
     }
@@ -869,7 +1104,7 @@ template.innerHTML = `
       height: auto !important;
       margin-left: 0 !important;
     }
-    
+
     /* 隐藏分时用电标签 */
     .time-distribution-labels.hidden {
       display: none !important;
@@ -1223,21 +1458,21 @@ template.innerHTML = `
       pointer-events: none;
       box-shadow: 0 0 4px rgba(76, 175, 80, 0.5);
     }
-    
+
     /* 当月用电量最大和最小的单元格背景色 - 最高优先级 */
     .calendar-day.has-date.max-usage-day {
       background: #f88988 !important;
     }
-    
+
     .calendar-day.has-date.min-usage-day {
       background: #3eb370 !important;
     }
-    
+
     /* 确保最大/最小用量样式优先于today样式 */
     .calendar-day.has-date.today.max-usage-day {
       background: #f88988 !important;
     }
-    
+
     .calendar-day.has-date.today.min-usage-day {
       background: #3eb370 !important;
     }
@@ -1371,7 +1606,7 @@ template.innerHTML = `
       opacity: 0;
       transition: transform 0.3s ease, opacity 0.3s ease;
     }
-    
+
     .day-modal-overlay[style*="display: flex"] .day-modal-content {
       transform: scale(1);
       opacity: 1;
@@ -1443,17 +1678,17 @@ template.innerHTML = `
       border-radius: 8px;
       flex: 1;
       min-width: 0;
-      height: 235px;
+      height: 130px;
     }
 
-    .pie-chart-title {
+    .pay-history-pie-title {
       font-size: 14px;
       font-weight: 600;
       color: var(--text-color);
       margin-left: 15px;
     }
 
-    .pie-chart-content {
+    .pay-history-pie-content {
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1462,9 +1697,9 @@ template.innerHTML = `
       min-height: 0;
     }
 
-    .pie-chart-container {
+    .pay-history-pie-container {
       width: 100%;
-      height: 205px;
+      height: 155px;
       position: relative;
       top: -7px;
     }
@@ -1550,6 +1785,37 @@ template.innerHTML = `
       background: var(--card-button-bg);
       border-radius: 8px;
       padding: 10px;
+    }
+
+    #device-tracks-container {
+      position: relative;
+    }
+
+    /* 当前时刻指示器 */
+    .day-current-time-indicator {
+      position: absolute;
+      width: 2px;
+      background: #ff4444;
+      pointer-events: none;
+      z-index: 9;
+      top: -3px;
+      height: calc(100% + 3px);
+      opacity: 0.9;
+    }
+
+    .day-current-time-indicator::before {
+      content: '现在';
+      position: absolute;
+      top: -19px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 10px;
+      color: #ff4444;
+      white-space: nowrap;
+      background: var(--card-bg, #fff);
+      padding: 1px 3px;
+      border-radius: 2px;
+      border: 1px solid #ff4444;
     }
 
     .device-track {
@@ -2133,8 +2399,10 @@ template.innerHTML = `
             </svg>
             <span class="price-label">电价:</span>
           </div>
-          <span class="price-value" id="electricity-price">0.4983</span>
-          <span class="price-unit"></span>
+          <div class="price-list" id="electricity-price-list">
+            <span class="price-value" id="electricity-price">0.4983</span>
+            <span class="price-unit"></span>
+          </div>
         </div>
         <!-- 新增：剩余天数显示 -->
         <div class="price-display remaining-days-display">
@@ -2154,6 +2422,17 @@ template.innerHTML = `
       <div class="relative-date-info" id="relative-date"></div>
     </div>
 
+    <!-- 电网公告信息 -->
+    <div class="price-display notice-display" id="notice-display">
+      <div class="price-label-container">
+        <svg class="price-icon" viewBox="0 0 24 24">
+          <path fill="var(--svg-icon-color)" d="M12,2L4,5V11.09C4,16.14 7.41,20.85 12,22C16.59,20.85 20,16.14 20,11.09V5L12,2M12,4.15L18,6.72V11.09C18,15.25 15.21,19.11 12,20.03C8.79,19.11 6,15.25 6,11.09V6.72L12,4.15M11,7H13V13H11V7M11,15H13V17H11V15Z" />
+        </svg>
+        <span class="price-label">公告</span>
+      </div>
+      <div class="price-list notice-scroll" id="notice-scroll"></div>
+    </div>
+
     <div class="tier-indicator">
       <div class="tier-label">
         <div class="tier-label-left">
@@ -2165,7 +2444,7 @@ template.innerHTML = `
         <div class="tier-label-right" id="tier-period">阶梯周期: 07.01-06.30</div>
       </div>
     </div>
-    
+
     <!-- 添加一个内层容器，用于限制阶梯图的实际宽度 -->
     <div class="tier-indicator-container">
       <div class="tiers-container" id="tiers-container">
@@ -2176,7 +2455,7 @@ template.innerHTML = `
             <div class="tier-price" id="tier-1-price"></div>
           </div>
         </div>
-        
+
         <div class="tier tier-2" id="tier-2">
           <div class="tier-block" id="tier-2-block">第二阶梯</div>
           <div class="tier-content">
@@ -2184,7 +2463,7 @@ template.innerHTML = `
             <div class="tier-price" id="tier-2-price"></div>
           </div>
         </div>
-        
+
         <div class="tier tier-3" id="tier-3">
           <div class="tier-block" id="tier-3-block">第三阶梯</div>
           <div class="tier-content">
@@ -2192,9 +2471,9 @@ template.innerHTML = `
             <div class="tier-price" id="tier-3-price"></div>
           </div>
         </div>
-        
+
         <div class="current-indicator" id="current-indicator">
-          <span id="current-tier">❶</span><span id="current-usage">0</span>
+          <span id="current-tier">❶</span><span id="current-usage">0</span><span id="current-percent"></span>
         </div>
         <div class="indicator-arrow" id="indicator-arrow"></div>
       </div>
@@ -2209,7 +2488,7 @@ template.innerHTML = `
           </svg>
           本月用电
         </div>
-        
+
         <div class="month-grid">
           <div class="month-stat">
             <div class="month-stat-value green">
@@ -2217,7 +2496,7 @@ template.innerHTML = `
               <span class="month-stat-unit" id="current-month-ele-unit"></span>
             </div>
           </div>
-          
+
           <div class="month-stat">
             <div class="month-stat-value yellow">
               <span id="current-month-cost">0</span>
@@ -2225,7 +2504,7 @@ template.innerHTML = `
             </div>
           </div>
         </div>
-        
+
         <!-- 本月分时用电条 -->
         <div class="time-distribution-bar" id="current-month-distribution"></div>
         <div class="time-distribution-labels" id="current-month-labels"></div>
@@ -2240,7 +2519,7 @@ template.innerHTML = `
           </svg>
           上月用电
         </div>
-        
+
         <div class="month-grid">
           <div class="month-stat">
             <div class="month-stat-value">
@@ -2248,7 +2527,7 @@ template.innerHTML = `
               <span class="month-stat-unit" id="last-month-ele-unit"></span>
             </div>
           </div>
-          
+
           <div class="month-stat">
             <div class="month-stat-value yellow">
               <span id="last-month-cost">0</span>
@@ -2256,7 +2535,7 @@ template.innerHTML = `
             </div>
           </div>
         </div>
-        
+
         <!-- 上月分时用电条 -->
         <div class="time-distribution-bar" id="last-month-distribution"></div>
         <div class="time-distribution-labels" id="last-month-labels"></div>
@@ -2271,7 +2550,7 @@ template.innerHTML = `
           </svg>
           <span id="current-year">2025</span>年用电
         </div>
-        
+
         <div class="year-grid">
           <div class="year-stat">
             <div class="year-stat-value green">
@@ -2279,7 +2558,7 @@ template.innerHTML = `
               <span class="year-stat-unit" id="year-ele-unit"></span>
             </div>
           </div>
-          
+
           <div class="year-stat">
             <div class="year-stat-value yellow">
               <span id="year-cost">0</span>
@@ -2287,7 +2566,7 @@ template.innerHTML = `
             </div>
           </div>
         </div>
-        
+
         <!-- 年度分时用电条 -->
         <div class="time-distribution-bar" id="year-distribution"></div>
         <div class="time-distribution-labels" id="year-labels"></div>
@@ -2400,9 +2679,9 @@ template.innerHTML = `
             <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--text-color); opacity: 0.45; margin-bottom: 3px;">
               <span>1月</span><span>2月</span><span>3月</span><span>4月</span><span>5月</span><span>6月</span><span>7月</span><span>8月</span><span>9月</span><span>10月</span><span>11月</span><span>12月</span>
             </div>
-            <div style="position: relative; height: 5px; background: rgba(200,200,200,0.1); border-radius: 3px; overflow: visible;">
+            <div id="bar-racing-track" style="position: relative; height: 5px; background: rgba(200,200,200,0.1); border-radius: 3px; overflow: visible; cursor: pointer;">
               <div id="bar-racing-progress" style="position: absolute; left: 0; top: 0; height: 5px; width: 0%; background: linear-gradient(90deg, rgb(85, 197, 147), rgb(248, 195, 55), rgb(247, 147, 53)); border-radius: 3px; opacity: 0.5; transition: width 3s cubic-bezier(0.25, 0.1, 0.25, 1);"></div>
-              <div id="bar-racing-marker" style="position: absolute; top: -4px; background: linear-gradient(135deg, var(--card-value-color, #ff5722), #ff7043); border-radius: 20px; left: 0%; transition: left 3s cubic-bezier(0.25, 0.1, 0.25, 1); box-shadow: 0 0 0 2px rgba(255,255,255,0.9), 0 0 8px var(--card-value-color, #ff5722); z-index: 10; padding: 0 5px; height: 11px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 9px; font-weight: 600; white-space: nowrap; pointer-events: none; transform: translateX(-50%); line-height: 1;">
+              <div id="bar-racing-marker" style="position: absolute; top: -4px; background: linear-gradient(135deg, var(--card-value-color, #ff5722), #ff7043); border-radius: 20px; left: 0%; transition: left 3s cubic-bezier(0.25, 0.1, 0.25, 1); box-shadow: 0 0 0 2px rgba(255,255,255,0.9), 0 0 8px var(--card-value-color, #ff5722); z-index: 10; padding: 0 5px; height: 11px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 9px; font-weight: 600; white-space: nowrap; pointer-events: auto; cursor: pointer; transform: translateX(-50%); line-height: 1;">
                 <span id="bar-racing-date">1.1</span>
               </div>
             </div>
@@ -2498,26 +2777,29 @@ function loadECharts() {
       return;
     }
 
-    // 尝试加载本地echarts.min.js
-    const localScript = document.createElement('script');
-    localScript.src = '/local/echarts.min.js';
-    
-    localScript.onload = () => {
-      if (typeof echarts !== 'undefined') {
-       // console.log('✓ ECharts 从本地加载成功');
-        resolve(echarts);
-      } else {
-        console.warn('✗ 本地ECharts加载成功但全局变量未定义，尝试CDN...');
+    // 尝试从 www/pobaby_package/js/echarts.min.js 加载
+    const tryLoadScript = (src, onFail) => {
+      const script = document.createElement('script');
+      script.src = src;
+      script.onload = () => {
+        if (typeof echarts !== 'undefined') {
+          resolve(echarts);
+        } else {
+          onFail();
+        }
+      };
+      script.onerror = onFail;
+      document.head.appendChild(script);
+    };
+
+    // 加载顺序：pobaby_package → /local/echarts.min.js → CDN
+    tryLoadScript('/local/pobaby_package/js/echarts.min.js', () => {
+      console.warn('✗ pobaby_package ECharts加载失败，尝试 /local/echarts.min.js...');
+      tryLoadScript('/local/echarts.min.js', () => {
+        console.warn('✗ 本地ECharts加载失败，尝试CDN...');
         loadFromCDN(resolve, reject);
-      }
-    };
-
-    localScript.onerror = () => {
-      console.warn('✗ 本地ECharts加载失败，尝试CDN...');
-      loadFromCDN(resolve, reject);
-    };
-
-    document.head.appendChild(localScript);
+      });
+    });
   });
 
   return window._echartsLoadPromise;
@@ -2527,7 +2809,7 @@ function loadECharts() {
 function loadFromCDN(resolve, reject) {
   const cdnScript = document.createElement('script');
   cdnScript.src = 'https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js';
-  
+
   cdnScript.onload = () => {
     if (typeof echarts !== 'undefined') {
       console.log('✓ ECharts 从CDN加载成功');
@@ -2546,7 +2828,7 @@ function loadFromCDN(resolve, reject) {
 
 class ElectricityInfoCard extends HTMLElement {
   // =================================== 统一数据格式转换方法 ========================================
-  
+
   /**
    * 安全转换数值，处理字符串、null、undefined
    */
@@ -2557,7 +2839,27 @@ class ElectricityInfoCard extends HTMLElement {
     const num = parseFloat(value);
     return isNaN(num) ? defaultValue : num;
   }
-  
+
+  /**
+   * 安全设置元素文本内容（元素不存在时静默跳过），用于替代大量 if(el) 判空样板
+   */
+  _setElText(el, text) {
+    if (el) {
+      el.textContent = text;
+    }
+  }
+
+  /**
+   * 批量安全设置多个元素的文本内容，key 为元素引用，value 为要设置的文本
+   */
+  _setElsText(pairs) {
+    for (const el of pairs) {
+      if (el[0]) {
+        el[0].textContent = el[1];
+      }
+    }
+  }
+
   /**
    * 计算并显示相对日期（今天、昨天、前天、x天前）
    */
@@ -2624,6 +2926,40 @@ class ElectricityInfoCard extends HTMLElement {
     this.relativeDateEl.className = className;
   }
 
+  // 非电力类型无日数据时，从月数据获取最近月份显示
+  _updateRelativeDateFromMonth(monthlist) {
+    if (!this.relativeDateEl || !monthlist || monthlist.length === 0) {
+      this.relativeDateEl.textContent = '';
+      this.relativeDateEl.className = 'relative-date-info';
+      return;
+    }
+    const lastItem = monthlist[monthlist.length - 1];
+    if (!lastItem) {
+      this.relativeDateEl.textContent = '';
+      this.relativeDateEl.className = 'relative-date-info';
+      return;
+    }
+    const mapping = this._getListFieldsForType('monthlist');
+    const dateField = mapping.date || 'month';
+    const usageField = mapping.usage;
+    const amountField = mapping.amount;
+    const monthKey = lastItem[dateField] || '';
+    const usage = usageField ? this.safeParseFloat(lastItem[usageField]) : 0;
+    const amount = amountField ? this.safeParseFloat(lastItem[amountField]) : 0;
+    if (!monthKey || usage <= 0) {
+      this.relativeDateEl.textContent = '';
+      this.relativeDateEl.className = 'relative-date-info';
+      return;
+    }
+    const unit = this.getUnitByUtilityType(this.utilityType);
+    let text = `${usage} ${unit}`;
+    if (amount > 0) {
+      text += `  ┃  ¥ ${amount}`;
+    }
+    this.relativeDateEl.textContent = text;
+    this.relativeDateEl.className = 'relative-date-info relative-date-other';
+  }
+
   /**
    * 从原始daylist条目中提取最后一天的数据（统一格式）
    */
@@ -2639,7 +2975,54 @@ class ElectricityInfoCard extends HTMLElement {
       unit: rawItem.unit || this.getUnitByUtilityType(this.utilityType)
     };
   }
-  
+
+  /**
+   * 从daylist中查找第一个有有效用电数据的日期条目
+   * 判断条件：dayEleNum > 0 或 dayEleNum 不为空 或 有 dayEleNum 字段
+   * 非电力类型：根据字段映射检测 usage 字段（如 f_gas）
+   */
+  _findFirstValidDay(daylist) {
+    if (!daylist || !Array.isArray(daylist) || daylist.length === 0) return null;
+
+    // 非电力类型优先使用映射中的 usage 字段
+    if (this.utilityType !== 'ele') {
+      let usageField = null;
+      if (this.entityListMap && this.entityListMap.daylist) {
+        usageField = this.entityListMap.daylist.usage;
+      }
+      if (!usageField && this.fieldMapping) {
+        usageField = this.fieldMapping.usage;
+      }
+
+      if (usageField) {
+        for (let i = 0; i < daylist.length; i++) {
+          const item = daylist[i];
+          const val = item[usageField];
+          if (item.hasOwnProperty(usageField) && val != null && val !== '') {
+            const numVal = parseFloat(val);
+            if (!isNaN(numVal) && numVal > 0) {
+              return item;
+            }
+          }
+        }
+      }
+    }
+
+    // 电力类型或未找到映射字段：使用原有逻辑
+    for (let i = 0; i < daylist.length; i++) {
+      const item = daylist[i];
+      const dayEleNum = item.dayEleNum;
+      if (item.hasOwnProperty('dayEleNum') && dayEleNum != null && dayEleNum !== '') {
+        const numVal = parseFloat(dayEleNum);
+        if (!isNaN(numVal) && numVal > 0) {
+          return item;
+        }
+      }
+    }
+    // 如果没有找到有效数据，回退到第一条（保持向后兼容）
+    return daylist[0] || null;
+  }
+
   /**
    * 根据 utility_type 获取单位
    */
@@ -2655,7 +3038,7 @@ class ElectricityInfoCard extends HTMLElement {
         return '°'; // 默认使用电的单位
     }
   }
-  
+
   /**
    * 根据 utility_type 更新动态文本
    */
@@ -2702,58 +3085,58 @@ class ElectricityInfoCard extends HTMLElement {
         pieChartTitle: '用气分布'
       }
     };
-    
+
     // 存储文本映射为实例属性，供其他方法使用
     this.textMap = textMap[utilityType] || textMap.ele;
-    
+
     const texts = this.textMap;
-    
+
     // 1. 更新价格标签
     if (this.priceLabelEl) {
       this.priceLabelEl.textContent = texts.priceLabel;
     }
-    
+
     // 2. 更新月份标签
     if (this.monthLabels && this.monthLabels.length >= 2) {
       // 清除第一个月份标签的所有文本节点，然后添加新文本
-      const textNodes0 = Array.from(this.monthLabels[0].childNodes).filter(node => 
+      const textNodes0 = Array.from(this.monthLabels[0].childNodes).filter(node =>
         node.nodeType === Node.TEXT_NODE
       );
       textNodes0.forEach(node => node.remove());
       this.monthLabels[0].appendChild(document.createTextNode(texts.monthCurrent));
-      
+
       // 清除第二个月份标签的所有文本节点，然后添加新文本
-      const textNodes1 = Array.from(this.monthLabels[1].childNodes).filter(node => 
+      const textNodes1 = Array.from(this.monthLabels[1].childNodes).filter(node =>
         node.nodeType === Node.TEXT_NODE
       );
       textNodes1.forEach(node => node.remove());
       this.monthLabels[1].appendChild(document.createTextNode(texts.monthLast));
     }
-    
+
     // 3. 更新年度标签
     if (this.yearLabels && this.yearLabels.length > 0) {
       // 清除所有文本节点（保留 span#current-year 元素）
-      const textNodes = Array.from(this.yearLabels[0].childNodes).filter(node => 
+      const textNodes = Array.from(this.yearLabels[0].childNodes).filter(node =>
         node.nodeType === Node.TEXT_NODE
       );
       textNodes.forEach(node => node.remove());
-      
+
       // 只添加文本部分，不包含年份（年份由 span#current-year 提供）
       this.yearLabels[0].appendChild(document.createTextNode(texts.year));
     }
-    
+
     // 4. 更新阶梯标签
     if (this.tierLabelLeftEl) {
       // 清除所有文本节点
-      const textNodes = Array.from(this.tierLabelLeftEl.childNodes).filter(node => 
+      const textNodes = Array.from(this.tierLabelLeftEl.childNodes).filter(node =>
         node.nodeType === Node.TEXT_NODE
       );
       textNodes.forEach(node => node.remove());
-      
+
       // 添加新文本
       this.tierLabelLeftEl.appendChild(document.createTextNode(texts.tierLabel));
     }
-    
+
     // 5. 更新图表标题
     const chartTitles = this.shadowRoot.querySelectorAll('.chart-title');
     chartTitles.forEach((titleEl) => {
@@ -2776,7 +3159,7 @@ class ElectricityInfoCard extends HTMLElement {
    */
   setupMultiUserBar() {
     if (!this.multiUserInfoEl) return;
-    
+
     // 根据是否显示多用户条来设置样式
     if (this.showMultiUserBar) {
       this.multiUserInfoEl.classList.remove('hidden');
@@ -2784,17 +3167,17 @@ class ElectricityInfoCard extends HTMLElement {
       this.multiUserInfoEl.classList.add('hidden');
       return;
     }
-    
+
     // 清空现有的用户块
     this.multiUserInfoEl.innerHTML = '';
-    
+
     // 重新创建滑块指示器
     const sliderIndicator = document.createElement('div');
     sliderIndicator.className = 'slider-indicator';
     sliderIndicator.id = 'slider-indicator';
     this.multiUserInfoEl.appendChild(sliderIndicator);
     this.sliderIndicatorEl = sliderIndicator;
-    
+
     // 创建用户块
     const userKeys = Object.keys(this.multiClassConfig);
     userKeys.forEach((key, index) => {
@@ -2802,13 +3185,13 @@ class ElectricityInfoCard extends HTMLElement {
       const userBlock = document.createElement('div');
       userBlock.className = `user-block ${index === this.currentUserIndex ? 'active' : ''}`;
       userBlock.dataset.index = index;
-      
+
       // 创建余额显示（初始显示'--'，加载后更新）
       const balanceDiv = document.createElement('div');
       balanceDiv.className = 'user-block-balance';
       balanceDiv.textContent = '--';
       balanceDiv.dataset.entity = config.entity ? config.entity.split(',')[0].trim() : '';
-      
+
       // 创建名称显示（格式：{info}_{类型中文}）
       const nameDiv = document.createElement('div');
       nameDiv.className = 'user-block-name';
@@ -2816,18 +3199,18 @@ class ElectricityInfoCard extends HTMLElement {
       const typeName = this.getUtilityTypeName(utilityType);
       const infoValue = config.info || key; // 使用 config.info 作为前缀，如果没有则使用 key
       nameDiv.textContent = `${infoValue}_${typeName}`;
-      
+
       userBlock.appendChild(balanceDiv);
       userBlock.appendChild(nameDiv);
-      
+
       // 添加点击事件
       userBlock.addEventListener('click', () => {
         this.switchUser(index);
       });
-      
+
       this.multiUserInfoEl.appendChild(userBlock);
     });
-    
+
     // 初始化所有用户的余额显示
     this.updateAllUsersBalance();
 
@@ -2850,7 +3233,7 @@ class ElectricityInfoCard extends HTMLElement {
       this.updateSliderPosition();
     }
   }
-  
+
   // 获取utility_type对应的中文名称
   getUtilityTypeName(utilityType) {
     const typeMap = {
@@ -2860,14 +3243,14 @@ class ElectricityInfoCard extends HTMLElement {
     };
     return typeMap[utilityType] || '未知';
   }
-  
+
   // 根据utility_type更新背景图标
   updateCardBackgroundIcon(utilityType) {
     if (!this.electricityCardEl) return;
-    
+
     // 先移除所有背景图标类
     this.electricityCardEl.classList.remove('bg-ele', 'bg-gas', 'bg-water');
-    
+
     // 根据utility_type添加对应的背景图标类
     if (utilityType === 'ele') {
       this.electricityCardEl.classList.add('bg-ele');
@@ -2877,7 +3260,7 @@ class ElectricityInfoCard extends HTMLElement {
       this.electricityCardEl.classList.add('bg-water');
     }
   }
-  
+
   // 更新滑块位置
   updateSliderPosition() {
     if (!this.sliderIndicatorEl || !this.userBlocks || this.userBlocks.length === 0) return;
@@ -2905,22 +3288,22 @@ class ElectricityInfoCard extends HTMLElement {
       });
     }
   }
-  
+
   // 确保当前用户块的 active 状态正确设置
   ensureCurrentUserActive() {
     if (!this.userBlocks || this.userBlocks.length === 0) return;
-    
+
     // 确保当前用户索引在有效范围内
     if (this.currentUserIndex < 0 || this.currentUserIndex >= this.userBlocks.length) {
       this.currentUserIndex = 0;
     }
-    
+
     // 先移除所有用户块的 active 类
     this.userBlocks.forEach(block => block.classList.remove('active'));
-    
+
     // 为当前用户块添加 active 类
     this.userBlocks[this.currentUserIndex].classList.add('active');
-    
+
     // 更新滑块位置
     this.updateSliderPosition();
   }
@@ -2930,60 +3313,60 @@ class ElectricityInfoCard extends HTMLElement {
    */
   switchUser(index) {
     if (index === this.currentUserIndex) return;
-    
+
     const blocks = Array.from(this.userBlocks);
     if (!blocks[index]) return;
-    
+
     // 【关闭】隐藏日历/关闭模态框/销毁图表/清空动态内容
     this.closeAllUI();
-    
+
     // 【重置】卡片回到最初状态
     this.resetCardState();
-    
+
     // 【动画】卡片淡出效果
     if (this.electricityCardEl) {
       this.electricityCardEl.classList.add('switching');
       this.electricityCardEl.classList.remove('switching-in');
     }
-    
+
     // 等待淡出动画完成（300ms）
     setTimeout(() => {
       // 【切换配置】加载新户的配置
       this.currentUserIndex = index;
       this.initializeCurrentUserConfig();
-      
+
       // 添加 active 类到当前块
       blocks.forEach(block => block.classList.remove('active'));
       blocks[index].classList.add('active');
-      
+
       // 更新滑块位置
       this.updateSliderPosition();
-      
+
       // 【动画】卡片淡入效果
       if (this.electricityCardEl) {
         this.electricityCardEl.classList.remove('switching');
         this.electricityCardEl.classList.add('switching-in');
       }
-      
+
       // 等待淡入动画完成（400ms）后移除动画类
       setTimeout(() => {
         if (this.electricityCardEl) {
           this.electricityCardEl.classList.remove('switching-in');
         }
       }, 400);
-      
+
       // 【加载数据】加载新用户的数据（重要：切换用户后必须重新加载数据）
       // 等待数据加载完成后再更新显示，确保 standardData 已切换到新用户数据
       this.loadDataForCurrentUser().then(() => {
         // 数据加载完成后再更新余额显示
         this.updateBalanceDisplay();
-        
+
         // 应用当前用户的隐藏配置
         this.applyHiddenConfig();
-        
+
         // 【更新显示】数据加载完成后更新卡片
         this.updateCard();
-        
+
         // 【重要】如果当前在日历视图，重新渲染日历以确保设备历史数据标记正确显示
         if (this.isCalendarView) {
           this.updateCalendar();
@@ -2991,32 +3374,32 @@ class ElectricityInfoCard extends HTMLElement {
       });
     });
   }
-  
+
   // 关闭所有UI元素
   closeAllUI() {
     // 如果当前是日历视图，调用 hideCalendarView() 来完整关闭
     if (this.isCalendarView) {
       this.hideCalendarView();
     }
-    
+
     // 关闭模态框
     this.closeAllModals();
-    
+
     // 销毁图表实例（但不销毁ECharts本身）
     this.destroyCharts();
-    
+
     // 清除阶梯指示器的动态元素（重要：切换用户时必须清除旧指示器）
     if (this.tiersContainerEl) {
       // 移除红色竖线指示器
       const redLines = this.tiersContainerEl.querySelectorAll('.red-line-indicator');
       redLines.forEach(line => line.remove());
-      
+
       // 移除倒三角指示器
       const triangles = this.tiersContainerEl.querySelectorAll('.current-indicator-triangle');
       triangles.forEach(triangle => triangle.remove());
     }
   }
-  
+
   // 重置卡片状态
   resetCardState() {
     // 清空数据缓存中的当前用户数据
@@ -3024,7 +3407,7 @@ class ElectricityInfoCard extends HTMLElement {
     if (this._dataCache.has(cacheKey)) {
       this._dataCache.delete(cacheKey);
     }
-    
+
     // 重置标准数据
     this.standardData = {
       dayUsage: [],
@@ -3033,24 +3416,25 @@ class ElectricityInfoCard extends HTMLElement {
       payRecords: [],
       unit: ''
     };
-    
+
     // 重置历史数据加载标志
     this.historicalDataLoaded = false;
   }
-  
+
   // 关闭所有模态框
   closeAllModals() {
     // 关闭日历日期详情模态框（现在在document.body中）
     if (this.dayModalEl) {
       this.dayModalEl.style.display = 'none';
     }
-    
+    this._stopDayCurrentTimeTimer();
+
     // 关闭缴费历史模态框（现在在document.body中）
     if (this.payHistoryModalEl) {
       this.payHistoryModalEl.style.display = 'none';
     }
   }
-  
+
   // 销毁图表（保留ECharts库）
   destroyCharts() {
     // 销毁年视图图表
@@ -3058,25 +3442,29 @@ class ElectricityInfoCard extends HTMLElement {
       this.yearChart.dispose();
       this.yearChart = null;
     }
-    
+
     // 销毁月视图图表
     if (this.monthChart) {
       this.monthChart.dispose();
       this.monthChart = null;
     }
-    
+
     // 销毁日视图图表
     if (this.dayChart) {
       this.dayChart.dispose();
       this.dayChart = null;
     }
-    
+
     // 销毁缴费方式饼图
     if (this.paySourceChart) {
       this.paySourceChart.dispose();
       this.paySourceChart = null;
     }
-    
+    if (this._pieChartResizeObserver) {
+      this._pieChartResizeObserver.disconnect();
+      this._pieChartResizeObserver = null;
+    }
+
     // 销毁热力图
     if (this.yearHeatmapChart) {
       this.yearHeatmapChart.dispose();
@@ -3100,15 +3488,15 @@ class ElectricityInfoCard extends HTMLElement {
     const tip = this.safeParseFloat(data.usage_ele_tip);
     const norm = this.safeParseFloat(data.usage_ele_norm);
     const totalUsage = this.safeParseFloat(data.total_usage);
-    
+
     const sumTime = valley + peak + tip + norm;
-    
+
     // 四舍五入到2位小数，避免浮点数精度问题
     const sumTimeRounded = Math.round(sumTime * 100) / 100;
     const totalUsageRounded = Math.round(totalUsage * 100) / 100;
-    
+
     let noValue = 0.0;
-    
+
     if (Math.abs(totalUsageRounded - sumTimeRounded) < 0.01) {
       // 相等，无未分类电量
       noValue = 0.0;
@@ -3120,25 +3508,35 @@ class ElectricityInfoCard extends HTMLElement {
       this.debugWarn(`数据错误: user=${data.user}, time=${data.time}, total_usage(${totalUsageRounded}) < 分时总和(${sumTimeRounded})`);
       noValue = 0.0;
     }
-    
+
     return noValue;
   }
-  
+
   /**
    * 转换日用量数据为统一格式
    */
   convertDayList(daylist, user = 'ele_01') {
     if (!Array.isArray(daylist)) return [];
-    
-    // 获取字段映射（如果有）
-    const mapping = this.fieldMapping || {};
+
+    // 获取字段映射
+    let mapping = this.fieldMapping || {};
+
+    // 非电力类型且为原始数据（entity_list模式）时，使用 entityListMap 中的字段映射
+    const isRawDay = this.utilityType !== 'ele' && this._listSources && this._listSources.daylist === 'raw';
+    if (isRawDay) {
+      const listFields = this._getListFieldsForType('daylist');
+      if (listFields && (listFields.usage || listFields.amount)) {
+        mapping = listFields;
+      }
+    }
+
     const dateField = mapping.date || 'day';
     const usageField = mapping.usage;
     const amountField = mapping.amount;
-    
+
     return daylist.map(item => {
       let converted;
-      
+
       if (this.utilityType === 'ele') {
         // 电力类型使用原有字段
         converted = {
@@ -3161,13 +3559,15 @@ class ElectricityInfoCard extends HTMLElement {
         const dateValue = item[dateField] || '';
         // 处理日期字符串，移除可能的双引号
         const cleanDate = typeof dateValue === 'string' ? dateValue.replace(/"/g, '') : dateValue;
-        
+        // 统一格式化日期为 YYYY-MM-DD
+        const normalizedDate = this._normalizeDate(cleanDate, 'day');
+
         converted = {
           user: user,
           utility_type: this.utilityType,
           data_category: 'usage',
           date_granularity: 'day',
-          time: cleanDate,
+          time: normalizedDate,
           data_source: 'entity',
           total_usage: this.safeParseFloat(usageField ? item[usageField] : item.dayEleNum),
           total_amount: this.safeParseFloat(amountField ? item[amountField] : item.dayEleCost),
@@ -3178,77 +3578,137 @@ class ElectricityInfoCard extends HTMLElement {
           usage_ele_norm: 0
         };
       }
-      
+
       converted.usage_ele_no = this.calculateUsageEleNo(converted);
-      
+
       return converted;
     });
   }
-  
+
   /**
    * 转换月用量数据为统一格式
    */
   convertMonthList(monthlist, user = 'ele_01') {
     if (!Array.isArray(monthlist)) return [];
-    
+
+    const isRawMonth = this.utilityType !== 'ele' && this._listSources.monthlist === 'raw';
+
+    // 非电力类型且原始数据：获取字段映射
+    let dateField = 'month', usageField, amountField;
+    if (isRawMonth) {
+      const listFields = this._getListFieldsForType('monthlist');
+      dateField = listFields.date || 'month';
+      usageField = listFields.usage;
+      amountField = listFields.amount;
+    }
+
     return monthlist.map(item => {
+      let timeVal, usageVal, amountVal;
+
+      if (this.utilityType === 'ele') {
+        timeVal = item.month || '';
+        usageVal = this.safeParseFloat(item.monthEleNum);
+        amountVal = this.safeParseFloat(item.monthEleCost);
+      } else if (isRawMonth) {
+        // 原始实体数据（entity_list/标准检测）：使用映射字段
+        const rawDate = item[dateField] !== undefined ? item[dateField] : (item['day'] !== undefined ? item['day'] : (item['date'] || ''));
+        timeVal = this._normalizeDate(rawDate, 'month');
+        usageVal = this.safeParseFloat(usageField ? item[usageField] : item.monthEleNum);
+        amountVal = this.safeParseFloat(amountField ? item[amountField] : item.monthEleCost);
+      } else {
+        // 聚合数据：使用硬编码字段
+        timeVal = item.month || '';
+        usageVal = this.safeParseFloat(item.monthEleNum);
+        amountVal = this.safeParseFloat(item.monthEleCost);
+      }
+
       const converted = {
         user: user,
         utility_type: this.utilityType,
         data_category: 'usage',
         date_granularity: 'month',
-        time: item.month || '',
+        time: timeVal,
         data_source: 'entity',
-        total_usage: this.safeParseFloat(item.monthEleNum),
-        total_amount: this.safeParseFloat(item.monthEleCost),
+        total_usage: usageVal,
+        total_amount: amountVal,
         unit: item.unit || this.getUnitByUtilityType(this.utilityType),
         usage_ele_valley: this.safeParseFloat(item.monthVPq),
         usage_ele_peak: this.safeParseFloat(item.monthPPq),
         usage_ele_tip: this.safeParseFloat(item.monthTPq),
         usage_ele_norm: this.safeParseFloat(item.monthNPq)
       };
-      
+
       converted.usage_ele_no = this.calculateUsageEleNo(converted);
-      
+
       return converted;
     });
   }
-  
+
   /**
    * 转换年用量数据为统一格式
    */
   convertYearList(yearlist, user = 'ele_01') {
     if (!Array.isArray(yearlist)) return [];
-    
+
+    const isRawYear = this.utilityType !== 'ele' && this._listSources.yearlist === 'raw';
+
+    // 非电力类型且原始数据：获取字段映射
+    let dateField = 'year', usageField, amountField;
+    if (isRawYear) {
+      const listFields = this._getListFieldsForType('yearlist');
+      dateField = listFields.date || 'year';
+      usageField = listFields.usage;
+      amountField = listFields.amount;
+    }
+
     return yearlist.map(item => {
+      let timeVal, usageVal, amountVal;
+
+      if (this.utilityType === 'ele') {
+        timeVal = item.year || '';
+        usageVal = this.safeParseFloat(item.yearEleNum);
+        amountVal = this.safeParseFloat(item.yearEleCost);
+      } else if (isRawYear) {
+        // 原始实体数据（entity_list 或标准检测）：使用映射字段
+        const rawDate = item[dateField] !== undefined ? item[dateField] : (item['day'] !== undefined ? item['day'] : (item['date'] || ''));
+        timeVal = this._normalizeDate(rawDate, 'year');
+        usageVal = this.safeParseFloat(usageField ? item[usageField] : item.yearEleNum);
+        amountVal = this.safeParseFloat(amountField ? item[amountField] : item.yearEleCost);
+      } else {
+        // 聚合数据或默认逻辑：使用硬编码字段
+        timeVal = item.year || '';
+        usageVal = this.safeParseFloat(item.yearEleNum);
+        amountVal = this.safeParseFloat(item.yearEleCost);
+      }
+
       const converted = {
         user: user,
         utility_type: this.utilityType,
         data_category: 'usage',
         date_granularity: 'year',
-        time: item.year || '',
+        time: timeVal,
         data_source: 'entity',
-        total_usage: this.safeParseFloat(item.yearEleNum),
-        total_amount: this.safeParseFloat(item.yearEleCost),
+        total_usage: usageVal,
+        total_amount: amountVal,
         unit: item.unit || this.getUnitByUtilityType(this.utilityType),
         usage_ele_valley: this.safeParseFloat(item.yearVPq),
         usage_ele_peak: this.safeParseFloat(item.yearPPq),
         usage_ele_tip: this.safeParseFloat(item.yearTPq),
         usage_ele_norm: this.safeParseFloat(item.yearNPq)
       };
-      
+
       converted.usage_ele_no = this.calculateUsageEleNo(converted);
-      
+
       return converted;
     });
   }
-  
+
   /**
    * 从统一格式数据中提取分时数据用于图表
    */
   extractTimeDistributionFromStandard(standardData) {
     if (!standardData) return [];
-    
+
     const distributions = [];
     const timeTypes = [
       { key: 'usage_ele_tip', name: '尖', colorClass: 'time-segment-tip' },
@@ -3256,12 +3716,12 @@ class ElectricityInfoCard extends HTMLElement {
       { key: 'usage_ele_norm', name: '平', colorClass: 'time-segment-normal' },
       { key: 'usage_ele_valley', name: '谷', colorClass: 'time-segment-valley' }
     ];
-    
+
     let hasNonZeroValue = false;
-    
+
     for (const type of timeTypes) {
       const value = this.safeParseFloat(standardData[type.key]);
-      
+
       if (value > 0) {
         hasNonZeroValue = true;
         distributions.push({
@@ -3273,28 +3733,28 @@ class ElectricityInfoCard extends HTMLElement {
         });
       }
     }
-    
+
     if (!hasNonZeroValue) return [];
-    
+
     const sum = distributions.reduce((total, dist) => total + dist.value, 0);
-    
+
     distributions.forEach(dist => {
       dist.percentage = sum > 0 ? (dist.value / sum * 100) : 0;
       dist.width = dist.percentage;
     });
-    
+
     return distributions;
   }
-  
+
   // 从标准格式获取当前月份数据
   getCurrentMonthStandardData() {
     const currentMonthStr = this.getCurrentMonthStr();
     const currentMonthData = this.standardData.monthUsage.find(item => item.time === currentMonthStr);
-    
+
     if (currentMonthData) {
       return currentMonthData;
     }
-    
+
     // 返回默认值
     return {
       user: 'ele_01',
@@ -3319,18 +3779,18 @@ class ElectricityInfoCard extends HTMLElement {
     const now = new Date();
     const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthStr = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}`;
-    
+
     const lastMonthData = this.standardData.monthUsage.find(item => item.time === lastMonthStr);
-    
+
     if (lastMonthData) {
       return lastMonthData;
     }
-    
+
     // 如果找不到，返回第二个数据（如果存在）
     if (this.standardData.monthUsage.length > 1) {
       return this.standardData.monthUsage[1];
     }
-    
+
     // 返回默认值
     return {
       user: 'ele_01',
@@ -3353,18 +3813,18 @@ class ElectricityInfoCard extends HTMLElement {
   // 从标准格式获取当前年度数据
   getCurrentYearStandardData() {
     const currentYear = new Date().getFullYear().toString();
-    
+
     const currentYearData = this.standardData.yearUsage.find(item => item.time === currentYear);
-    
+
     if (currentYearData) {
       return currentYearData;
     }
-    
+
     // 如果找不到，返回第一个年份数据（如果存在）
     if (this.standardData.yearUsage.length > 0) {
       return this.standardData.yearUsage[0];
     }
-    
+
     // 返回默认值
     return {
       user: 'ele_01',
@@ -3383,7 +3843,7 @@ class ElectricityInfoCard extends HTMLElement {
       usage_ele_no: 0
     };
   }
-  
+
   // 配色方案定义
   static get COLOR_SCHEMES() {
     return {
@@ -3462,7 +3922,7 @@ class ElectricityInfoCard extends HTMLElement {
         '--tooltip-text-color': 'var(--text-color)',
         '--tooltip-border-color': 'var(--button-primary-transparent)',
         '--tooltip-highlight-bg': 'var(--button-color-active)'
-      },    
+      },
       // 深灰主题方案 - 主要使用深灰色 (#222222)
       darkgray: {
         '--button-color-active': 'rgb(255, 255, 255)',
@@ -3487,7 +3947,7 @@ class ElectricityInfoCard extends HTMLElement {
         '--tooltip-text-color': 'var(--text-color)',
         '--tooltip-border-color': 'var(--button-primary-transparent)',
         '--tooltip-highlight-bg': 'var(--button-color-active)'
-      },      
+      },
       // 国家电网主题方案 - 主要使用国家电网的配色
       power: {
         '--button-color-active': '#2395f5',
@@ -3519,8 +3979,8 @@ class ElectricityInfoCard extends HTMLElement {
         '--button-color-active': 'rgba(255, 255, 255, 0.8)',
         '--button-active-text-color': 'rgb(255, 255, 255)',
         '--button-color': 'rgba(255, 255, 255, 0.6)',
-        '--text-color': 'rgba(255, 255, 255, 0.6)', 
-        '--svg-icon-color': 'rgba(255, 255, 255, 0.6)', 
+        '--text-color': 'rgba(255, 255, 255, 0.6)',
+        '--svg-icon-color': 'rgba(255, 255, 255, 0.6)',
         '--card-primary-hover': 'rgba(255, 255, 255, 0.9)',
         '--button-primary-transparent': 'rgba(255, 255, 255, 0.1)',
         '--card-on-state-hover': 'rgba(255, 255, 255, 0.2)',
@@ -3644,8 +4104,8 @@ class ElectricityInfoCard extends HTMLElement {
         '--button-color-active': 'rgba(251, 191, 36, 0.9)',
         '--button-active-text-color': 'rgb(255, 255, 255)',
         '--button-color': 'rgba(251, 191, 36, 0.7)',
-        '--text-color': 'rgba(251, 191, 36, 0.7)', 
-        '--svg-icon-color': 'rgba(251, 191, 36, 0.7)', 
+        '--text-color': 'rgba(251, 191, 36, 0.7)',
+        '--svg-icon-color': 'rgba(251, 191, 36, 0.7)',
         '--card-primary-hover': 'rgba(245, 158, 11, 0.9)',
         '--button-primary-transparent': 'rgba(251, 191, 36, 0.1)',
         '--card-on-state-hover': 'rgba(251, 191, 36, 0.2)',
@@ -3694,8 +4154,8 @@ class ElectricityInfoCard extends HTMLElement {
         '--button-color-active': 'rgba(249, 168, 212, 0.9)',
         '--button-active-text-color': 'rgb(255, 255, 255)',
         '--button-color': 'rgba(249, 168, 212, 0.7)',
-        '--text-color': 'rgba(249, 168, 212, 0.7)', 
-        '--svg-icon-color': 'rgba(249, 168, 212, 0.7)', 
+        '--text-color': 'rgba(249, 168, 212, 0.7)',
+        '--svg-icon-color': 'rgba(249, 168, 212, 0.7)',
         '--card-primary-hover': 'rgba(244, 114, 182, 0.9)',
         '--button-primary-transparent': 'rgba(249, 168, 212, 0.1)',
         '--card-on-state-hover': 'rgba(249, 168, 212, 0.2)',
@@ -3712,7 +4172,7 @@ class ElectricityInfoCard extends HTMLElement {
         '--tooltip-bg': 'var(--card-bg)',
         '--tooltip-text-color': 'var(--text-color)',
         '--tooltip-border-color': 'var(--button-primary-transparent)',
-        '--tooltip-highlight-bg': 'var(--button-color-active)'          
+        '--tooltip-highlight-bg': 'var(--button-color-active)'
       },
       // 橙色主题 - 完全使用橙色系
       orange: {
@@ -3720,7 +4180,7 @@ class ElectricityInfoCard extends HTMLElement {
         '--button-active-text-color': 'rgb(255, 255, 255)',
         '--button-color': 'rgba(251, 146, 60, 0.7)',
         '--text-color': 'rgba(251, 146, 60, 0.7)',
-        '--svg-icon-color': 'rgba(251, 146, 60, 0.7)', 
+        '--svg-icon-color': 'rgba(251, 146, 60, 0.7)',
         '--card-primary-hover': 'rgba(249, 115, 22, 0.9)',
         '--button-primary-transparent': 'rgba(251, 146, 60, 0.1)',
         '--card-on-state-hover': 'rgba(251, 146, 60, 0.2)',
@@ -3777,7 +4237,7 @@ class ElectricityInfoCard extends HTMLElement {
     if (this._themeObserver) {
       this._themeObserver.disconnect();
     }
-    
+
     // 监听主题实体变化（在hass设置时触发）
   }
 
@@ -3788,17 +4248,17 @@ class ElectricityInfoCard extends HTMLElement {
       this.themeTimer = null;
     }
   }
-  
+
   // 停止手机主题监听器
   stopPhoneThemeListener() {
     this.toggleThemeListener(false);
   }
-  
+
   // 启动或关闭主题监听器
   toggleThemeListener(enable = true) {
     // 停止主题定时器
     this.stopThemeTimer();
-    
+
     if (this.systemThemeMediaQuery) {
       if (this.systemThemeMediaQuery.removeEventListener) {
         this.systemThemeMediaQuery.removeEventListener('change', this.systemThemeChangeHandler);
@@ -3815,7 +4275,7 @@ class ElectricityInfoCard extends HTMLElement {
           this.applyThemeInternal(themeName);
         });
       }
-      
+
       // 启动时间主题定时器
       this.themeTimer = setInterval(() => {
         const currentTheme = this.getThemeByTime();
@@ -3832,12 +4292,12 @@ class ElectricityInfoCard extends HTMLElement {
   applyThemeVariables(themeName) {
     const theme = ElectricityInfoCard.COLOR_SCHEMES[themeName] || ElectricityInfoCard.COLOR_SCHEMES.light;
     const root = this.electricityCardEl;
-    
+
     // 应用所有CSS变量到卡片元素
     Object.keys(theme).forEach(key => {
       root.style.setProperty(key, theme[key]);
     });
-    
+
     // 同时应用到documentElement，让全局tooltip和模态框可以访问这些变量
     if (document.documentElement) {
       Object.keys(theme).forEach(key => {
@@ -3849,10 +4309,10 @@ class ElectricityInfoCard extends HTMLElement {
   // 统一应用主题
   applyThemeInternal(themeName) {
     // 移除所有主题类
-    const themeClasses = ['dark', 'light', 'transparent', 'blue', 'green', 'red', 
+    const themeClasses = ['dark', 'light', 'transparent', 'blue', 'green', 'red',
                          'purple', 'yellow', 'cyan', 'pink', 'orange', 'power', 'darkgray'];
     this.electricityCardEl.classList.remove(...themeClasses.map(t => t + '-theme'));
-    
+
     // 应用主题变量和类
     this.applyThemeVariables(themeName);
     this.electricityCardEl.classList.add(themeName + '-theme');
@@ -3861,12 +4321,12 @@ class ElectricityInfoCard extends HTMLElement {
   // 处理特殊主题模式（复用逻辑）
   handleSpecialThemeMode(theme) {
     const [darkTheme, lightTheme] = this.parseDarkLightTheme();
-    
+
     if (theme === 'off') return { themeName: darkTheme, needsListener: false };
     if (theme === 'on') return { themeName: lightTheme, needsListener: false };
     if (theme === 'time') return { themeName: this.getThemeByTime(), needsListener: true };
     if (theme === 'phone') return { themeName: this.getSystemTheme(), needsListener: true };
-    
+
     return null;
   }
 
@@ -3883,7 +4343,7 @@ class ElectricityInfoCard extends HTMLElement {
     // 处理特殊模式
     const specialMode = this.handleSpecialThemeMode(theme);
     if (specialMode) return specialMode.themeName;
-    
+
     // 处理对象配置
     if (typeof theme === 'object' && theme !== null) {
       if (theme.value && ElectricityInfoCard.COLOR_SCHEMES[theme.value]) {
@@ -3894,19 +4354,19 @@ class ElectricityInfoCard extends HTMLElement {
         if (entityTheme) return entityTheme;
       }
     }
-    
+
     // 处理字符串（实体或主题名）
     if (typeof theme === 'string') {
       // 检查是否是实体
       const entityTheme = this.handleEntityTheme(theme);
       if (entityTheme) return entityTheme;
-      
+
       // 检查是否是预定义主题
       if (ElectricityInfoCard.COLOR_SCHEMES[theme]) {
         return theme;
       }
     }
-    
+
     return this.parseDarkLightTheme()[1]; // 默认返回亮色主题
   }
 
@@ -3916,7 +4376,7 @@ class ElectricityInfoCard extends HTMLElement {
     if (isSelectEntity && ElectricityInfoCard.COLOR_SCHEMES[entityState]) {
       return entityState;
     }
-    
+
     // 复用determineTheme逻辑处理特殊值
     return this.determineTheme(entityState);
   }
@@ -3924,16 +4384,16 @@ class ElectricityInfoCard extends HTMLElement {
   // 更新主题配置（优化后的主入口）
   updateTheme(config) {
     const theme = config.theme;
-    
+
     // 没有配置且已有主题时保持当前主题（避免闪烁）
     if (theme === undefined && this.lastThemeName) return;
-    
+
     // 停止所有监听器
     this.toggleThemeListener(false);
-    
+
     let themeName = 'power'; // 默认主题
     let needsListener = false;
-    
+
     if (theme !== undefined) {
       // 处理特殊模式
       const specialMode = this.handleSpecialThemeMode(theme);
@@ -3943,15 +4403,15 @@ class ElectricityInfoCard extends HTMLElement {
       } else {
         themeName = this.determineTheme(theme);
       }
-      
+
       this.lastThemeName = themeName;
     }
-    
+
     // 启用监听器（如果需要）
     if (needsListener) {
       this.toggleThemeListener(true);
     }
-    
+
     // 应用主题
     this.applyThemeInternal(themeName);
   }
@@ -3961,7 +4421,7 @@ class ElectricityInfoCard extends HTMLElement {
     super();
     this.attachShadow({ mode: 'open' });
     this.shadowRoot.appendChild(template.content.cloneNode(true));
-    
+
     // 初始化统一数据格式存储
     this.standardData = {
       dayUsage: [],
@@ -3970,10 +4430,10 @@ class ElectricityInfoCard extends HTMLElement {
       payRecords: [],
       unit: '' // 单位将根据 utility_type 自动设置
     };
-    
+
     // 默认 utility_type
     this.utilityType = 'ele'; // 默认为电力
-    
+
     // 多用户相关初始化
     this.multiClassConfig = {}; // 多用户配置
     this.currentUserIndex = 0; // 当前用户索引
@@ -3985,19 +4445,30 @@ class ElectricityInfoCard extends HTMLElement {
     this.fieldMapping = {}; // 字段映射
     this.jiaofeiEntityId = null; // 缴费实体ID
     this.jiaofeiFieldMapping = {}; // 缴费实体字段映射
-    
+
+    // entity_list 相关（非电力类型独立列表配置）
+    this.hasEntityList = false;
+    this.entityListMap = {};
+    this._detectionMode = 'aggregation'; // 数据来源模式：'entity_list' | 'standard' | 'aggregation'
+    this._listSources = {}; // 每个列表的数据来源：'raw' | 'calc_day' | 'calc_month'
+
+    // 可用数据标记（用于控制图表/视图显示隐藏）
+    this._hasDayData = false;
+    this._hasMonthData = false;
+    this._hasYearData = false;
+
     // 数据缓存相关（5分钟缓存）
     this._dataCache = new Map(); // 数据缓存，键：{info}_{utility_type}
     this._cacheExpiry = new Map(); // 缓存过期时间
     this._isCardVisible = false; // 卡片可见性
     this._cacheDuration = 5 * 60 * 1000; // 缓存时长：5分钟
-    
+
     // 余额刷新定时器（10秒）
     this._balanceUpdateInterval = null;
-    
+
     // 调试信息开关（默认不显示调试信息）
     this.showDebug = false;
-    
+
     // 只显示一次的调试信息（版本信息，不受showDebug控制）
     if (!window._electricityInfoCardDebugShown) {
       window._electricityInfoCardDebugShown = true;
@@ -4007,7 +4478,7 @@ class ElectricityInfoCard extends HTMLElement {
         // ECharts加载成功后检测来源
         const scripts = document.querySelectorAll('script[src]');
         let echartsSource = '未知';
-        
+
         for (const script of scripts) {
           if (script.src.includes('echarts')) {
             if (script.src.includes('/local/')) {
@@ -4021,21 +4492,21 @@ class ElectricityInfoCard extends HTMLElement {
 
         // 显示卡片信息（字体已调小）
         console.log(
-          '%c⚡electricity-info-card\n%cVersion 3.3.2 ｜  ECharts: ' + echartsSource,
+          '%c⚡electricity-info-card\n%cVersion 4.0.7 ｜  ECharts: ' + echartsSource,
           `background: #ff5722; color: white; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 12px; font-family: monospace; line-height: 1.3; border-radius: 3px 3px 0 0;`,
           `background: white; color: #ff5722; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 11px; font-family: monospace; line-height: 1.3; border-radius: 0 0 3px 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);`
         );
       }).catch(err => {
         // 如果ECharts加载失败，仍然显示调试信息
         console.log(
-          '%c⚡electricity-info-card\n%cVersion 3.3.2 ｜  ECharts: 加载失败',
+          '%c⚡electricity-info-card\n%cVersion 4.0.7 ｜  ECharts: 加载失败',
           `background: #ff5722; color: white; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 12px; font-family: monospace; line-height: 1.3; border-radius: 3px 3px 0 0;`,
           `background: white; color: #ff5722; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 11px; font-family: monospace; line-height: 1.3; border-radius: 0 0 3px 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);`
         );
         console.error('ECharts加载失败:', err);
       });
     }
-    
+
     // 存储元素引用
     this.userInfoEl = this.shadowRoot.getElementById('user-info');
     this.multiUserInfoEl = this.shadowRoot.getElementById('multi-user-info');
@@ -4049,7 +4520,7 @@ class ElectricityInfoCard extends HTMLElement {
     this.relativeDateEl = this.shadowRoot.getElementById('relative-date');
     this.electricityCardEl = this.shadowRoot.querySelector('.electricity-card');
     this.dataContainerEl = this.shadowRoot.getElementById('data-container');
-    
+
     // 本月用电元素
     this.currentMonthElectricityEl = this.shadowRoot.getElementById('current-month-electricity');
     this.currentMonthCostEl = this.shadowRoot.getElementById('current-month-cost');
@@ -4057,7 +4528,7 @@ class ElectricityInfoCard extends HTMLElement {
     this.currentMonthCostUnitEl = this.shadowRoot.getElementById('current-month-cost-unit');
     this.currentMonthDistributionEl = this.shadowRoot.getElementById('current-month-distribution');
     this.currentMonthLabelsEl = this.shadowRoot.getElementById('current-month-labels');
-    
+
     // 上月用电元素
     this.lastMonthElectricityEl = this.shadowRoot.getElementById('last-month-electricity');
     this.lastMonthCostEl = this.shadowRoot.getElementById('last-month-cost');
@@ -4065,7 +4536,7 @@ class ElectricityInfoCard extends HTMLElement {
     this.lastMonthCostUnitEl = this.shadowRoot.getElementById('last-month-cost-unit');
     this.lastMonthDistributionEl = this.shadowRoot.getElementById('last-month-distribution');
     this.lastMonthLabelsEl = this.shadowRoot.getElementById('last-month-labels');
-    
+
     // 年度用电元素
     this.currentYearEl = this.shadowRoot.getElementById('current-year');
     this.yearElectricityEl = this.shadowRoot.getElementById('year-electricity');
@@ -4073,20 +4544,25 @@ class ElectricityInfoCard extends HTMLElement {
     this.yearEleUnitEl = this.shadowRoot.getElementById('year-ele-unit');
     this.yearCostUnitEl = this.shadowRoot.getElementById('year-cost-unit');
     this.yearDistributionEl = this.shadowRoot.getElementById('year-distribution');
-    
+
     // 趋势箭头元素
     this.monthTrendArrowEl = this.shadowRoot.getElementById('month-trend-arrow');
     this.lastMonthTrendArrowEl = this.shadowRoot.getElementById('last-month-trend-arrow');
     this.yearTrendArrowEl = this.shadowRoot.getElementById('year-trend-arrow');
     this.yearLabelsEl = this.shadowRoot.getElementById('year-labels');
-    
+
     this.electricityPriceEl = this.shadowRoot.getElementById('electricity-price');
     this.priceUnitEl = this.shadowRoot.querySelector('.price-unit');
     this.priceLabelEl = this.shadowRoot.querySelector('.price-label');
     // 新增剩余天数元素引用
     this.remainingDaysEl = this.shadowRoot.getElementById('remaining-days');
     this.remainingDaysDateEl = this.shadowRoot.getElementById('remaining-days-date');
-    
+
+    // 电网公告元素引用（默认隐藏，仅配置 notice 时显示）
+    this.noticeDisplayEl = this.shadowRoot.getElementById('notice-display');
+    this.noticeScrollEl = this.shadowRoot.getElementById('notice-scroll');
+    this.noticeDisplayEl.style.display = 'none';
+
     // 阶梯电价相关元素
     this.tierPeriodEl = this.shadowRoot.getElementById('tier-period');
     this.tier1El = this.shadowRoot.getElementById('tier-1');
@@ -4096,13 +4572,14 @@ class ElectricityInfoCard extends HTMLElement {
     this.indicatorArrowEl = this.shadowRoot.getElementById('indicator-arrow');
     this.currentTierEl = this.shadowRoot.getElementById('current-tier');
     this.currentUsageEl = this.shadowRoot.getElementById('current-usage');
+    this.currentPercentEl = this.shadowRoot.getElementById('current-percent');
     this.tiersContainerEl = this.shadowRoot.querySelector('.tiers-container');
-    
+
     // 阶梯块中的文字元素
     this.tier1BlockEl = this.shadowRoot.getElementById('tier-1-block');
     this.tier2BlockEl = this.shadowRoot.getElementById('tier-2-block');
     this.tier3BlockEl = this.shadowRoot.getElementById('tier-3-block');
-    
+
     // 阶梯范围DOM元素
     this.tier1RangeEl = this.shadowRoot.getElementById('tier-1-range');
     this.tier2RangeEl = this.shadowRoot.getElementById('tier-2-range');
@@ -4110,15 +4587,15 @@ class ElectricityInfoCard extends HTMLElement {
     this.tier1PriceEl = this.shadowRoot.getElementById('tier-1-price');
     this.tier2PriceEl = this.shadowRoot.getElementById('tier-2-price');
     this.tier3PriceEl = this.shadowRoot.getElementById('tier-3-price');
-    
+
     // 所有tier-content元素
     this.tierContentElements = this.shadowRoot.querySelectorAll('.tier-content');
-    
+
     // 动态文本元素
     this.tierLabelLeftEl = this.shadowRoot.querySelector('.tier-label-left');
     this.monthLabels = this.shadowRoot.querySelectorAll('.month-label');
     this.yearLabels = this.shadowRoot.querySelectorAll('.year-label');
-    
+
     // 日历视图相关元素
     this.dataContainerEl = this.shadowRoot.getElementById('data-container');
     this.calendarViewEl = this.shadowRoot.getElementById('calendar-view');
@@ -4130,13 +4607,13 @@ class ElectricityInfoCard extends HTMLElement {
     this.calMonthSelectEl = this.shadowRoot.getElementById('cal-month-select');
     this.currentMonthBtnEl = this.shadowRoot.getElementById('current-month-btn');
     this.backToMainBtnEl = this.shadowRoot.getElementById('back-to-main');
-    
+
     // 日历统计元素
     this.calMonthUsageEl = this.shadowRoot.getElementById('cal-month-usage');
     this.calMonthCostEl = this.shadowRoot.getElementById('cal-month-cost');
     this.calYearUsageEl = this.shadowRoot.getElementById('cal-year-usage');
     this.calYearCostEl = this.shadowRoot.getElementById('cal-year-cost');
-    
+
     // 年视图元素
     this.calendarContentEl = this.shadowRoot.getElementById('calendar-content');
     this.yearContentEl = this.shadowRoot.getElementById('year-content');
@@ -4155,10 +4632,11 @@ class ElectricityInfoCard extends HTMLElement {
     this.barRacingModeMonthBtnEl = this.shadowRoot.getElementById('bar-racing-mode-month-btn');
     this.barRacingProgressEl = this.shadowRoot.getElementById('bar-racing-progress');
     this.barRacingMarkerEl = this.shadowRoot.getElementById('bar-racing-marker');
+    this.barRacingTrackEl = this.shadowRoot.getElementById('bar-racing-track');
     this.barRacingChart = null;
     this.barRacingTimer = null;
     this.barRacingPaused = false;
-    this.barRacingSpeed = 1; // 播放速度倍率
+    this.barRacingSpeed = 4; // 播放速度倍率（日模式默认4，月模式会在renderBarRacingChart中覆盖为0.5）
     this.barRacingFrameIndex = 0;
     this.barRacingFrames = [];
     this.barRacingMode = '日'; // '日' 或 '月'
@@ -4199,7 +4677,7 @@ class ElectricityInfoCard extends HTMLElement {
     this.daylistData = [];
     this.yearlistData = [];
     this.monthlistData = [];
-    
+
     // 日详情模态框元素
     this.dayModalEl = this.shadowRoot.getElementById('day-modal');
     this.dayModalTitleEl = this.shadowRoot.getElementById('day-modal-title');
@@ -4253,7 +4731,7 @@ class ElectricityInfoCard extends HTMLElement {
             opacity: 0;
             transition: transform 0.3s ease, opacity 0.3s ease;
           }
-          
+
           .day-modal-overlay[style*="display: flex"] .day-modal-content {
             transform: scale(1);
             opacity: 1;
@@ -4300,7 +4778,41 @@ class ElectricityInfoCard extends HTMLElement {
             background: rgba(0, 0, 0, 0.1);
           }
 
-          /* 饼图区域样式 */
+          /* 缴费历史饼图区域样式 */
+          .pay-history-pie-chart-section {
+            display: flex;
+            flex-direction: column;
+            background: var(--card-button-bg);
+            border-radius: 8px;
+            flex: 1;
+            min-width: 0;
+            height: 130px;
+          }
+
+          .pay-history-pie-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-color);
+            margin-left: 15px;
+          }
+
+          .pay-history-pie-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            flex: 1;
+            min-height: 0;
+          }
+
+          .pay-history-pie-container {
+            width: 100%;
+            height: 150px;
+            position: relative;
+            top: -7px;
+          }
+
+          /* 饼图区域样式 - 日用电详情 */
           .pie-chart-section {
             display: flex;
             flex-direction: column;
@@ -4415,6 +4927,36 @@ class ElectricityInfoCard extends HTMLElement {
             background: var(--card-button-bg);
             border-radius: 8px;
             padding: 10px;
+          }
+
+          #device-tracks-container {
+            position: relative;
+          }
+
+          .day-current-time-indicator {
+            position: absolute;
+            width: 2px;
+            background: #ff4444;
+            pointer-events: none;
+            z-index: 9;
+            top: -3px;
+            height: calc(100% + 3px);
+            opacity: 0.9;
+          }
+
+          .day-current-time-indicator::before {
+            content: '现在';
+            position: absolute;
+            top: -19px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 10px;
+            color: #ff4444;
+            white-space: nowrap;
+            background: var(--card-bg, #fff);
+            padding: 1px 3px;
+            border-radius: 2px;
+            border: 1px solid #ff4444;
           }
 
           .device-track {
@@ -4794,12 +5336,17 @@ class ElectricityInfoCard extends HTMLElement {
           }
         `;
         document.head.appendChild(modalStyle);
+        // 记录全局样式注入的实例数量，供 disconnectedCallback 引用计数清理
+        this._modalStyleRefCount = window.__electricityCardModalStyleRef = (window.__electricityCardModalStyleRef || 0) + 1;
+      } else {
+        // 样式已存在（可能由其他实例注入），增加引用计数
+        this._modalStyleRefCount = window.__electricityCardModalStyleRef = (window.__electricityCardModalStyleRef || 0) + 1;
       }
-      
+
       // 将日详情模态框移到document.body
       document.body.appendChild(this.dayModalEl);
     }
-    
+
     // 将缴费历史模态框移到document.body
     if (this.payHistoryModalEl) {
       document.body.appendChild(this.payHistoryModalEl);
@@ -4809,7 +5356,7 @@ class ElectricityInfoCard extends HTMLElement {
     this.eventTooltip = this.shadowRoot.getElementById('event-tooltip');
     this.tooltipDeviceName = this.shadowRoot.getElementById('tooltip-device-name');
     this.tooltipEventsList = this.shadowRoot.getElementById('tooltip-events-list');
-    
+
     // 将tooltip从shadow DOM移到document.body，使其成为真正的固定定位弹出窗口
     if (this.eventTooltip) {
       // 添加主题化的tooltip样式到document.head
@@ -4890,23 +5437,26 @@ class ElectricityInfoCard extends HTMLElement {
           border-left: 7px solid var(--tooltip-bg);
         }
       `;
+      tooltipStyle.id = 'electricity-card-tooltip-styles';
       document.head.appendChild(tooltipStyle);
-      
+      // 记录 tooltip 全局样式的实例引用计数，供 disconnectedCallback 清理
+      this._tooltipStyleRefCount = window.__electricityCardTooltipStyleRef = (window.__electricityCardTooltipStyleRef || 0) + 1;
+
       // 将tooltip移到document.body（固定定位，浮动在所有内容之上）
       document.body.appendChild(this.eventTooltip);
       this.eventTooltip.style.display = 'none';
     }
-    
+
     // ECharts相关
     this.echartsLoaded = false;
     this.echartsPath = '/local/echarts.min.js';
     this.echartsFallbackPath = 'https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js';
     this.dayChart = null;
     this.echartsScriptElement = null;
-    
+
     // 设备事件数据
     this.deviceEvents = [];
-    
+
     // 默认配置
     this.defaultConfig = {
       // 背景色配置（由主题系统控制）
@@ -4937,10 +5487,11 @@ class ElectricityInfoCard extends HTMLElement {
       // - time-distribution-bar: 隐藏分时用电条
       // - data-container: 隐藏统计数据容器（本月/上月/年度统计）
       // - user-info: 隐藏用户信息标题
+      // - notice-display: 隐藏电网公告信息区域
       // 可以同时填写多个，用逗号分隔，例如：'tier-indicator,time-distribution-bar'
       hide: ''
     };
-    
+
     // 阶梯电价配置（初始化为空，将由配置文件或实体数据填充）
     this.tierConfig = {
       tiers: [
@@ -4954,7 +5505,11 @@ class ElectricityInfoCard extends HTMLElement {
       periodEndMonth: null,   // 结束月份
       periodEndDay: null      // 结束日
     };
-    
+
+    // 是否手动定义了计费标准（gas/water 时优先用用户配置，否则用实体"计费标准"节点）
+    // 在 updateTierAndPeriodConfig 中根据用户配置更新
+    this._hasManualTierConfig = false;
+
     // 分时用电配置
     this.timeConfig = {
       // 分时用电类型配置
@@ -4965,7 +5520,7 @@ class ElectricityInfoCard extends HTMLElement {
         { key: 'VPq', name: '谷', colorClass: 'time-segment-valley', dotClass: 'time-dot-valley' }
       ]
     };
-    
+
     // 初始化变量
     this._hass = null;
     this._config = null;
@@ -4978,10 +5533,16 @@ class ElectricityInfoCard extends HTMLElement {
     this.lastThemeUpdate = 0; // 上次主题更新时间
     this.historicalData = null; // 历史数据缓存
     this.historicalDataLoaded = false; // 历史数据是否已加载完成
+    this._dataLoadPending = false; // 数据加载防重入标志（set hass 补加载用）
     this.paySourceChart = null; // 缴费方式饼图实例
     this.dayDeviceData = null; // 日设备数据（包含设备详细数据、房间聚合数据、分时用电数据）
     this.sankeyChart = null; // 桑基图实例
     this.showSankeyChart = false; // 是否显示桑基图（false为显示设备轨道，true为显示桑基图）
+    this._apiDatesCache = null; // entity_data_dates缓存，避免同月重复请求
+    this.apiBaseUrl = null; // API基础URL，用于从外部服务获取设备数据
+    this.apiKey = null; // API密钥
+    this.apiRoomsDailyData = null; // rooms_daily API缓存数据
+    this.apiEnergyConsumedMap = null; // 设备名称 -> energy_consumed 映射
   }
 
   setConfig(config) {
@@ -4991,15 +5552,19 @@ class ElectricityInfoCard extends HTMLElement {
     }
 
     this._config = config;
-    
+
     // 保存顶层配置
     this.topName = config.name || ''; // 顶层的名称
     this.showName = config.show_name !== false; // 是否显示名称，默认为true
-    
+
     // 读取调试开关配置（默认为false，不显示调试信息）
     this.showDebug = config.show_debug === true;
-    
-    // 初始化多用户配置
+
+    // 保存API配置
+    this.apiBaseUrl = config.api_base_url || null;
+    this.apiKey = config.key || null;
+
+    // 初始化多用户配置（multiclass 始终是完整的对象配置）
     this.multiClassConfig = config.multiclass;
     this.currentUserIndex = 0; // 默认选中第一个用户
     this.userCount = Object.keys(this.multiClassConfig).length;
@@ -5009,39 +5574,50 @@ class ElectricityInfoCard extends HTMLElement {
 
     // 根据用户数量决定是否显示切换条
     this.showMultiUserBar = this.userCount >= 2;
-    
+
     // 初始化当前用户配置
     this.initializeCurrentUserConfig();
-    
+
     // 初始化ECharts（仅在首次加载时）
     if (!this.echartsInitialized) {
       this.initializeECharts();
       this.echartsInitialized = true;
     }
-    
+
     // 应用隐藏配置
     this.applyHiddenConfig();
-    
+
     // 初始化日历事件监听
     this.initCalendarEvents();
-    
+
     // 设置主题相关的监听器
     this.setupThemeListeners();
+
+    // 【card_params 兼容】initial_tab 由 from_config_id 的 card_params 注入
+    // （如 card_params: { initial_tab: "1" }），初始化后导航到指定视图
+    if (config.initial_tab) {
+      setTimeout(() => {
+        const targetIndex = parseInt(config.initial_tab) - 1; // "1" → 0（数组索引）
+        if (targetIndex >= 0 && targetIndex < this.userCount && typeof this.switchUser === 'function') {
+          this.switchUser(targetIndex);
+        }
+      }, 100);
+    }
   }
-  
+
   // 调试日志方法（根据showDebug配置决定是否输出）
   debugLog(...args) {
     if (this.showDebug) {
       console.log(...args);
     }
   }
-  
+
   debugWarn(...args) {
     if (this.showDebug) {
       console.warn(...args);
     }
   }
-  
+
   debugError(...args) {
     if (this.showDebug) {
       console.error(...args);
@@ -5064,20 +5640,20 @@ class ElectricityInfoCard extends HTMLElement {
     const userKeys = Object.keys(this.multiClassConfig);
     const currentKey = userKeys[this.currentUserIndex];
     const currentConfig = this.multiClassConfig[currentKey];
-    
+
     if (!currentConfig) {
       throw new Error('无法获取当前用户配置');
     }
-    
+
     // 设置当前用户信息
     this.currentUserKey = currentKey;
     this.currentConfig = currentConfig;
-    
+
     // 更新 user-info 显示（使用顶层配置的 name）
     if (this.userInfoEl && this.topName) {
       this.userInfoEl.textContent = this.topName;
     }
-    
+
     // 根据 show_name 控制 user-info 和 multi-user-info 的显示
     if (this.userInfoEl && this.multiUserInfoEl) {
       if (this.showName) {
@@ -5090,25 +5666,58 @@ class ElectricityInfoCard extends HTMLElement {
         this.multiUserInfoEl.classList.add('hidden');
       }
     }
-    
+
     // 读取 utility_type 配置（默认为 'ele'）
     this.utilityType = currentConfig.utility_type || 'ele';
-    
+
+    // 读取 notice 公告实体配置
+    this.noticeEntityId = currentConfig.notice || null;
+    this.noticeAttention = currentConfig.notice_attention || '';
+
+    // 清除公告缓存签名（切换用户时强制重建）
+    this._noticeDataSig = null;
+
+    // 未配置公告时隐藏公告区域
+    if (!this.noticeEntityId && this.noticeDisplayEl) {
+      this._stopNoticeAutoScroll();
+      this.noticeDisplayEl.style.display = 'none';
+    }
+
+    // 【重要】每次切换用户都必须重置手动计费标准标志，避免上一个用户（如 gas 手动配置）
+    // 泄漏到当前用户。非电力用户会在 updateTierAndPeriodConfig 中重新按当前配置计算；
+    // 电力用户始终使用实体计费标准，此处强制为 false。
+    this._hasManualTierConfig = false;
+
+    // 【重要】重置阶梯配置为初始空值，避免上一个用户（如水/气）填充的 tierConfig
+    // 残留到当前用户。当前用户若无计费标准且未手动配置时，将显示 "--"/空值，而不是上一个用户的数据。
+    this.tierConfig.tiers[0].max = null;
+    this.tierConfig.tiers[0].price = null;
+    this.tierConfig.tiers[1].max = null;
+    this.tierConfig.tiers[1].price = null;
+    this.tierConfig.tiers[2].price = null;
+
+    // 清除电价渲染签名缓存，确保切换用户后阶梯价格强制重新渲染
+    this._priceRenderSig = undefined;
+    this._priceAutoIndex = undefined;
+
     // 根据 utility_type 设置单位
     this.standardData.unit = this.getUnitByUtilityType(this.utilityType);
-    
+
     // 根据 utility_type 更新动态文本
     this.updateDynamicTexts(this.utilityType);
-    
+
     // 根据 utility_type 更新背景图标
     this.updateCardBackgroundIcon(this.utilityType);
-    
+
     // 解析实体配置（支持字段映射）
     this.parseEntityConfig(currentConfig);
-    
-    // 解析缴费实体配置
-    this.parseJiaofeiConfig(currentConfig);
-    
+
+    // 解析 entity_list 配置（每个列表类型独立指定节点和字段映射）
+    this.parseEntityListConfig(currentConfig);
+
+    // 解析缴费实体配置（支持新旧两种格式）
+    this.parsePayEntityConfig(currentConfig);
+
     // 当 utility_type 不是 'ele' 时，才使用手动配置的阶梯电价和计费周期
     // 'ele' 类型完全从实体获取数据，不使用任何手动配置
     if (this.utilityType !== 'ele') {
@@ -5116,52 +5725,52 @@ class ElectricityInfoCard extends HTMLElement {
       this.updateTierConfig(currentConfig);
       this.updatePeriodConfig(currentConfig);
     }
-    
+
     // 更新背景色配置
     this.updateBackgroundConfig(currentConfig);
-    
+
     // 更新卡片宽度配置（从顶层配置读取）
     this.updateCardWidth();
-    
+
     // 保存设备实体配置
     this.deviceEntityConfig = currentConfig.device_entity || null;
-    
+
     // 控制分时用电显示
     this.updateTimeDistributionVisibility(currentConfig);
-    
+
     // 初始化多用户切换条
     this.setupMultiUserBar();
-    
+
     // 初始化所有用户的余额显示
     this.updateAllUsersBalance();
-    
+
     // 应用当前用户的隐藏配置
     this.applyHiddenConfig();
-    
+
     // 确保当前用户块的 active 状态正确设置（首次进入卡片时）
     this.ensureCurrentUserActive();
-    
+
     // 如果卡片可见，加载数据
     if (this._isCardVisible) {
       this.loadDataForCurrentUser();
     }
   }
-  
+
   // 解析实体配置（支持字段映射语法）
   parseEntityConfig(config) {
     const entityStr = config.entity || '';
-    
+
     // 解析实体ID和字段映射（支持逗号前后有空格）
     const entityMatch = entityStr.match(/^([^,\s[]+)(?:\s*,\s*\[(.+)\])?$/);
     if (entityMatch) {
       this.entityId = entityMatch[1].trim();
       this.fieldMapping = {};
-      
+
       // 解析字段映射
       if (entityMatch[2]) {
         const mappingStr = entityMatch[2];
         const mappings = mappingStr.split(',');
-        
+
         mappings.forEach(mapping => {
           const kv = mapping.trim().split(':');
           if (kv.length === 2) {
@@ -5175,7 +5784,7 @@ class ElectricityInfoCard extends HTMLElement {
       this.entityId = entityStr.trim();
       this.fieldMapping = {};
     }
-    
+
     // 根据 utility_type 设置默认字段映射（如果没有自定义映射）
     if (this.utilityType === 'gas' && Object.keys(this.fieldMapping).length === 0) {
       // 燃气默认映射
@@ -5197,24 +5806,81 @@ class ElectricityInfoCard extends HTMLElement {
       };
     }
   }
-  
-  // 解析缴费实体配置
+
+  // 解析 entity_list 配置（每个列表类型独立指定节点和字段映射）
+  parseEntityListConfig(config) {
+    this.hasEntityList = false;
+    this.entityListMap = {};
+
+    const entityList = config.entity_list;
+    if (!entityList || !Array.isArray(entityList) || entityList.length === 0) {
+      return;
+    }
+
+    const validTypes = ['daylist', 'monthlist', 'yearlist'];
+
+    entityList.forEach(entry => {
+      const listType = entry.list;
+      if (!validTypes.includes(listType)) return;
+
+      this.entityListMap[listType] = {
+        node: entry.node,
+        date: entry.date,
+        amount: entry.amount,
+        usage: entry.usage
+      };
+    });
+
+    this.hasEntityList = Object.keys(this.entityListMap).length > 0;
+
+    // 设置可用数据标记
+    this._hasDayData = !!this.entityListMap.daylist;
+    this._hasMonthData = !!this.entityListMap.monthlist;
+    this._hasYearData = !!this.entityListMap.yearlist;
+  }
+
+  // 统一解析缴费实体配置（支持新旧两种格式）
+  // 新格式（推荐）：pay_entity: { entity: 'sensor.xxx', node: 'payList', date: 'queryDate', pay_amount: 'rcvAmt', pay_mode: 'payModeName' }
+  // 旧格式（兼容）：jiaofei_entity: 'sensor.xxx,[node:paylist,date:ymd,pay_amount:rcvAmt,pay_mode:payModeName]'
+  parsePayEntityConfig(config) {
+    // 重置
+    this.jiaofeiEntityId = null;
+    this.jiaofeiFieldMapping = {};
+
+    // 优先处理新格式 pay_entity（对象格式）
+    if (config.pay_entity && typeof config.pay_entity === 'object') {
+      const pe = config.pay_entity;
+      this.jiaofeiEntityId = pe.entity;
+      this.jiaofeiFieldMapping = {
+        node: pe.node,
+        date: pe.date || 'time',
+        pay_amount: pe.pay_amount || 'cost',
+        pay_mode: pe.pay_mode || 'source'
+      };
+      return;
+    }
+
+    // 兼容旧格式 jiaofei_entity（字符串格式）
+    this.parseJiaofeiConfig(config);
+  }
+
+  // 解析缴费实体配置（旧格式，字符串方式）
   parseJiaofeiConfig(config) {
     const jiaofeiStr = config.jiaofei_entity || '';
     this.jiaofeiEntityId = null;
     this.jiaofeiFieldMapping = {};
-    
+
     if (jiaofeiStr) {
       // 解析缴费实体ID和字段映射（支持逗号前后有空格）
       const match = jiaofeiStr.match(/^([^,\s[]+)(?:\s*,\s*\[(.+)\])?$/);
       if (match) {
         this.jiaofeiEntityId = match[1].trim();
-        
+
         // 解析字段映射
         if (match[2]) {
           const mappingStr = match[2];
           const mappings = mappingStr.split(',');
-          
+
           mappings.forEach(mapping => {
             const kv = mapping.trim().split(':');
             if (kv.length === 2) {
@@ -5230,23 +5896,39 @@ class ElectricityInfoCard extends HTMLElement {
       }
     }
   }
-  
+
   // 加载当前用户的数据
   loadDataForCurrentUser() {
     if (!this._hass || !this.entityId) {
       return Promise.resolve();
     }
-    
+
     const cacheKey = this.getCurrentCacheKey();
-    
+
     // 检查缓存是否有效
     if (this.isCacheValid(cacheKey)) {
       // 使用缓存数据
-      const cachedData = this._dataCache.get(cacheKey);
-      this.processEntityData(cachedData);
+      const cached = this._dataCache.get(cacheKey);
+      // 【修复】缓存命中时直接恢复已转换的 standardData，跳过 processEntityData 的重新转换。
+      // 原问题：processEntityData 重置 _listSources 后重新转换原始 entityData，
+      //   但 convertMonthList 等函数依赖的字段映射状态（_listSources / fieldMapping）
+      //   与首次 extractDataFromEntity 时不一致，导致 time/total_usage 解析为空/0，
+      //   覆盖了之前正确的 standardData，使 data-container 显示 0.0。
+      if (cached && cached.standardData) {
+        this.standardData = JSON.parse(JSON.stringify(cached.standardData));
+        this._listSources = cached.listSources ? { ...cached.listSources } : {};
+        this.daylistData = cached.entityData ? (cached.entityData.daylist || []) : [];
+        this.monthlistData = cached.entityData ? (cached.entityData.monthlist || []) : [];
+        this.yearlistData = cached.entityData ? (cached.entityData.yearlist || []) : [];
+        this.historicalDataLoaded = true;
+        this.updateCard();
+      } else if (cached) {
+        // 兼容旧格式缓存（仅 entityData）
+        this.processEntityData(cached);
+      }
       return Promise.resolve();
     }
-    
+
     // 从实体获取数据
     const entity = this._hass.states[this.entityId];
     if (!entity || entity.state === 'unknown' || entity.state === 'unavailable') {
@@ -5256,18 +5938,25 @@ class ElectricityInfoCard extends HTMLElement {
       this.updateAllUsersBalance();
       return Promise.resolve();
     }
-    
+
     // 根据字段映射获取数据
     const entityData = this.extractDataFromEntity(entity);
-    
+
     // 加载并合并历史数据，返回 Promise
     return this.loadAndMergeData(entityData).then(() => {
-      // 缓存数据
-      this._dataCache.set(cacheKey, entityData);
+      // 缓存数据（同时保存已转换的 standardData 和 _listSources 快照，
+      // 避免缓存命中时 processEntityData 重新转换导致字段映射状态不一致）
+      this._dataCache.set(cacheKey, {
+        entityData: entityData,
+        standardData: JSON.parse(JSON.stringify(this.standardData)),
+        listSources: { ...this._listSources }
+      });
       this._cacheExpiry.set(cacheKey, Date.now() + this._cacheDuration);
-      
+
       // 确保切换用户后更新卡片显示（重要：解决切换用户时数据不显示的问题）
       this.updateCard();
+    }).catch(e => {
+      this.debugError('[loadDataForCurrentUser] 加载失败:', e);
     });
   }
 
@@ -5281,107 +5970,135 @@ class ElectricityInfoCard extends HTMLElement {
       syn: '未知',
       latest_data: '未知'
     };
-    
+
     // 处理默认数据
     this.processEntityData(defaultEntityData);
-    
+
     // 更新卡片显示
     this.updateCardWithDefaultData();
   }
 
   // 使用默认数据更新卡片显示
   updateCardWithDefaultData() {
-    // 设置余额为0
-    if (this.balanceEl) {
-      this.balanceEl.textContent = '0.00';
-    }
-    
-    // 设置日期信息
-    if (this.dateEl) {
-      this.dateEl.textContent = '更新时间 未知';
-    }
-    
-    if (this.dataDateEl) {
-      this.dataDateEl.textContent = '数据: 未知';
-    }
-    
-    // 设置默认的用电数据
-    if (this.currentMonthEleEl) {
-      this.currentMonthEleEl.textContent = '0';
-    }
-    
-    if (this.currentMonthCostEl) {
-      this.currentMonthCostEl.textContent = '0';
-    }
-    
-    if (this.lastMonthEleEl) {
-      this.lastMonthEleEl.textContent = '0';
-    }
-    
-    if (this.lastMonthCostEl) {
-      this.lastMonthCostEl.textContent = '0';
-    }
-    
-    if (this.yearEleEl) {
-      this.yearEleEl.textContent = '0';
-    }
-    
-    if (this.yearCostEl) {
-      this.yearCostEl.textContent = '0';
-    }
-    
+    // 批量设置默认文本（元素不存在时静默跳过）
+    this._setElsText([
+      [this.balanceEl, '0.00'],
+      [this.dateEl, '更新时间 未知'],
+      [this.dataDateEl, '数据: 未知'],
+      [this.currentMonthEleEl, '0'],
+      [this.currentMonthCostEl, '0'],
+      [this.lastMonthEleEl, '0'],
+      [this.lastMonthCostEl, '0'],
+      [this.yearEleEl, '0'],
+      [this.yearCostEl, '0']
+    ]);
+
     // 隐藏分时用电条（因为没有数据）
     const distributionBars = this.shadowRoot.querySelectorAll('.time-distribution-bar');
     distributionBars.forEach(bar => {
       bar.classList.add('empty');
     });
-    
+
     const distributionLabels = this.shadowRoot.querySelectorAll('.time-distribution-labels');
     distributionLabels.forEach(label => {
       label.classList.add('empty');
     });
   }
-  
+
   // 获取当前缓存键
   getCurrentCacheKey() {
     const info = this.currentUserKey || 'default';
     const utilityType = this.utilityType || 'ele';
     return `${info}_${utilityType}`;
   }
-  
+
   // 检查缓存是否有效
   isCacheValid(cacheKey) {
     if (!this._dataCache.has(cacheKey)) return false;
-    
+
     const expiryTime = this._cacheExpiry.get(cacheKey);
     if (!expiryTime) return false;
-    
+
     return Date.now() < expiryTime;
   }
-  
+
+  // 检测实体是否包含标准格式的日/月/年列表数组（非电力类型自动检测）
+  _hasStandardDataLists(entity) {
+    if (!entity || !entity.attributes) return false;
+    if (this.utilityType === 'ele') return false;
+
+    const standardListTypes = ['daylist', 'monthlist', 'yearlist'];
+    const standardFields = ['day', 'date', 'amount', 'usage'];
+
+    for (const listType of standardListTypes) {
+      let arr = entity.attributes[listType];
+      // 也检查 data 节点下
+      if (!Array.isArray(arr) && entity.attributes.data) {
+        arr = entity.attributes.data[listType];
+      }
+      if (Array.isArray(arr) && arr.length > 0) {
+        const firstItem = arr[0];
+        if (typeof firstItem === 'object' && firstItem !== null) {
+          const hasDateField = firstItem['day'] !== undefined || firstItem['date'] !== undefined;
+          const hasAmount = firstItem['amount'] !== undefined;
+          const hasUsage = firstItem['usage'] !== undefined;
+          if (hasDateField && hasAmount && hasUsage) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  // 从实体中提取标准格式的日/月/年列表数据
+  _extractStandardDataLists(entity, mapping) {
+    const convertedData = {
+      yearlist: [],
+      monthlist: [],
+      daylist: [],
+      syn: this.getEntityAttribute(entity, mapping.syn),
+      latest_data: this.getEntityAttribute(entity, mapping.latest_data)
+    };
+
+    ['daylist', 'monthlist', 'yearlist'].forEach(listType => {
+      let arr = entity.attributes[listType];
+      if (!Array.isArray(arr) && entity.attributes.data) {
+        arr = entity.attributes.data[listType];
+      }
+      if (Array.isArray(arr)) {
+        convertedData[listType] = arr;
+      }
+    });
+
+    return convertedData;
+  }
+
+  // 获取指定列表类型的字段映射
+  _getListFieldsForType(listType) {
+    // entity_list 模式: 使用 entityListMap
+    if (this.hasEntityList && this.entityListMap[listType]) {
+      return this.entityListMap[listType];
+    }
+    // 标准数组检测模式: 使用标准字段名
+    if (this._detectionMode === 'standard') {
+      return { date: 'day', amount: 'amount', usage: 'usage' };
+    }
+    // 聚合模式或普通 fieldMapping 模式
+    return this.fieldMapping || {};
+  }
+
   // 从实体中提取数据（支持字段映射）
   extractDataFromEntity(entity) {
     const attributes = entity.attributes || {};
     const mapping = this.fieldMapping || {};
 
-    // 【重要】优先判断是否使用data节点（电力数据可能在data节点下）
-    const useDataNode = this.isUsingDataNode(entity);
-
-    // 判断是否有node（有node表示数据在attributes的某个节点下）
-    const hasNode = mapping.node;
-    // 确定实际的数据源：如果使用data节点，则从attributes.data获取，否则从attributes获取
-    const attributesSource = useDataNode ? (attributes.data || attributes) : attributes;
-    const dataNode = hasNode ? attributesSource[mapping.node] : attributesSource;
-
-    // 提取数据（如果无node，则直接从attributesSource取）
-    const rawData = hasNode ? dataNode : attributesSource;
-
-    // 根据字段映射转换数据
     let convertedData;
 
-    // 如果 rawData 本身就是数组（说明我们已经定位到具体节点，如 daylist）
-    if (hasNode && Array.isArray(rawData)) {
-      const nodeKey = mapping.node; // 例如 'daylist'
+    // === entity_list 模式：按配置提取 + 智能聚合 ===
+    if (this.hasEntityList) {
+      this._detectionMode = 'entity_list';
+      this._listSources = {};
 
       convertedData = {
         yearlist: [],
@@ -5391,36 +6108,143 @@ class ElectricityInfoCard extends HTMLElement {
         latest_data: this.getEntityAttribute(entity, mapping.latest_data)
       };
 
-      // 根据 node 类型设置对应的数组
-      if (nodeKey === 'daylist') {
-        convertedData.daylist = rawData;
-      } else if (nodeKey === 'monthlist') {
-        convertedData.monthlist = rawData;
-      } else if (nodeKey === 'yearlist') {
-        convertedData.yearlist = rawData;
+      // 1. 提取各列表原始数据
+      const listTypes = ['daylist', 'monthlist', 'yearlist'];
+      listTypes.forEach(listType => {
+        const listConfig = this.entityListMap[listType];
+        if (listConfig && listConfig.node) {
+          // 先尝试从 entity.attributes 获取，找不到再从 entity 顶层获取
+          let arr = this.getNestedAttribute(entity.attributes, listConfig.node);
+          if (!Array.isArray(arr)) {
+            arr = this.getNestedAttribute(entity, listConfig.node);
+          }
+          if (Array.isArray(arr) && arr.length > 0) {
+            convertedData[listType] = arr;
+            this._listSources[listType] = 'raw';
+          }
+        }
+      });
+
+      // 2. 智能聚合（仅非电力类型）
+      if (this.utilityType !== 'ele') {
+        const hasDay = convertedData.daylist.length > 0 && this._listSources.daylist === 'raw';
+        const hasMonth = convertedData.monthlist.length > 0 && this._listSources.monthlist === 'raw';
+        const hasYear = convertedData.yearlist.length > 0 && this._listSources.yearlist === 'raw';
+        const dayMapping = this.entityListMap.daylist || mapping;
+
+        // 有日无月 → 从日聚合月
+        if (hasDay && !hasMonth) {
+          convertedData.monthlist = this.calculateMonthlyData(convertedData.daylist, dayMapping);
+          this._listSources.monthlist = 'calc_day';
+        }
+
+        // 有月无年 → 优先从月聚合年
+        if (!hasYear) {
+          if (convertedData.monthlist.length > 0) {
+            const monthMapping = this.entityListMap.monthlist || mapping;
+            convertedData.yearlist = this.calculateYearlyFromMonthlist(
+              convertedData.monthlist,
+              monthMapping,
+              this._listSources.monthlist === 'raw'
+            );
+            this._listSources.yearlist = 'calc_month';
+          } else if (hasDay) {
+            convertedData.yearlist = this.calculateYearlyData(convertedData.daylist, dayMapping);
+            this._listSources.yearlist = 'calc_day';
+          }
+        }
       }
-    } else {
-      // 正常情况：从对象中提取各个字段
-      convertedData = {
-        yearlist: this.extractArrayData(rawData, mapping, 'yearlist', 'yearlist'),
-        monthlist: this.extractArrayData(rawData, mapping, 'monthlist', 'monthlist'),
-        daylist: this.extractArrayData(rawData, mapping, 'daylist', 'daylist'),
-        syn: this.getEntityAttribute(entity, mapping.syn),
-        latest_data: this.getEntityAttribute(entity, mapping.latest_data)
-      };
+
+      // 更新可用数据标记（基于聚合后的最终数据）
+      this._hasDayData = convertedData.daylist && convertedData.daylist.length > 0;
+      this._hasMonthData = convertedData.monthlist && convertedData.monthlist.length > 0;
+      this._hasYearData = convertedData.yearlist && convertedData.yearlist.length > 0;
+    }
+    // === 标准数组自动检测模式 ===
+    else if (this._hasStandardDataLists(entity)) {
+      this._detectionMode = 'standard';
+      this._listSources = { daylist: 'raw', monthlist: 'raw', yearlist: 'raw' };
+      convertedData = this._extractStandardDataLists(entity, mapping);
+      // 更新可用数据标记
+      this._hasDayData = convertedData.daylist.length > 0;
+      this._hasMonthData = convertedData.monthlist.length > 0;
+      this._hasYearData = convertedData.yearlist.length > 0;
+    }
+    // === 原有逻辑（保持向后兼容）===
+    else {
+      this._detectionMode = 'aggregation';
+      this._listSources = {};
+
+      // 【重要】优先判断是否使用data节点（电力数据可能在data节点下）
+      const useDataNode = this.isUsingDataNode(entity);
+
+      // 判断是否有node（有node表示数据在attributes的某个节点下）
+      const hasNode = mapping.node;
+      // 确定实际的数据源：如果使用data节点，则从attributes.data获取，否则从attributes获取
+      const attributesSource = useDataNode ? (attributes.data || attributes) : attributes;
+      const dataNode = hasNode ? attributesSource[mapping.node] : attributesSource;
+
+      // 提取数据（如果无node，则直接从attributesSource取）
+      const rawData = hasNode ? dataNode : attributesSource;
+
+      // 根据字段映射转换数据
+      if (hasNode && Array.isArray(rawData)) {
+        const nodeKey = mapping.node;
+        convertedData = {
+          yearlist: [],
+          monthlist: [],
+          daylist: [],
+          syn: this.getEntityAttribute(entity, mapping.syn),
+          latest_data: this.getEntityAttribute(entity, mapping.latest_data)
+        };
+        if (nodeKey === 'daylist') {
+          convertedData.daylist = rawData;
+          this._listSources.daylist = 'raw';
+        } else if (nodeKey === 'monthlist') {
+          convertedData.monthlist = rawData;
+          this._listSources.monthlist = 'raw';
+        } else if (nodeKey === 'yearlist') {
+          convertedData.yearlist = rawData;
+          this._listSources.yearlist = 'raw';
+        }
+      } else {
+        // 正常情况：从对象中提取各个字段
+        convertedData = {
+          yearlist: this.extractArrayData(rawData, mapping, 'yearlist', 'yearlist'),
+          monthlist: this.extractArrayData(rawData, mapping, 'monthlist', 'monthlist'),
+          daylist: this.extractArrayData(rawData, mapping, 'daylist', 'daylist'),
+          syn: this.getEntityAttribute(entity, mapping.syn),
+          latest_data: this.getEntityAttribute(entity, mapping.latest_data)
+        };
+        this._listSources = {
+          daylist: convertedData.daylist.length > 0 ? 'raw' : undefined,
+          monthlist: convertedData.monthlist.length > 0 ? 'raw' : undefined,
+          yearlist: convertedData.yearlist.length > 0 ? 'raw' : undefined
+        };
+      }
+
+      // 聚合：非电力且无 monthlist/yearlist 时从 daylist 计算
+      if (this.utilityType !== 'ele' && convertedData.daylist && convertedData.daylist.length > 0) {
+        if (!convertedData.monthlist || convertedData.monthlist.length === 0) {
+          convertedData.monthlist = this.calculateMonthlyData(convertedData.daylist, mapping);
+          this._listSources.monthlist = 'calc_day';
+        }
+        if (!convertedData.yearlist || convertedData.yearlist.length === 0) {
+          convertedData.yearlist = this.calculateYearlyData(convertedData.daylist, mapping);
+          this._listSources.yearlist = 'calc_day';
+        }
+      }
+
+      // 更新可用数据标记
+      this._hasDayData = convertedData.daylist && convertedData.daylist.length > 0;
+      this._hasMonthData = convertedData.monthlist && convertedData.monthlist.length > 0;
+      this._hasYearData = convertedData.yearlist && convertedData.yearlist.length > 0;
     }
 
-    // 如果 utility_type 不是 'ele' 且没有 monthlist/yearlist，从 daylist 自动计算
-    if (this.utilityType !== 'ele' && convertedData.daylist && convertedData.daylist.length > 0) {
-      // 如果没有 monthlist，从 daylist 计算
-      if (!convertedData.monthlist || convertedData.monthlist.length === 0) {
-        convertedData.monthlist = this.calculateMonthlyData(convertedData.daylist, mapping);
-      }
-
-      // 如果没有 yearlist，从 daylist 计算
-      if (!convertedData.yearlist || convertedData.yearlist.length === 0) {
-        convertedData.yearlist = this.calculateYearlyData(convertedData.daylist, mapping);
-      }
+    // entity_list 模式下，构建修正后的字段映射用于数据日期显示（mapping 此时仍为 this.fieldMapping）
+    let dayDisplayMapping = mapping;
+    if (this.hasEntityList && this.entityListMap.daylist) {
+      dayDisplayMapping = Object.assign({}, mapping, this.entityListMap.daylist);
     }
 
     // 如果配置了syn字段，显示date-info
@@ -5433,7 +6257,7 @@ class ElectricityInfoCard extends HTMLElement {
       // 电力类型：显示同步时间
       // 优先从 entity 的顶层节点的 date 字段获取
       let date = attributes.date;
-      
+
       // 如果获取不到，再从 entity 的 data 节点的 date 字段获取（data.date）
       if (!date) {
         try {
@@ -5442,7 +6266,7 @@ class ElectricityInfoCard extends HTMLElement {
           date = '';
         }
       }
-      
+
       // 显示为"同步：yyyy-mm-dd hh:mm:ss"
       this.dateEl.textContent = `同步: ${date}`;
     } else if (this.utilityType !== 'ele' && this.dateEl) {
@@ -5458,58 +6282,72 @@ class ElectricityInfoCard extends HTMLElement {
       const latestDataValue = this.getEntityAttribute(entity, mapping.latest_data);
       if (latestDataValue !== undefined) {
         this.dataDateEl.textContent = `数据:${latestDataValue}`;
-        // 获取最后一天数据用于显示
+        // 获取有有效用电数据的最近一天数据用于显示
         const daylist = convertedData.daylist || [];
-        const lastDayData = daylist.length > 0 ? this._extractLastDayRawData(daylist[0], mapping) : null;
+        const validDayItem = this._findFirstValidDay(daylist);
+        const dataDateForDisplay = validDayItem ? (validDayItem[mapping.date || 'day'] || latestDataValue) : latestDataValue;
+        const lastDayData = validDayItem ? this._extractLastDayRawData(validDayItem, dayDisplayMapping) : null;
         // 计算并显示相对日期
-        this.updateRelativeDate(latestDataValue, lastDayData);
+        this.updateRelativeDate(dataDateForDisplay, lastDayData);
       }
     } else if (this.utilityType === 'ele' && this.dataDateEl) {
       // 电力类型沿用现有逻辑 - 直接设置数据日期
       const daylist = convertedData.daylist || [];
-      const dataDate = daylist && daylist.length > 0 && daylist[0][mapping.date || 'day'] ? daylist[0][mapping.date || 'day'] : '--';
+      const validDayItem = this._findFirstValidDay(daylist);
+      const dataDate = validDayItem && validDayItem[mapping.date || 'day'] ? validDayItem[mapping.date || 'day'] : '--';
       this.dataDateEl.textContent = `数据: ${dataDate}`;
       // 获取最后一天数据用于显示
-      const lastDayData = daylist.length > 0 ? this._extractLastDayRawData(daylist[0], mapping) : null;
+      const lastDayData = validDayItem ? this._extractLastDayRawData(validDayItem, dayDisplayMapping) : null;
       // 计算并显示相对日期
       this.updateRelativeDate(dataDate, lastDayData);
     } else if (this.utilityType !== 'ele' && this.dataDateEl) {
-      // 非电力类型：显示为"数据: yyyy-mm-dd"，从entity的daylist字段中的最新day处获取
+      // 非电力类型：显示为"数据: yyyy-mm-dd"，从entity的daylist字段中的最新有效day处获取
       const daylist = convertedData.daylist || [];
-      if (daylist && daylist.length > 0) {
-        // 获取最新的day数据（第一条是最新的）
-        const latestDayData = daylist[0];
-        const dateField = mapping.date || 'day';
-        const dataDate = latestDayData[dateField] || '--';
+      const validDayItem = this._findFirstValidDay(daylist);
+      if (validDayItem) {
+        const dateField = dayDisplayMapping.date || 'day';
+        const dataDate = validDayItem[dateField] || '--';
         this.dataDateEl.textContent = `数据: ${dataDate}`;
         // 计算并显示相对日期
-        const lastDayData = this._extractLastDayRawData(latestDayData, mapping);
+        const lastDayData = this._extractLastDayRawData(validDayItem, dayDisplayMapping);
         this.updateRelativeDate(dataDate, lastDayData);
       } else {
-        this.dataDateEl.textContent = '数据: --';
-        // 清空相对日期
-        if (this.relativeDateEl) {
-          this.relativeDateEl.textContent = '';
-          this.relativeDateEl.className = 'relative-date-info';
+        // 无日数据时，尝试从月数据获取最近月份显示
+        if (this._hasMonthData && convertedData.monthlist && convertedData.monthlist.length > 0) {
+          const lastMonth = convertedData.monthlist[convertedData.monthlist.length - 1];
+          const monthMapping = this._getListFieldsForType('monthlist');
+          const monthDateField = monthMapping.date || 'month';
+          const monthKey = lastMonth[monthDateField] || '--';
+          this.dataDateEl.textContent = `数据: ${monthKey}`;
+          this._updateRelativeDateFromMonth(convertedData.monthlist);
+        } else {
+          this.dataDateEl.textContent = '数据: --';
+          if (this.relativeDateEl) {
+            this.relativeDateEl.textContent = '';
+            this.relativeDateEl.className = 'relative-date-info';
+          }
         }
       }
     }
 
     return convertedData;
   }
-  
+
   // 提取数组数据
   extractArrayData(rawData, mapping, defaultKey, targetKey) {
     // 如果 rawData 本身就是数组，直接返回（例如燃气数据：daylist 节点直接是数组）
     if (Array.isArray(rawData)) {
       return rawData;
     }
-    
+
+    // 安全处理：rawData 可能为 undefined（无 attributes 实体场景）
+    if (!rawData || typeof rawData !== 'object') return [];
+
     const value = rawData[mapping[targetKey] || defaultKey];
     if (Array.isArray(value)) {
       return value;
     }
-    
+
     // 如果是字符串，尝试解析为JSON
     if (typeof value === 'string') {
       try {
@@ -5518,35 +6356,35 @@ class ElectricityInfoCard extends HTMLElement {
         return [];
       }
     }
-    
+
     return [];
   }
-  
+
   // 从日数据计算月合计数据
   calculateMonthlyData(daylist, mapping) {
     if (!daylist || !Array.isArray(daylist) || daylist.length === 0) {
       return [];
     }
-    
+
     const monthlyMap = new Map();
     const dateField = mapping.date || 'day';
     const usageField = mapping.usage || 'f_gas';
     const amountField = mapping.amount || 'e_gas';
-    
+
     daylist.forEach(item => {
       const dateStr = item[dateField];
       if (!dateStr) return;
-      
+
       // 处理日期字符串，移除可能的双引号
       const cleanDateStr = dateStr.replace(/"/g, '');
       const date = new Date(cleanDateStr);
       if (isNaN(date.getTime())) return;
-      
+
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      
+
       const usage = this.safeParseFloat(item[usageField]);
       const amount = this.safeParseFloat(item[amountField]);
-      
+
       if (!monthlyMap.has(monthKey)) {
         monthlyMap.set(monthKey, {
           month: monthKey,
@@ -5555,48 +6393,48 @@ class ElectricityInfoCard extends HTMLElement {
           unit: this.getUnitByUtilityType(this.utilityType)
         });
       }
-      
+
       const monthData = monthlyMap.get(monthKey);
       monthData.monthEleNum += usage;
       monthData.monthEleCost += amount;
     });
-    
+
     // 转换为数组并保留两位小数
     const result = Array.from(monthlyMap.values()).map(item => ({
       ...item,
       monthEleNum: parseFloat(item.monthEleNum.toFixed(2)),
       monthEleCost: parseFloat(item.monthEleCost.toFixed(2))
     }));
-    
+
     // 按月份排序（降序）
     return result.sort((a, b) => b.month.localeCompare(a.month));
   }
-  
+
   // 从日数据计算年合计数据
   calculateYearlyData(daylist, mapping) {
     if (!daylist || !Array.isArray(daylist) || daylist.length === 0) {
       return [];
     }
-    
+
     const yearlyMap = new Map();
     const dateField = mapping.date || 'day';
     const usageField = mapping.usage || 'f_gas';
     const amountField = mapping.amount || 'e_gas';
-    
+
     daylist.forEach(item => {
       const dateStr = item[dateField];
       if (!dateStr) return;
-      
+
       // 处理日期字符串，移除可能的双引号
       const cleanDateStr = dateStr.replace(/"/g, '');
       const date = new Date(cleanDateStr);
       if (isNaN(date.getTime())) return;
-      
+
       const yearKey = date.getFullYear().toString();
-      
+
       const usage = this.safeParseFloat(item[usageField]);
       const amount = this.safeParseFloat(item[amountField]);
-      
+
       if (!yearlyMap.has(yearKey)) {
         yearlyMap.set(yearKey, {
           year: yearKey,
@@ -5605,23 +6443,74 @@ class ElectricityInfoCard extends HTMLElement {
           unit: this.getUnitByUtilityType(this.utilityType)
         });
       }
-      
+
       const yearData = yearlyMap.get(yearKey);
       yearData.yearEleNum += usage;
       yearData.yearEleCost += amount;
     });
-    
+
     // 转换为数组并保留两位小数
     const result = Array.from(yearlyMap.values()).map(item => ({
       ...item,
       yearEleNum: parseFloat(item.yearEleNum.toFixed(2)),
       yearEleCost: parseFloat(item.yearEleCost.toFixed(2))
     }));
-    
+
     // 按年份排序（降序）
     return result.sort((a, b) => b.year.localeCompare(a.year));
   }
-  
+
+  // 从月数据计算年合计数据（支持原始映射字段和硬编码字段两种格式）
+  calculateYearlyFromMonthlist(monthlist, mapping, isRawMapping) {
+    if (!monthlist || !Array.isArray(monthlist) || monthlist.length === 0) return [];
+
+    const yearlyMap = new Map();
+
+    monthlist.forEach(item => {
+      let yearKey, usage, amount;
+
+      if (isRawMapping) {
+        // 原始字段：使用 mapping.date/amount/usage 读取
+        const dateField = mapping.date || 'month';
+        const usageField = mapping.usage;
+        const amountField = mapping.amount;
+        const rawDate = item[dateField] || '';
+        const yearMatch = String(rawDate).match(/(\d{4})/);
+        yearKey = yearMatch ? yearMatch[1] : '';
+        if (!yearKey) return;
+        usage = this.safeParseFloat(usageField ? item[usageField] : 0);
+        amount = this.safeParseFloat(amountField ? item[amountField] : 0);
+      } else {
+        // 聚合字段：使用硬编码 month/monthEleNum/monthEleCost
+        yearKey = item.month ? item.month.substring(0, 4) : '';
+        if (!yearKey) return;
+        usage = this.safeParseFloat(item.monthEleNum);
+        amount = this.safeParseFloat(item.monthEleCost);
+      }
+
+      if (!yearlyMap.has(yearKey)) {
+        yearlyMap.set(yearKey, {
+          year: yearKey,
+          yearEleNum: 0,
+          yearEleCost: 0,
+          unit: this.getUnitByUtilityType(this.utilityType)
+        });
+      }
+
+      const yearData = yearlyMap.get(yearKey);
+      yearData.yearEleNum += usage;
+      yearData.yearEleCost += amount;
+    });
+
+    const result = Array.from(yearlyMap.values()).map(item => ({
+      ...item,
+      yearEleNum: parseFloat(item.yearEleNum.toFixed(2)),
+      yearEleCost: parseFloat(item.yearEleCost.toFixed(2))
+    }));
+
+    return result.sort((a, b) => b.year.localeCompare(a.year));
+  }
+
   // 加载并合并数据（包括JSON文件）
   async loadAndMergeData(entityData) {
     // 转换实体数据为标准格式
@@ -5633,21 +6522,37 @@ class ElectricityInfoCard extends HTMLElement {
       payRecords: [],
       unit: this.getUnitByUtilityType(this.utilityType)
     };
-    
+
     // 保存数据到实例变量
     this.daylistData = entityData.daylist || [];
     this.monthlistData = entityData.monthlist || [];
     this.yearlistData = entityData.yearlist || [];
-    
+
     // 标记历史数据已加载
     this.historicalDataLoaded = true;
-    
+
     // 更新卡片显示
     this.updateCard();
   }
-  
+
   // 处理实体数据（从缓存）
   processEntityData(entityData) {
+    // 恢复 _listSources（缓存加载时不经过 extractDataFromEntity）
+    this._listSources = {};
+    ['daylist', 'monthlist', 'yearlist'].forEach(listType => {
+      const arr = entityData[listType];
+      if (Array.isArray(arr) && arr.length > 0) {
+        // 有 entity_list 配置且该列表有映射 → 原始数据
+        if (this.hasEntityList && this.entityListMap[listType]) {
+          this._listSources[listType] = 'raw';
+        } else {
+          // 无 entity_list 或该列表无映射 → 标记为 raw（由 convert 函数判断字段）
+          // 但如果是聚合数据（有 yearEleNum 等字段），仍标记为 raw，convert 会通过检查字段存在性决定
+          this._listSources[listType] = 'raw';
+        }
+      }
+    });
+
     // 转换数据（与loadAndMergeData类似，但不加载历史数据）
     const user = this.getCurrentCacheKey();
     this.standardData = {
@@ -5657,15 +6562,15 @@ class ElectricityInfoCard extends HTMLElement {
       payRecords: [],
       unit: this.getUnitByUtilityType(this.utilityType)
     };
-    
+
     // 保存数据到实例变量
     this.daylistData = entityData.daylist || [];
     this.monthlistData = entityData.monthlist || [];
     this.yearlistData = entityData.yearlist || [];
-    
+
     // 标记数据已加载（重要：确保updateCard可以正常显示数据）
     this.historicalDataLoaded = true;
-    
+
     // 更新卡片显示
     this.updateCard();
   }
@@ -5674,20 +6579,20 @@ class ElectricityInfoCard extends HTMLElement {
   updateTimeDistributionVisibility(config) {
     // 默认显示分时用电
     const showTimeDistribution = config.show_time_distribution !== undefined ? config.show_time_distribution : true;
-    
+
     // 获取所有分时用电相关元素
     const timeDistributionBars = [
       this.currentMonthDistributionEl,
       this.lastMonthDistributionEl,
       this.yearDistributionEl
     ];
-    
+
     const timeLabels = [
       this.currentMonthLabelsEl,
       this.lastMonthLabelsEl,
       this.yearLabelsEl
     ];
-    
+
     if (showTimeDistribution) {
       // 显示分时用电条和标签
       timeDistributionBars.forEach(el => el.classList.remove('hidden'));
@@ -5702,81 +6607,144 @@ class ElectricityInfoCard extends HTMLElement {
   // 元素连接到DOM时的回调
   connectedCallback() {
     this._isCardVisible = true;
-    
+
     // 设置IntersectionObserver来检测卡片可见性
     this._setupVisibilityObserver();
-    
+
+    // 统一监听卡片尺寸变化，自动 resize 当前可见的图表（替代分散的 setTimeout/rAF resize）
+    if (typeof ResizeObserver !== 'undefined' && !this._cardResizeObserver) {
+      this._cardResizeObserver = new ResizeObserver(() => {
+        // 仅当卡片可见时才 resize，避免后台图表频繁重绘
+        if (!this._isCardVisible) return;
+        this._resizeVisibleCharts();
+      });
+      this._cardResizeObserver.observe(this);
+    }
+
     // 如果配置已设置，初始化余额显示
     if (this._config) {
       this.updateAllUsersBalance();
     }
-    
+
     // 如果配置已设置且数据未加载，加载数据
     if (this._config && this.currentConfig && !this.historicalDataLoaded) {
       this.loadDataForCurrentUser();
     }
-    
+
     // 启动余额刷新定时器（10秒）
     this.startBalanceUpdateTimer();
-
-    // 分时电价会在时段边界切换，不依赖下一次电费数据同步。
-    this._priceUpdateTimer = setInterval(() => {
-      if (this._isCardVisible && this.standardData) {
-        this.updateTierIndicator(this.currentPeriodUsage || 0);
-      }
-    }, 60000);
-
   }
-  
+
+  // 统一 resize 当前可见的所有图表实例
+  _resizeVisibleCharts() {
+    const charts = [
+      this.yearChart,
+      this.yearHeatmapChart,
+      this.monthChart,
+      this.dayViewChart,
+      this.dayChart,
+      this.paySourceChart,
+      this.sankeyChart,
+      this.barRacingChart
+    ];
+    for (const chart of charts) {
+      if (chart && !chart.isDisposed && typeof chart.resize === 'function') {
+        try {
+          chart.resize();
+        } catch (e) {
+          // 图表可能已被销毁，忽略
+        }
+      }
+    }
+  }
+
   // 设置可见性观察器
   _setupVisibilityObserver() {
     if (!window.IntersectionObserver) return;
-    
+
     if (this._visibilityObserver) {
       this._visibilityObserver.disconnect();
     }
-    
+
     this._visibilityObserver = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         this._isCardVisible = entry.isIntersecting;
-        
+
         // 如果卡片变为可见且需要加载数据，则加载
         if (this._isCardVisible && this._config && this.currentConfig && !this.historicalDataLoaded) {
           this.loadDataForCurrentUser();
         }
       });
     });
-    
+
     this._visibilityObserver.observe(this);
   }
 
   // 元素从DOM中移除时的回调
   disconnectedCallback() {
     this._isCardVisible = false;
-    
+
     // 清理所有定时器和监听器
     this.stopThemeTimer();
     this.stopPhoneThemeListener();
-    
+
+    // 移除全局 document 点击监听器（tooltip 关闭逻辑）
+    if (this._documentClickHandler) {
+      document.removeEventListener('click', this._documentClickHandler);
+      this._documentClickHandler = null;
+    }
+
+    // 清理注入到 document.head 的全局模态框样式（引用计数，仅当无其他实例使用时移除）
+    if (this._modalStyleRefCount) {
+      const remaining = (window.__electricityCardModalStyleRef || 0) - 1;
+      window.__electricityCardModalStyleRef = Math.max(0, remaining);
+      if (remaining <= 0) {
+        const globalModalStyle = document.getElementById('electricity-card-modal-styles');
+        if (globalModalStyle) {
+          globalModalStyle.remove();
+        }
+      }
+      this._modalStyleRefCount = 0;
+    }
+
+    // 清理注入到 document.head 的全局 tooltip 样式（引用计数）
+    if (this._tooltipStyleRefCount) {
+      const remainingTooltip = (window.__electricityCardTooltipStyleRef || 0) - 1;
+      window.__electricityCardTooltipStyleRef = Math.max(0, remainingTooltip);
+      if (remainingTooltip <= 0) {
+        const globalTooltipStyle = document.getElementById('electricity-card-tooltip-styles');
+        if (globalTooltipStyle) {
+          globalTooltipStyle.remove();
+        }
+      }
+      this._tooltipStyleRefCount = 0;
+    }
+
     // 停止余额刷新定时器
     this.stopBalanceUpdateTimer();
-    if (this._priceUpdateTimer) {
-      clearInterval(this._priceUpdateTimer);
-      this._priceUpdateTimer = null;
-    }
-    
+
     // 销毁缴费方式饼图实例
     if (this.paySourceChart) {
       this.paySourceChart.dispose();
       this.paySourceChart = null;
     }
-    
+    if (this._pieChartResizeObserver) {
+      this._pieChartResizeObserver.disconnect();
+      this._pieChartResizeObserver = null;
+    }
+
     // 断开可见性观察器
     if (this._visibilityObserver) {
       this._visibilityObserver.disconnect();
       this._visibilityObserver = null;
     }
-    
+
+    // 断开统一图表尺寸观察器
+    if (this._cardResizeObserver) {
+      this._cardResizeObserver.disconnect();
+      this._cardResizeObserver = null;
+    }
+
     // 清理移到document.body的模态框（将它们移回shadow DOM以便正确清理）
     if (this.dayModalEl && this.dayModalEl.parentElement === document.body) {
       this.dayModalEl.style.display = 'none';
@@ -5785,7 +6753,7 @@ class ElectricityInfoCard extends HTMLElement {
         this.shadowRoot.appendChild(this.dayModalEl);
       }
     }
-    
+
     if (this.payHistoryModalEl && this.payHistoryModalEl.parentElement === document.body) {
       this.payHistoryModalEl.style.display = 'none';
       // 移回shadow DOM以便组件销毁时自动清理
@@ -5793,7 +6761,12 @@ class ElectricityInfoCard extends HTMLElement {
         this.shadowRoot.appendChild(this.payHistoryModalEl);
       }
     }
-    
+
+    this._stopDayCurrentTimeTimer();
+
+    // 清理正在运行事件的定时器
+    this.clearOngoingEventTimers();
+
     // 清理移到document.body的tooltip
     if (this.eventTooltip && this.eventTooltip.parentElement === document.body) {
       this.eventTooltip.style.display = 'none';
@@ -5802,18 +6775,18 @@ class ElectricityInfoCard extends HTMLElement {
       }
     }
   }
-  
+
   // 启动余额刷新定时器（10秒）
   startBalanceUpdateTimer() {
     if (this._balanceUpdateInterval) return;
-    
+
     this._balanceUpdateInterval = setInterval(() => {
       if (this._isCardVisible && this._hass && this.entityId) {
         this.updateBalanceDisplay();
       }
     }, 10000); // 10秒
   }
-  
+
   // 停止余额刷新定时器
   stopBalanceUpdateTimer() {
     if (this._balanceUpdateInterval) {
@@ -5821,7 +6794,7 @@ class ElectricityInfoCard extends HTMLElement {
       this._balanceUpdateInterval = null;
     }
   }
-  
+
   // 更新余额显示（当前用户）
   updateBalanceDisplay() {
     if (!this._hass || !this.entityId || !this.balanceEl) return;
@@ -5843,22 +6816,22 @@ class ElectricityInfoCard extends HTMLElement {
     // 同时更新所有用户的余额（包括当前用户）
     this.updateAllUsersBalance();
   }
-  
+
   // 更新所有用户的余额显示
   updateAllUsersBalance() {
     if (!this._hass || !this.showMultiUserBar || !this.userBlocks) return;
-    
+
     const userKeys = Object.keys(this.multiClassConfig);
-    
+
     userKeys.forEach((key, index) => {
       const config = this.multiClassConfig[key];
       const entityId = config.entity ? config.entity.split(',')[0].trim() : '';
-      
+
       if (!entityId) return;
-      
+
       const entity = this._hass.states[entityId];
       const userBlock = this.userBlocks[index];
-      
+
       if (userBlock) {
         const balanceDiv = userBlock.querySelector('.user-block-balance');
         if (balanceDiv) {
@@ -5902,40 +6875,44 @@ class ElectricityInfoCard extends HTMLElement {
     // 重置 price-display
     const priceDisplays = this.shadowRoot.querySelectorAll('.price-display');
     priceDisplays.forEach(el => el.style.display = '');
-    
+
     // 重置 electricity-price-display
     const electricityPriceDisplay = this.shadowRoot.querySelector('.electricity-price-display');
     if (electricityPriceDisplay) electricityPriceDisplay.style.display = '';
-    
+
     // 重置 remaining-days-display
     const remainingDaysDisplay = this.shadowRoot.querySelector('.remaining-days-display');
     if (remainingDaysDisplay) remainingDaysDisplay.style.display = '';
-    
+
+    // 重置 notice-display
+    const noticeDisplay = this.shadowRoot.querySelector('.notice-display');
+    if (noticeDisplay) noticeDisplay.style.display = '';
+
     // 重置 tier-indicator
     const tierIndicator = this.shadowRoot.querySelector('.tier-indicator');
     const tierIndicatorContainer = this.shadowRoot.querySelector('.tier-indicator-container');
     if (tierIndicator) tierIndicator.style.display = '';
     if (tierIndicatorContainer) tierIndicatorContainer.style.display = '';
-    
+
     // 重置 time-distribution-bar
     const timeDistributionBars = this.shadowRoot.querySelectorAll('.time-distribution-bar');
     timeDistributionBars.forEach(el => el.style.display = '');
     // 重置对应的标签（移除hidden类）
     const timeDistributionLabels = this.shadowRoot.querySelectorAll('.time-distribution-labels');
     timeDistributionLabels.forEach(el => el.classList.remove('hidden'));
-    
+
     // 重置 data-container
     const dataContainer = this.shadowRoot.querySelector('.data-container');
     if (dataContainer) dataContainer.style.display = '';
-    
+
     // 重置 pie-chart-section
     const pieChartSections = this.shadowRoot.querySelectorAll('.pie-chart-section');
     pieChartSections.forEach(el => el.style.display = '');
-    
+
     // 重置 timeline-container
     const timelineContainers = this.shadowRoot.querySelectorAll('#timeline-container');
     timelineContainers.forEach(el => el.style.display = '');
-    
+
     // 重置 calendar-stats
     const calendarStatsList = [
       this.shadowRoot.getElementById('cal-month-usage'),
@@ -5946,7 +6923,7 @@ class ElectricityInfoCard extends HTMLElement {
     calendarStatsList.forEach(el => {
       if (el && el.parentElement) el.parentElement.style.display = '';
     });
-    
+
     // 重置统计信息的标签
     const calendarStatsSection = this.shadowRoot.querySelector('.calendar-stats');
     if (calendarStatsSection) {
@@ -5957,9 +6934,9 @@ class ElectricityInfoCard extends HTMLElement {
   // 应用隐藏配置
   applyHiddenConfig() {
     // 优先使用当前用户的hide配置，如果没有则使用顶层配置
-    const hideConfig = this.currentConfig && this.currentConfig.hide ? this.currentConfig.hide : 
+    const hideConfig = this.currentConfig && this.currentConfig.hide ? this.currentConfig.hide :
                        (this._config && this._config.hide ? this._config.hide : '');
-    
+
     if (!hideConfig) return;
 
     // 先重置所有隐藏元素的显示状态（重要：切换用户时需要重置）
@@ -5967,25 +6944,31 @@ class ElectricityInfoCard extends HTMLElement {
 
     // 解析隐藏配置（支持多个值，用逗号分隔）
     const hiddenItems = hideConfig.split(',').map(item => item.trim()).filter(item => item);
-    
+
     // 隐藏price-display（所有价格显示区域）
     if (hiddenItems.includes('price-display')) {
       const priceDisplays = this.shadowRoot.querySelectorAll('.price-display');
       priceDisplays.forEach(el => el.style.display = 'none');
     }
-    
+
     // 隐藏electricity-price-display（电价显示区域）
     if (hiddenItems.includes('electricity-price-display')) {
       const electricityPriceDisplay = this.shadowRoot.querySelector('.electricity-price-display');
       if (electricityPriceDisplay) electricityPriceDisplay.style.display = 'none';
     }
-    
+
     // 隐藏remaining-days-display（剩余天数显示区域）
     if (hiddenItems.includes('remaining-days-display')) {
       const remainingDaysDisplay = this.shadowRoot.querySelector('.remaining-days-display');
       if (remainingDaysDisplay) remainingDaysDisplay.style.display = 'none';
     }
-    
+
+    // 隐藏notice-display（电网公告信息区域）
+    if (hiddenItems.includes('notice-display')) {
+      const noticeDisplay = this.shadowRoot.querySelector('.notice-display');
+      if (noticeDisplay) noticeDisplay.style.display = 'none';
+    }
+
     // 隐藏tier-indicator（用电阶梯指示器）
     if (hiddenItems.includes('tier-indicator')) {
       const tierIndicator = this.shadowRoot.querySelector('.tier-indicator');
@@ -5993,7 +6976,7 @@ class ElectricityInfoCard extends HTMLElement {
       if (tierIndicator) tierIndicator.style.display = 'none';
       if (tierIndicatorContainer) tierIndicatorContainer.style.display = 'none';
     }
-    
+
     // 隐藏time-distribution-bar（分时用电条）
     if (hiddenItems.includes('time-distribution-bar')) {
       const timeDistributionBars = this.shadowRoot.querySelectorAll('.time-distribution-bar');
@@ -6002,27 +6985,27 @@ class ElectricityInfoCard extends HTMLElement {
       const timeDistributionLabels = this.shadowRoot.querySelectorAll('.time-distribution-labels');
       timeDistributionLabels.forEach(el => el.classList.add('hidden'));
     }
-    
+
     // 隐藏data-container（统计数据容器）
     if (hiddenItems.includes('data-container')) {
       const dataContainer = this.shadowRoot.querySelector('.data-container');
       if (dataContainer) dataContainer.style.display = 'none';
     }
-    
+
     // 注意：user-info 和 multi-user-info 的显示现在由顶层的 show_name 控制，不再通过 hide 配置
-    
+
     // 隐藏pie-chart-section（饼图区域）
     if (hiddenItems.includes('pie-chart-section')) {
       const pieChartSections = this.shadowRoot.querySelectorAll('.pie-chart-section');
       pieChartSections.forEach(el => el.style.display = 'none');
     }
-    
+
     // 隐藏timeline-container（设备时间线容器）
     if (hiddenItems.includes('timeline-container')) {
       const timelineContainers = this.shadowRoot.querySelectorAll('#timeline-container');
       timelineContainers.forEach(el => el.style.display = 'none');
     }
-    
+
     // 隐藏calendar-stats（日历统计信息）
     if (hiddenItems.includes('calendar-stats')) {
       const calendarStatsList = [
@@ -6034,7 +7017,7 @@ class ElectricityInfoCard extends HTMLElement {
       calendarStatsList.forEach(el => {
         if (el) el.parentElement.style.display = 'none';
       });
-      
+
       // 也隐藏统计信息的标签
       const calendarStatsSection = this.shadowRoot.querySelector('.calendar-stats');
       if (calendarStatsSection) {
@@ -6076,7 +7059,7 @@ class ElectricityInfoCard extends HTMLElement {
   }
 
   // ==================== 日历视图相关方法 ====================
-  
+
   // 初始化日历事件监听
   initCalendarEvents() {
     // 为data-container中的统计卡片添加点击事件
@@ -6088,7 +7071,7 @@ class ElectricityInfoCard extends HTMLElement {
         this.showCalendarView(card.dataset.type);
       });
       card.style.cursor = 'pointer';
-      
+
       // 添加touch事件处理，防止移动端双击缩放
       let lastTouchEnd = 0;
       card.addEventListener('touchend', (e) => {
@@ -6099,7 +7082,7 @@ class ElectricityInfoCard extends HTMLElement {
         lastTouchEnd = now;
       }, false);
     });
-    
+
     // 日详情模态框关闭按钮
     this.dayModalCloseEl.addEventListener('click', () => this.hideDayModal());
     this.dayModalEl.addEventListener('click', (e) => {
@@ -6120,18 +7103,19 @@ class ElectricityInfoCard extends HTMLElement {
     this.shadowRoot.querySelector('.balance-amount').addEventListener('click', () => this.showPayHistoryModal());
     this.shadowRoot.querySelector('.balance-amount').style.cursor = 'pointer';
 
-    // 点击tooltip外部时隐藏tooltip
-    document.addEventListener('click', (e) => {
+    // 点击tooltip外部时隐藏tooltip（保存handler引用以便disconnectedCallback中移除，避免全局监听器泄漏）
+    this._documentClickHandler = (e) => {
       if (!this.eventTooltip) return;
       const isClickInsideTooltip = e.composedPath().some(el => el === this.eventTooltip);
       if (!isClickInsideTooltip) {
         this.hideTooltip();
       }
-    });
-    
+    };
+    document.addEventListener('click', this._documentClickHandler);
+
     // 返回按钮
     this.backToMainBtnEl.addEventListener('click', () => this.hideCalendarView());
-    
+
     // 本月按钮
     this.currentMonthBtnEl.addEventListener('click', () => {
       const now = new Date();
@@ -6141,18 +7125,18 @@ class ElectricityInfoCard extends HTMLElement {
       this.calMonthSelectEl.value = this.calCurrentMonth;
       this.updateCalendarView();
     });
-    
+
     // 年份和月份选择
     this.calYearSelectEl.addEventListener('change', () => {
       this.calCurrentYear = parseInt(this.calYearSelectEl.value);
       this.updateCalendarView();
     });
-    
+
     this.calMonthSelectEl.addEventListener('change', () => {
       this.calCurrentMonth = parseInt(this.calMonthSelectEl.value);
       this.updateCalendarView();
     });
-    
+
     // 选项卡切换
     const tabBtns = this.shadowRoot.querySelectorAll('.cal-tab-btn');
     tabBtns.forEach(btn => {
@@ -6163,10 +7147,10 @@ class ElectricityInfoCard extends HTMLElement {
         this.updateViewByType(btn.dataset.view);
       });
     });
-    
+
     // 初始化年份选择器
     this.initYearSelector();
-    
+
     // 设置初始年月
     const now = new Date();
     this.calCurrentYear = now.getFullYear();
@@ -6174,7 +7158,7 @@ class ElectricityInfoCard extends HTMLElement {
     this.calYearSelectEl.value = this.calCurrentYear;
     this.calMonthSelectEl.value = this.calCurrentMonth;
   }
-  
+
   // 初始化年份选择器
   initYearSelector() {
     if (!this.daylistData || this.daylistData.length === 0) {
@@ -6190,7 +7174,7 @@ class ElectricityInfoCard extends HTMLElement {
         }
       });
       this.availableYears = Array.from(years).sort((a, b) => b - a);
-      
+
       // 确保当前年份也在列表中
       const currentYear = new Date().getFullYear();
       if (!this.availableYears.includes(currentYear)) {
@@ -6198,7 +7182,7 @@ class ElectricityInfoCard extends HTMLElement {
         this.availableYears.sort((a, b) => b - a);
       }
     }
-    
+
     // 填充年份选择器
     this.calYearSelectEl.innerHTML = '';
     this.availableYears.forEach(year => {
@@ -6208,13 +7192,13 @@ class ElectricityInfoCard extends HTMLElement {
       this.calYearSelectEl.appendChild(option);
     });
   }
-  
+
   // 显示日历视图
   showCalendarView(type) {
     this.isCalendarView = true;
     this.dataContainerEl.style.display = 'none';
     this.calendarViewEl.style.display = 'block';
-    
+
     // 根据点击的类型设置年月
     const now = new Date();
     if (type === 'current-month') {
@@ -6228,16 +7212,30 @@ class ElectricityInfoCard extends HTMLElement {
       this.calCurrentYear = now.getFullYear();
       this.calCurrentMonth = 1;
     }
-    
+
     // 更新年份选择器（以防数据有更新）
     this.initYearSelector();
-    
+
     // 在initYearSelector之后设置选中的年份和月份，避免被覆盖
     this.calYearSelectEl.value = this.calCurrentYear;
     this.calMonthSelectEl.value = this.calCurrentMonth;
-    
+
     // 使用 requestAnimationFrame 确保 calendarViewEl 完全显示后再切换视图
     requestAnimationFrame(() => {
+      // 没有日数据时，本月/上月跳转到月视图（更合理）
+      if ((type === 'current-month' || type === 'last-month') && !this._hasDayData) {
+        this.currentView = 'month';
+        const tabBtns = this.shadowRoot.querySelectorAll('.cal-tab-btn');
+        tabBtns.forEach(btn => {
+          btn.classList.remove('active');
+          if (btn.dataset.view === 'month') {
+            btn.classList.add('active');
+          }
+        });
+        this.updateViewByType('month');
+        return;
+      }
+
       // 根据类型显示不同的视图
       if (type === 'year') {
         // 点击年度统计时，显示年度图表
@@ -6251,7 +7249,7 @@ class ElectricityInfoCard extends HTMLElement {
           }
         });
         this.updateViewByType('year');
-        
+
         // 直接点击"年"按钮，避免有时不渲染的问题
         setTimeout(() => {
           const yearTab = this.shadowRoot.querySelector('.cal-tab-btn[data-view="year"]');
@@ -6280,7 +7278,7 @@ class ElectricityInfoCard extends HTMLElement {
           }
         });
         this.updateCalendarView();
-        
+
         // 直接点击"日历"按钮，避免有时不渲染的问题
         setTimeout(() => {
           const calendarTab = this.shadowRoot.querySelector('.cal-tab-btn[data-view="calendar"]');
@@ -6291,7 +7289,7 @@ class ElectricityInfoCard extends HTMLElement {
       }
     });
   }
-  
+
   // 隐藏日历视图
   hideCalendarView() {
     this.isCalendarView = false;
@@ -6302,7 +7300,7 @@ class ElectricityInfoCard extends HTMLElement {
     this.destroyMonthCharts();
     this.destroyDayCharts();
   }
-  
+
   // 根据视图类型更新显示
   updateViewByType(viewType) {
     // 隐藏所有视图内容
@@ -6313,6 +7311,14 @@ class ElectricityInfoCard extends HTMLElement {
     this.calendarControlsEl.style.display = 'none';
 
     if (viewType === 'year') {
+      // 无数据时显示空状态提示
+      if (!this._hasYearData && !this._hasMonthData) {
+        this.yearContentEl.style.display = 'block';
+        if (this.yearComboChartEl) {
+          this.yearComboChartEl.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-color);">暂无年度数据</div>';
+        }
+        return;
+      }
       // 显示年视图
       this.yearContentEl.style.display = 'block';
       // 检查历史数据是否已加载
@@ -6414,7 +7420,7 @@ class ElectricityInfoCard extends HTMLElement {
       this.updateCalendarView();
     }
   }
-  
+
   // 渲染年视图
   async renderYearView() {
     // 从统一数据接口获取数据
@@ -6464,6 +7470,20 @@ class ElectricityInfoCard extends HTMLElement {
   }
 
   // 生成年份选择器按钮
+  // 根据可用数据类型控制视图 tab 可见性
+  _applyViewVisibility() {
+    const dayTab = this.shadowRoot?.querySelector('.cal-tab-btn[data-view="day"]');
+    const monthTab = this.shadowRoot?.querySelector('.cal-tab-btn[data-view="month"]');
+    const yearTab = this.shadowRoot?.querySelector('.cal-tab-btn[data-view="year"]');
+    const calendarTab = this.shadowRoot?.querySelector('.cal-tab-btn[data-view="calendar"]');
+
+    // 日历也依赖日数据
+    if (calendarTab) calendarTab.style.display = this._hasDayData ? '' : 'none';
+    if (dayTab) dayTab.style.display = this._hasDayData ? '' : 'none';
+    if (monthTab) monthTab.style.display = this._hasMonthData ? '' : 'none';
+    if (yearTab) yearTab.style.display = (this._hasYearData || this._hasMonthData) ? '' : 'none';
+  }
+
   generateYearFilterButtons(years) {
     // 获取两个容器
     const mainFilterEl = this.yearFilterMainEl;
@@ -6506,33 +7526,37 @@ class ElectricityInfoCard extends HTMLElement {
     };
     mainFilterEl.appendChild(allBtn);
 
-    // 添加"热力图"按钮到主容器
-    const allDaysBtn = document.createElement('button');
-    allDaysBtn.className = 'year-tag';
-    allDaysBtn.textContent = '热力图';
-    if (this.selectedYearView === '热力图') {
-      allDaysBtn.classList.add('active');
+    // 添加"热力图"按钮到主容器（需要日数据）
+    if (this._hasDayData) {
+      const allDaysBtn = document.createElement('button');
+      allDaysBtn.className = 'year-tag';
+      allDaysBtn.textContent = '热力图';
+      if (this.selectedYearView === '热力图') {
+        allDaysBtn.classList.add('active');
+      }
+      allDaysBtn.onclick = () => {
+        this.selectedYearView = '热力图';
+        this.updateYearFilterButtons();
+        this.renderYearHeatmapChart();
+      };
+      mainFilterEl.appendChild(allDaysBtn);
     }
-    allDaysBtn.onclick = () => {
-      this.selectedYearView = '热力图';
-      this.updateYearFilterButtons();
-      this.renderYearHeatmapChart();
-    };
-    mainFilterEl.appendChild(allDaysBtn);
 
-    // 添加"动态排名"按钮到主容器
-    const barRacingBtn = document.createElement('button');
-    barRacingBtn.className = 'year-tag';
-    barRacingBtn.textContent = '动态排名';
-    if (this.selectedYearView === '动态排名') {
-      barRacingBtn.classList.add('active');
+    // 添加"动态排名"按钮到主容器（需要日数据或月数据）
+    if (this._hasDayData || this._hasMonthData) {
+      const barRacingBtn = document.createElement('button');
+      barRacingBtn.className = 'year-tag';
+      barRacingBtn.textContent = '动态排名';
+      if (this.selectedYearView === '动态排名') {
+        barRacingBtn.classList.add('active');
+      }
+      barRacingBtn.onclick = () => {
+        this.selectedYearView = '动态排名';
+        this.updateYearFilterButtons();
+        this.renderBarRacingChart();
+      };
+      mainFilterEl.appendChild(barRacingBtn);
     }
-    barRacingBtn.onclick = () => {
-      this.selectedYearView = '动态排名';
-      this.updateYearFilterButtons();
-      this.renderBarRacingChart();
-    };
-    mainFilterEl.appendChild(barRacingBtn);
 
     // 添加各年份按钮到年份容器（倒序排列）
     [...years].reverse().forEach(year => {
@@ -6556,10 +7580,10 @@ class ElectricityInfoCard extends HTMLElement {
     // 从两个容器中查找所有按钮
     const mainButtons = this.yearFilterMainEl.querySelectorAll('.year-tag');
     const yearButtons = this.yearFilterYearsEl.querySelectorAll('.year-tag');
-    
+
     // 合并所有按钮
     const allButtons = [...mainButtons, ...yearButtons];
-    
+
     allButtons.forEach(btn => {
       if (btn.textContent === this.selectedYearView) {
         btn.classList.add('active');
@@ -6607,7 +7631,7 @@ class ElectricityInfoCard extends HTMLElement {
 
     // 准备饼图数据
     const pieData = [];
-    
+
     if (isElectricity) {
       // 电力类型显示分时数据
       if (totalValley > 0) pieData.push({ name: '谷', value: totalValley, itemStyle: { color: '#4CAF50' } });
@@ -6777,7 +7801,7 @@ class ElectricityInfoCard extends HTMLElement {
 
     // 准备饼图数据
     const pieData = [];
-    
+
     if (isElectricity) {
       // 电力类型显示分时数据
       if (yearData.valley > 0) pieData.push({ name: '谷', value: yearData.valley, itemStyle: { color: '#4CAF50' } });
@@ -6923,6 +7947,19 @@ class ElectricityInfoCard extends HTMLElement {
       return;
     }
 
+    // 确保当前模式可用
+    if (this.barRacingMode === '日' && !this._hasDayData) {
+      this.barRacingMode = '月';
+    }
+    if (this.barRacingMode === '月' && !this._hasMonthData) {
+      this.barRacingMode = '日';
+    }
+    // 如果没有任何模式可用，不渲染
+    if (!this._hasDayData && !this._hasMonthData) {
+      this.barRacingContainerEl.style.display = 'none';
+      return;
+    }
+
     // 停止之前的播放
     this.stopBarRacing();
 
@@ -6947,6 +7984,14 @@ class ElectricityInfoCard extends HTMLElement {
       if (this.barRacingProgressEl) this.barRacingProgressEl.style.transition = '';
       if (this.barRacingMarkerEl) this.barRacingMarkerEl.style.transition = '';
     });
+
+    // 根据可用数据控制模式按钮可见性
+    if (this.barRacingModeDayBtnEl) {
+      this.barRacingModeDayBtnEl.style.display = this._hasDayData ? '' : 'none';
+    }
+    if (this.barRacingModeMonthBtnEl) {
+      this.barRacingModeMonthBtnEl.style.display = this._hasMonthData ? '' : 'none';
+    }
 
     // 更新模式按钮状态
     if (this.barRacingModeDayBtnEl) {
@@ -6976,13 +8021,14 @@ class ElectricityInfoCard extends HTMLElement {
 
     // 更新播放/暂停按钮状态
     this.barRacingPaused = false;
-    this.barRacingSpeed = 1;
+    // 根据模式设置默认速度：日模式 x4，月模式 x0.5
+    this.barRacingSpeed = this.barRacingMode === '日' ? 4 : 0.5;
     if (this.barRacingPlayBtnEl) {
       this.barRacingPlayBtnEl.textContent = '播放';
       this.barRacingPlayBtnEl.classList.add('active');
     }
     if (this.barRacingSpeedBtnEl) {
-      this.barRacingSpeedBtnEl.textContent = '速度 x1';
+      this.barRacingSpeedBtnEl.textContent = '速度 x' + this.barRacingSpeed;
       this.barRacingSpeedBtnEl.classList.remove('active');
     }
 
@@ -6994,6 +8040,9 @@ class ElectricityInfoCard extends HTMLElement {
           if (this.barRacingFrameIndex >= this.barRacingFrames.length - 1) {
             this.barRacingFrameIndex = 0;
             this.renderBarRacingFrame();
+            // 动画循环已退出，需要重新启动
+            this.startBarRacingAnimation();
+            return;
           }
           this.barRacingPaused = false;
           this.barRacingPlayBtnEl.textContent = '暂停';
@@ -7020,6 +8069,9 @@ class ElectricityInfoCard extends HTMLElement {
         }
       };
     }
+
+    // 绑定进度条拖动/点击事件（支持 marker 拖动和 track 点击跳转）
+    this._initBarRacingDrag();
 
     // 根据模式分发
     if (this.barRacingMode === '月') {
@@ -7217,6 +8269,11 @@ class ElectricityInfoCard extends HTMLElement {
 
       this.barRacingChart = echarts.init(this.barRacingChartEl);
 
+      // 获取主题颜色用于ECharts轴文本
+      const rootStyle = getComputedStyle(this);
+      const themeTextColor = rootStyle.getPropertyValue('--text-color').trim() || 'rgba(0, 0, 0, 0.8)';
+      const themeAxisLineColor = rootStyle.getPropertyValue('--button-primary-transparent').trim() || 'rgba(0, 0, 0, 0.1)';
+
       // 使用与卡片一致的 Material Design 风格颜色（阶梯色 + 分时色）
       const barColors = [
         { c: ['#55C593', '#6FD9A8'], border: '#3DA87A' },   // 阶梯绿
@@ -7243,17 +8300,17 @@ class ElectricityInfoCard extends HTMLElement {
           position: 'bottom',
           axisLabel: {
             formatter: (val) => val >= 1000 ? (val / 1000).toFixed(1) + 'k' : Math.round(val),
-            color: 'var(--text-color, #666)',
+            color: themeTextColor,
             fontSize: 10
           },
           splitLine: {
-            lineStyle: { color: 'rgba(200,200,200,0.15)', type: 'dashed' }
+            lineStyle: { color: themeAxisLineColor, type: 'dashed' }
           },
           axisLine: {
-            lineStyle: { color: 'rgba(200,200,200,0.3)' }
+            lineStyle: { color: themeAxisLineColor }
           },
           axisTick: {
-            lineStyle: { color: 'rgba(200,200,200,0.3)' }
+            lineStyle: { color: themeAxisLineColor }
           }
         },
         yAxis: {
@@ -7264,11 +8321,11 @@ class ElectricityInfoCard extends HTMLElement {
           animationDurationUpdate: 300,
           axisLabel: {
             fontSize: Math.min(12, Math.max(9, Math.floor(14 - yearCount * 0.4))),
-            color: 'var(--text-color, #666)',
+            color: themeTextColor,
             fontWeight: 500
           },
           axisLine: {
-            lineStyle: { color: 'rgba(200,200,200,0.2)' }
+            lineStyle: { color: themeAxisLineColor }
           },
           axisTick: {
             show: false
@@ -7297,7 +8354,7 @@ class ElectricityInfoCard extends HTMLElement {
             formatter: (params) => Math.round(params.value) + ' ' + unit,
             fontSize: 11,
             fontWeight: 600,
-            color: 'var(--text-color, #333)'
+            color: themeTextColor
           },
           emphasis: {
             itemStyle: {
@@ -7309,9 +8366,9 @@ class ElectricityInfoCard extends HTMLElement {
         tooltip: {
           trigger: 'axis',
           axisPointer: { type: 'shadow' },
-          backgroundColor: 'var(--card-bg, #fff)',
-          borderColor: 'var(--button-primary-transparent, rgba(0,0,0,0.1))',
-          textStyle: { color: 'var(--text-color, #333)', fontSize: 12 },
+          backgroundColor: rootStyle.getPropertyValue('--card-bg').trim() || '#fff',
+          borderColor: themeAxisLineColor,
+          textStyle: { color: themeTextColor, fontSize: 12 },
           formatter: (params) => {
             if (!params || params.length === 0) return '';
             const p = params[0];
@@ -7345,6 +8402,10 @@ class ElectricityInfoCard extends HTMLElement {
     if (this.barRacingTimer) {
       cancelAnimationFrame(this.barRacingTimer);
     }
+    // 动画开始时更新按钮为"暂停"
+    if (this.barRacingPlayBtnEl) {
+      this.barRacingPlayBtnEl.textContent = '暂停';
+    }
     let lastTime = 0;
 
     const tick = (timestamp) => {
@@ -7373,6 +8434,133 @@ class ElectricityInfoCard extends HTMLElement {
     };
 
     this.barRacingTimer = requestAnimationFrame(tick);
+  }
+
+  // 初始化进度条拖动功能
+  _initBarRacingDrag() {
+    const track = this.barRacingTrackEl;
+    const marker = this.barRacingMarkerEl;
+    if (!track || !marker) return;
+
+    let dragging = false;
+
+    // 根据拖动位置（百分比 0~1）找到最近的帧索引
+    const findFrameByProgress = (progress) => {
+      progress = Math.max(0, Math.min(1, progress));
+      let closestIdx = 0;
+      let closestDist = Infinity;
+      for (let i = 0; i < this.barRacingFrames.length; i++) {
+        const frameProgress = this.calcBarRacingProgress(this.barRacingFrames[i]);
+        const dist = Math.abs(frameProgress - progress);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closestIdx = i;
+        }
+      }
+      return closestIdx;
+    };
+
+    // 拖动/点击时更新到指定位置
+    const seekToPosition = (clientX) => {
+      const rect = track.getBoundingClientRect();
+      const x = clientX - rect.left;
+      const progress = Math.max(0, Math.min(1, x / rect.width));
+      const idx = findFrameByProgress(progress);
+      this.barRacingFrameIndex = idx;
+      // 暂停动画
+      this.barRacingPaused = true;
+      if (this.barRacingPlayBtnEl) {
+        this.barRacingPlayBtnEl.textContent = '播放';
+      }
+      // 无过渡直接跳转
+      this.renderBarRacingFrameNoTransition();
+    };
+
+    // marker 鼠标/触摸拖动
+    const onMove = (e) => {
+      if (!dragging) return;
+      e.preventDefault();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      seekToPosition(clientX);
+    };
+
+    const onEnd = () => {
+      if (!dragging) return;
+      dragging = false;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onEnd);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onEnd);
+    };
+
+    marker.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      dragging = true;
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onEnd);
+    });
+
+    marker.addEventListener('touchstart', (e) => {
+      dragging = true;
+      document.addEventListener('touchmove', onMove, { passive: false });
+      document.addEventListener('touchend', onEnd);
+    }, { passive: true });
+
+    // 点击 track 跳转
+    track.addEventListener('click', (e) => {
+      if (e.target === marker) return; // marker 点击由拖动处理
+      seekToPosition(e.clientX);
+    });
+  }
+
+  // 渲染单帧（无过渡动画，用于拖动时即时跳转）
+  renderBarRacingFrameNoTransition() {
+    if (!this.barRacingChart || this.barRacingFrames.length === 0) return;
+
+    const frame = this.barRacingFrames[this.barRacingFrameIndex];
+
+    // 更新气泡中的日期文本
+    if (this.barRacingDateEl) {
+      this.barRacingDateEl.textContent = frame.date;
+    }
+
+    // 更新进度条和 marker 位置（无过渡）
+    const progress = this.calcBarRacingProgress(frame);
+    const pct = (progress * 100).toFixed(1) + '%';
+    if (this.barRacingProgressEl) {
+      this.barRacingProgressEl.style.transition = 'none';
+      this.barRacingProgressEl.style.width = pct;
+    }
+    if (this.barRacingMarkerEl) {
+      this.barRacingMarkerEl.style.transition = 'none';
+      this.barRacingMarkerEl.style.left = pct;
+    }
+
+    // 更新柱状图数据
+    const colorStyles = this.barRacingColorStyles;
+    const years = this.barRacingYears;
+    this.barRacingChart.setOption({
+      animationDurationUpdate: 0,
+      series: [{ data: frame.data.map(item => {
+        const yearIdx = years.indexOf(item.name.replace('年', ''));
+        const i = yearIdx >= 0 ? yearIdx : 0;
+        const cs = colorStyles[i % colorStyles.length];
+        return {
+          value: item.value,
+          itemStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+              { offset: 0, color: cs.c[0] },
+              { offset: 1, color: cs.c[1] }
+            ]),
+            borderRadius: [0, 3, 3, 0]
+          }
+        };
+      })}]
+    });
+    // 恢复正常的动画时长
+    this.barRacingChart.setOption({
+      animationDurationUpdate: Math.max(80, Math.round(500 / this.barRacingSpeed))
+    });
   }
 
   // 渲染单帧动态排名（只更新 series data，让 realtimeSort 自动排序）
@@ -7448,12 +8636,12 @@ class ElectricityInfoCard extends HTMLElement {
 
   // 渲染日用电热力图
   renderYearHeatmapChart() {
-    
+
     if (!this.echartsLoaded || typeof echarts === 'undefined') {
       console.log('[renderYearHeatmapChart] ECharts未加载');
       return;
     }
-    
+
     if (!this.yearHeatmapChartEl) {
       console.log('[renderYearHeatmapChart] 热力图容器不存在');
       return;
@@ -7530,8 +8718,8 @@ class ElectricityInfoCard extends HTMLElement {
 
       // 获取今天的日期
       const today = new Date();
-      const todayStr = today.getFullYear() + '-' + 
-                      String(today.getMonth() + 1).padStart(2, '0') + '-' + 
+      const todayStr = today.getFullYear() + '-' +
+                      String(today.getMonth() + 1).padStart(2, '0') + '-' +
                       String(today.getDate()).padStart(2, '0');
 
       // 获取主题颜色
@@ -7540,10 +8728,10 @@ class ElectricityInfoCard extends HTMLElement {
 
       years.forEach((year, index) => {
         const yearData = yearDataMap.get(year);
-        
+
         // 在第一个年份（最小年份）的图表上方显示月份标签
         const showMonthLabel = (year === years[0]);
-        
+
         calendarList.push({
           top: (index * 85 / years.length) + '%',
           height: (85 / years.length) + '%',
@@ -7564,7 +8752,7 @@ class ElectricityInfoCard extends HTMLElement {
               width: 0.8
             }
           },
-          yearLabel: { 
+          yearLabel: {
             show: true,
             position: 'left',
             margin: 5,
@@ -7600,7 +8788,7 @@ class ElectricityInfoCard extends HTMLElement {
               borderColor: '#333',
               shadowBlur: 10,
               shadowColor: 'rgba(0, 0, 0, 0.5)',
-              borderWidth: 1              
+              borderWidth: 1
             }
           },
           progressive: 1000,
@@ -7613,7 +8801,7 @@ class ElectricityInfoCard extends HTMLElement {
           // 如果今天有数据，则使用数据值，否则使用占位符值
           const todayDataItem = yearData.find(item => item[0] === todayStr);
           const todayValue = todayDataItem ? todayDataItem[1] : 0;
-          
+
           seriesList.push({
             type: 'heatmap',
             coordinateSystem: 'calendar',
@@ -7680,7 +8868,7 @@ class ElectricityInfoCard extends HTMLElement {
           type: 'continuous',
           orient: 'horizontal',
           left: 'center',
-          bottom: 0, 
+          bottom: 0,
           textStyle: {
             fontSize: 10,
             color: '#666'
@@ -8001,6 +9189,7 @@ class ElectricityInfoCard extends HTMLElement {
       legendData.unshift({ name: '缴费', icon: 'none', itemStyle: { color: '#00C853' } });
     }
 
+    const rootStyle = getComputedStyle(this);
     const option = {
       tooltip: {
         trigger: 'axis',
@@ -8098,10 +9287,10 @@ class ElectricityInfoCard extends HTMLElement {
         type: 'category',
         data: adjustedYears,
         axisLine: {
-          lineStyle: { color: '#666' }
+          lineStyle: { color: rootStyle.getPropertyValue('--text-color').trim() || '#666' }
         },
         axisLabel: {
-          color: '#666',
+          color: rootStyle.getPropertyValue('--text-color').trim() || '#666',
           interval: 0,
           rotate: 45,
           fontSize: 10
@@ -8114,10 +9303,10 @@ class ElectricityInfoCard extends HTMLElement {
           nameLocation: 'end',
           position: 'left',
           axisLine: {
-            lineStyle: { color: '#666' }
+            lineStyle: { color: rootStyle.getPropertyValue('--text-color').trim() || '#666' }
           },
           axisLabel: {
-            color: '#666',
+            color: rootStyle.getPropertyValue('--text-color').trim() || '#666',
             formatter: function(value) {
               if (value > 100) {
                 return (value / 1000).toFixed(1) + 'k';
@@ -8126,7 +9315,7 @@ class ElectricityInfoCard extends HTMLElement {
             }
           },
           splitLine: {
-            lineStyle: { color: 'rgba(0,0,0,0.1)' }
+            lineStyle: { color: rootStyle.getPropertyValue('--button-primary-transparent').trim() || 'rgba(0,0,0,0.1)' }
           }
         },
         {
@@ -8201,7 +9390,7 @@ class ElectricityInfoCard extends HTMLElement {
     const normalData = yearData.map(item => item.usage_ele_norm || 0);
     const sharpData = yearData.map(item => item.usage_ele_tip || 0);
     const noTimeData = yearData.map(item => item.usage_ele_no || 0);
-    
+
     // 获取单位符号（从统一数据格式中获取，不设置默认值）
     const usageUnit = yearData.length > 0 ? yearData[0].unit : '';
 
@@ -8219,21 +9408,21 @@ class ElectricityInfoCard extends HTMLElement {
   // 渲染年份筛选标签
   renderYearFilter(years, selectedYear) {
     this.monthYearFilterEl.innerHTML = '';
-    
+
     years.forEach(year => {
       const yearTag = document.createElement('div');
       yearTag.className = 'year-tag';
       yearTag.textContent = `${year}`;
-      
+
       if (year === selectedYear) {
         yearTag.classList.add('active');
       }
-      
+
       yearTag.addEventListener('click', () => {
         this.selectedYear = year;
         this.renderMonthView();
       });
-      
+
       this.monthYearFilterEl.appendChild(yearTag);
     });
   }
@@ -8280,10 +9469,10 @@ class ElectricityInfoCard extends HTMLElement {
     const barColor = this.utilityType === 'gas' ? '#FF9800' : // 燃气黄色
                      this.utilityType === 'water' ? '#2196F3' : // 水蓝色
                      '#9E9E9E'; // 默认灰色
-    
+
     const series = [];
     const legendData = [];
-    
+
     if (isElectricity) {
       // 电力类型显示分时系列
       series.push(
@@ -8328,7 +9517,7 @@ class ElectricityInfoCard extends HTMLElement {
           itemStyle: { color: '#9E9E9E' }
         }
       );
-      
+
       legendData.push(
         { name: '峰', icon: 'none' },
         { name: '谷', icon: 'none' },
@@ -8346,10 +9535,10 @@ class ElectricityInfoCard extends HTMLElement {
         yAxisIndex: 0,
         itemStyle: { color: barColor }
       });
-      
+
       legendData.push({ name: '用量', icon: 'none' });
     }
-    
+
     // 所有类型都显示费用系列
     series.push({
       name: '消费',
@@ -8395,9 +9584,10 @@ class ElectricityInfoCard extends HTMLElement {
         }
       }
     });
-    
+
     legendData.push({ name: '消费', icon: 'none' });
 
+    const rootStyle = getComputedStyle(this);
     const option = {
       tooltip: {
         trigger: 'axis',
@@ -8502,13 +9692,13 @@ class ElectricityInfoCard extends HTMLElement {
         type: 'category',
         data: months,
         axisLine: {
-          lineStyle: { color: '#666' }
+          lineStyle: { color: rootStyle.getPropertyValue('--text-color').trim() || '#666' }
         },
         axisLabel: {
-          color: '#666',
+          color: rootStyle.getPropertyValue('--text-color').trim() || '#666',
           interval: 0,
           rotate: 45,
-          fontSize: 10 
+          fontSize: 10
         }
       },
       yAxis: [
@@ -8518,10 +9708,10 @@ class ElectricityInfoCard extends HTMLElement {
           nameLocation: 'end',
           position: 'left',
           axisLine: {
-            lineStyle: { color: '#666' }
+            lineStyle: { color: rootStyle.getPropertyValue('--text-color').trim() || '#666' }
           },
           axisLabel: {
-            color: '#666',
+            color: rootStyle.getPropertyValue('--text-color').trim() || '#666',
             formatter: function(value) {
               if (value > 100) {
                 return (value / 1000).toFixed(1) + 'k';
@@ -8530,7 +9720,7 @@ class ElectricityInfoCard extends HTMLElement {
             }
           },
           splitLine: {
-            lineStyle: { color: 'rgba(0,0,0,0.1)' }
+            lineStyle: { color: rootStyle.getPropertyValue('--button-primary-transparent').trim() || 'rgba(0,0,0,0.1)' }
           }
         },
         {
@@ -8580,29 +9770,29 @@ class ElectricityInfoCard extends HTMLElement {
         const [year, month] = item.time.split('-');
         return { year: parseInt(year), month: parseInt(month) };
       });
-    
+
     // 提取所有可用的年份
     const availableYears = [...new Set(dates.map(d => d.year))].sort((a, b) => b - a);
-    
+
     // 获取当前年月
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth() + 1;
-    
+
     // 根据选中的年份过滤月份，只显示该年有数据的月份
     const selectedYear = this.selectedDayYear || availableYears[0];
     let availableMonths = [...new Set(
       dates.filter(d => d.year === selectedYear).map(d => d.month)
     )].sort((a, b) => a - b);
-    
+
     // 如果选中年份是当前年份，只显示到当前月（不包含未来月份）
     if (selectedYear === currentYear) {
       availableMonths = availableMonths.filter(month => month <= currentMonth);
     }
-    
+
     // 检查是否为未来月份
     // 如果选择了未来月份，显示提示文字并隐藏图表
-    if (this.selectedDayYear > currentYear || 
+    if (this.selectedDayYear > currentYear ||
         (this.selectedDayYear === currentYear && this.selectedDayMonth > currentMonth)) {
       // 隐藏图表，显示提示文字
       this.dayComboChartEl.style.display = 'none';
@@ -8623,22 +9813,22 @@ class ElectricityInfoCard extends HTMLElement {
         this.selectedDayYear = availableYears[0];
       }
     }
-    
+
     // 对于月份，必须在确定了年份后，从该年份的可用月份中选择
     // 重新获取该年份的可用月份（因为年份可能刚改变）
     availableMonths = [...new Set(
       dates.filter(d => d.year === this.selectedDayYear).map(d => d.month)
     )].sort((a, b) => a - b);
-    
+
     // 如果选中年份是当前年份，只显示到当前月
     if (this.selectedDayYear === currentYear) {
       availableMonths = availableMonths.filter(month => month <= currentMonth);
     }
-    
+
     // ===== 修复年份切换时月份不同步的bug =====
     // 检查当前选中的月份是否在新年份的可用月份中
     const isSelectedMonthAvailable = availableMonths.includes(this.selectedDayMonth);
-    
+
     // 如果当前选中的月份不在新年份的可用月份中，或者没有选中月份，则重新选择月份
     if (!this.selectedDayMonth || !isSelectedMonthAvailable) {
       if (this.selectedDayYear === currentYear && availableMonths.includes(currentMonth)) {
@@ -8677,7 +9867,7 @@ class ElectricityInfoCard extends HTMLElement {
     const normalData = monthDays.map(item => item.usage_ele_norm || 0);
     const sharpData = monthDays.map(item => item.usage_ele_tip || 0);
     const noTimeData = monthDays.map(item => item.usage_ele_no || 0);
-    
+
     // 获取单位符号（从统一数据格式中获取，不设置默认值）
     const usageUnit = monthDays.length > 0 ? monthDays[0].unit : '';
 
@@ -8697,20 +9887,20 @@ class ElectricityInfoCard extends HTMLElement {
     // 清空两个容器
     this.dayFilterMainEl.innerHTML = '';
     this.dayFilterYearsEl.innerHTML = '';
-    
+
     // 创建年份筛选（放在第一行，居中）
     years.forEach(year => {
       const yearTag = document.createElement('div');
       yearTag.className = 'year-tag';
       yearTag.textContent = `${year}`;
-      
+
       if (year === selectedYear) {
         yearTag.classList.add('active');
       }
-      
+
       yearTag.addEventListener('click', () => {
         this.selectedDayYear = year;
-        
+
         // 当切换年份时，检查当前选中的月份是否在新年份中可用
         // 从数据中提取该年份的所有可用月份
         const dates = this.standardData.dayUsage
@@ -8719,26 +9909,26 @@ class ElectricityInfoCard extends HTMLElement {
             const [year, month] = item.time.split('-');
             return { year: parseInt(year), month: parseInt(month) };
           });
-        
+
         const now = new Date();
         const currentYear = now.getFullYear();
         const currentMonth = now.getMonth() + 1;
-        
+
         // 获取新年份的可用月份
         let newYearMonths = [...new Set(
           dates.filter(d => d.year === year).map(d => d.month)
         )].sort((a, b) => a - b);
-        
+
         // 如果新年份是当前年份，只显示到当前月
         if (year === currentYear) {
           newYearMonths = newYearMonths.filter(month => month <= currentMonth);
         }
-        
+
         // 检查当前选中的月份是否在新年份中可用
         const isCurrentMonthAvailable = newYearMonths.includes(this.selectedDayMonth);
-        
+
         // 如果当前月份不可用或者是未来月份，自动选择一个合适的月份
-        if (!isCurrentMonthAvailable || 
+        if (!isCurrentMonthAvailable ||
             (year === currentYear && this.selectedDayMonth > currentMonth)) {
           if (year === currentYear && newYearMonths.includes(currentMonth)) {
             // 如果是当前年份且当前月有数据，优先选择当前月
@@ -8748,28 +9938,28 @@ class ElectricityInfoCard extends HTMLElement {
             this.selectedDayMonth = newYearMonths[newYearMonths.length - 1];
           }
         }
-        
+
         this.renderDayView();
       });
-      
+
       this.dayFilterMainEl.appendChild(yearTag);
     });
-    
+
     // 创建月份筛选（放在第二行，左对齐）
     months.forEach(month => {
       const monthTag = document.createElement('div');
       monthTag.className = 'month-tag';
       monthTag.textContent = `${month}`;
-      
+
       if (month === selectedMonth) {
         monthTag.classList.add('active');
       }
-      
+
       monthTag.addEventListener('click', () => {
         this.selectedDayMonth = month;
         this.renderDayView();
       });
-      
+
       this.dayFilterYearsEl.appendChild(monthTag);
     });
   }
@@ -8816,10 +10006,10 @@ class ElectricityInfoCard extends HTMLElement {
     const barColor = this.utilityType === 'gas' ? '#FF9800' : // 燃气黄色
                      this.utilityType === 'water' ? '#2196F3' : // 水蓝色
                      '#9E9E9E'; // 默认灰色
-    
+
     const series = [];
     const legendData = [];
-    
+
     if (isElectricity) {
       // 电力类型显示分时系列
       series.push(
@@ -8864,7 +10054,7 @@ class ElectricityInfoCard extends HTMLElement {
           itemStyle: { color: '#9E9E9E' }
         }
       );
-      
+
       legendData.push(
         { name: '峰', icon: 'none' },
         { name: '谷', icon: 'none' },
@@ -8882,10 +10072,10 @@ class ElectricityInfoCard extends HTMLElement {
         yAxisIndex: 0,
         itemStyle: { color: barColor }
       });
-      
+
       legendData.push({ name: '用量', icon: 'none' });
     }
-    
+
     // 所有类型都显示费用系列
     series.push({
       name: '消费',
@@ -8931,9 +10121,10 @@ class ElectricityInfoCard extends HTMLElement {
         }
       }
     });
-    
+
     legendData.push({ name: '消费', icon: 'none' });
 
+    const rootStyle = getComputedStyle(this);
     const option = {
       tooltip: {
         trigger: 'axis',
@@ -9029,10 +10220,10 @@ class ElectricityInfoCard extends HTMLElement {
         type: 'category',
         data: days,
         axisLine: {
-          lineStyle: { color: '#666' }
+          lineStyle: { color: rootStyle.getPropertyValue('--text-color').trim() || '#666' }
         },
         axisLabel: {
-          color: '#666',
+          color: rootStyle.getPropertyValue('--text-color').trim() || '#666',
           interval: 0,
           rotate: 45,
           fontSize: 9
@@ -9045,10 +10236,10 @@ class ElectricityInfoCard extends HTMLElement {
           nameLocation: 'end',
           position: 'left',
           axisLine: {
-            lineStyle: { color: '#666' }
+            lineStyle: { color: rootStyle.getPropertyValue('--text-color').trim() || '#666' }
           },
           axisLabel: {
-            color: '#666',
+            color: rootStyle.getPropertyValue('--text-color').trim() || '#666',
             formatter: function(value) {
               if (value > 100) {
                 return (value / 1000).toFixed(1) + 'k';
@@ -9057,7 +10248,7 @@ class ElectricityInfoCard extends HTMLElement {
             }
           },
           splitLine: {
-            lineStyle: { color: 'rgba(0,0,0,0.1)' }
+            lineStyle: { color: rootStyle.getPropertyValue('--button-primary-transparent').trim() || 'rgba(0,0,0,0.1)' }
           }
         },
         {
@@ -9118,123 +10309,19 @@ class ElectricityInfoCard extends HTMLElement {
       this.renderMonthView();
       return;
     }
-    
+
     // 从统一数据接口获取数据
     if (!this.standardData || !this.standardData.dayUsage || this.standardData.dayUsage.length === 0) {
       this.renderCalendar([], 0, 0);
       return;
     }
-    
+
     // 从统一格式筛选当前年月的日数据
     const currentMonthStr = `${this.calCurrentYear}-${String(this.calCurrentMonth).padStart(2, '0')}`;
-    const monthDays = this.standardData.dayUsage.filter(dayData => 
+    const monthDays = this.standardData.dayUsage.filter(dayData =>
       dayData.time && dayData.time.startsWith(currentMonthStr)
     );
-    
-    // 如果配置了device_entity，检查每个日期是否有设备历史数据
-    if (this.deviceEntityConfig && this.deviceEntityConfig.length > 0) {
-      // 创建当前月份的所有日期数组，但只包含今日以前（含今日）的日期
-      const allDaysInMonth = [];
-      const lastDay = new Date(this.calCurrentYear, this.calCurrentMonth, 0).getDate();
-      
-      // 获取当前日期，用于过滤未来日期
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      
-      for (let day = 1; day <= lastDay; day++) {
-        const dayStr = `${this.calCurrentYear}-${String(this.calCurrentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        
-        // 检查是否为未来日期（不包括今天）
-        const dayDate = new Date(dayStr);
-        const dayStart = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate());
-        if (dayStart > today) {
-          // 跳过未来日期，不添加到检查列表
-          continue;
-        }
-        
-        // 查找是否已有对应的数据
-        const existingDayData = monthDays.find(d => d.time === dayStr);
-        
-        if (existingDayData) {
-          // 如果已有数据，直接使用
-          allDaysInMonth.push({
-            time: dayStr,
-            day: day,
-            hasDeviceHistory: existingDayData.hasDeviceHistory || false,
-            existingData: true
-          });
-        } else {
-          // 如果没有数据，创建新的对象
-          allDaysInMonth.push({
-            time: dayStr,
-            day: day,
-            hasDeviceHistory: false,
-            existingData: false
-          });
-        }
-      }
-      
-      // 只对今日以前（含今日）的日期进行设备历史检查
-      const promises = allDaysInMonth.map(async (dayObj) => {
-        const dayStr = dayObj.time;
-        const dayNum = dayObj.day;
-        
-        if (!dayStr) {
-          dayObj.hasDeviceHistory = false;
-          return;
-        }
-        
-        const dayDate = new Date(dayStr);
-        if (isNaN(dayDate.getTime())) {
-          dayObj.hasDeviceHistory = false;
-          return;
-        }
-        
-        const startOfDay = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate());
-        const endOfDay = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate() + 1);
-        
-        let hasDeviceHistory = false;
-        const devicePromises = this.deviceEntityConfig.map(async (deviceConfig) => {
-          try {
-            const history = await this.getHistory(deviceConfig.entity, startOfDay, endOfDay);
-            if (history && history.length > 0) {
-              hasDeviceHistory = true;
-            }
-          } catch (error) {
-            // Silently fail
-          }
-        });
-        
-        await Promise.all(devicePromises);
-        dayObj.hasDeviceHistory = hasDeviceHistory;
-      });
-      
-      await Promise.all(promises);
-      
-      // 将设备历史信息更新到monthDays中的对应日期
-      allDaysInMonth.forEach(dayObj => {
-        if (dayObj.existingData) {
-          // 更新已有数据
-          const existingDay = monthDays.find(d => d.time === dayObj.time);
-          if (existingDay) {
-            existingDay.hasDeviceHistory = dayObj.hasDeviceHistory;
-          }
-        } else {
-          // 为没有用电数据的日期创建数据对象
-          if (dayObj.hasDeviceHistory) {
-            monthDays.push({
-              time: dayObj.time,
-              day: dayObj.day,
-              total_usage: 0,
-              total_amount: 0,
-              unit: monthDays.length > 0 ? monthDays[0].unit : '',
-              hasDeviceHistory: true
-            });
-          }
-        }
-      });
-    }
-    
+
     // 计算月统计
     let monthUsage = 0;
     let monthCost = 0;
@@ -9242,7 +10329,7 @@ class ElectricityInfoCard extends HTMLElement {
       monthUsage += day.total_usage || 0;
       monthCost += day.total_amount || 0;
     });
-    
+
     // 计算年统计
     let yearUsage = 0;
     let yearCost = 0;
@@ -9253,20 +10340,214 @@ class ElectricityInfoCard extends HTMLElement {
         yearCost += day.total_amount || 0;
       }
     });
-    
+
     // 获取单位符号（从月份数据中获取，必须从数据中获取）
     const usageUnit = monthDays.length > 0 && monthDays[0] ? monthDays[0].unit : '';
-    
+
     // 更新统计信息
     this.calMonthUsageEl.textContent = `${monthUsage.toFixed(2)} ${usageUnit}`;
     this.calMonthCostEl.textContent = `¥${monthCost.toFixed(2)}`;
     this.calYearUsageEl.textContent = `${yearUsage.toFixed(2)} ${usageUnit}`;
     this.calYearCostEl.textContent = `¥${yearCost.toFixed(2)}`;
-    
-    // 渲染日历
+
+    // 先立即渲染基础日历（含当月用电数据），避免被设备历史检查阻塞导致长时间白屏
     this.renderCalendar(monthDays, monthUsage, monthCost);
+
+    // 如果配置了device_entity，后台异步检查设备历史并补充 A/H 标记，不阻塞日历显示
+    if (this.deviceEntityConfig && this.deviceEntityConfig.length > 0) {
+      this._loadCalendarDeviceMarkers(monthDays);
+    }
   }
-  
+
+  // 后台异步加载当前月份的设备历史 / API 数据标记，完成后动态更新已渲染的日历单元格
+  async _loadCalendarDeviceMarkers(monthDays) {
+    // 创建当前月份的所有日期数组，但只包含今日以前（含今日）的日期
+    const allDaysInMonth = [];
+    const lastDay = new Date(this.calCurrentYear, this.calCurrentMonth, 0).getDate();
+
+    // 获取当前日期，用于过滤未来日期
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    for (let day = 1; day <= lastDay; day++) {
+      const dayStr = `${this.calCurrentYear}-${String(this.calCurrentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+      // 检查是否为未来日期（不包括今天）
+      const dayDate = new Date(dayStr);
+      const dayStart = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate());
+      if (dayStart > today) {
+        // 跳过未来日期，不添加到检查列表
+        continue;
+      }
+
+      // 查找是否已有对应的数据
+      const existingDayData = monthDays.find(d => d.time === dayStr);
+
+      if (existingDayData) {
+        // 如果已有数据，直接使用
+        allDaysInMonth.push({
+          time: dayStr,
+          day: day,
+          hasDeviceHistory: existingDayData.hasDeviceHistory || false,
+          hasApiData: existingDayData.hasApiData || false,
+          existingData: true
+        });
+      } else {
+        // 如果没有数据，创建新的对象
+        allDaysInMonth.push({
+          time: dayStr,
+          day: day,
+          hasDeviceHistory: false,
+          hasApiData: false,
+          existingData: false
+        });
+      }
+    }
+
+    // 设备历史检查优化：一次性查询整个月区间，再在内存中按天拆分，
+    // 避免对每一天、每个设备分别发起 WS 请求（大幅减少请求次数）。
+    // 有数据的日期集合（key 为 "年-月-日"）
+    const historyDays = new Set();
+    // 每个设备只发起一次整月查询
+    const devicePromises = this.deviceEntityConfig.map(async (deviceConfig) => {
+      try {
+        const monthStart = new Date(this.calCurrentYear, this.calCurrentMonth - 1, 1);
+        const monthEnd = new Date(this.calCurrentYear, this.calCurrentMonth, 1);
+        const history = await this.getHistory(deviceConfig.entity, monthStart, monthEnd);
+        if (history && history.length > 0) {
+          // history 是状态变更点，使用 HA minimal_response 紧凑格式：
+          // 时间戳在 state.lu（秒），状态值在 state.s
+          history.forEach(state => {
+            const ts = state ? (state.lu !== undefined ? state.lu : state.last_updated) : null;
+            if (ts === null || ts === undefined) return;
+            const d = new Date(typeof ts === 'number' ? ts * 1000 : ts);
+            if (!isNaN(d.getTime())) {
+              const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+              historyDays.add(key);
+            }
+          });
+        }
+      } catch (error) {
+        // Silently fail
+      }
+    });
+
+    await Promise.all(devicePromises);
+
+    // 将按天拆分的结果写回每一天
+    allDaysInMonth.forEach(dayObj => {
+      dayObj.hasDeviceHistory = historyDays.has(dayObj.time);
+    });
+
+    // 从API获取该月有数据的日期列表（作为"A"标记的数据源，独立于HA）
+    let apiDates = [];
+    if (this.apiBaseUrl && this.apiKey) {
+      const firstEntity = this.deviceEntityConfig[0].entity;
+      const monthStr = `${this.calCurrentYear}-${String(this.calCurrentMonth).padStart(2, '0')}`;
+      const cacheKey = `${firstEntity}|${monthStr}`;
+      // 缓存判断：同一实体+月份复用上次结果，避免重复请求
+      if (this._apiDatesCache && this._apiDatesCache.cacheKey === cacheKey) {
+        apiDates = this._apiDatesCache.dates;
+      } else {
+        try {
+          const apiResult = await this.fetchEntityDataDates(firstEntity, monthStr);
+          if (apiResult && apiResult.success && apiResult.data && apiResult.data.dates) {
+            apiDates = apiResult.data.dates;
+            this._apiDatesCache = { cacheKey, dates: apiDates };
+          }
+        } catch (e) {
+          // API请求失败，静默处理
+        }
+      }
+    }
+
+    // 将设备历史信息更新到monthDays中的对应日期，并动态更新已渲染的单元格标记
+    allDaysInMonth.forEach(dayObj => {
+      // hasApiData 和 hasDeviceHistory 独立判断，两者可以共存
+      dayObj.hasApiData = apiDates.includes(dayObj.time);
+
+      if (dayObj.existingData) {
+        // 更新已有数据
+        const existingDay = monthDays.find(d => d.time === dayObj.time);
+        if (existingDay) {
+          existingDay.hasDeviceHistory = dayObj.hasDeviceHistory;
+          existingDay.hasApiData = dayObj.hasApiData;
+        }
+      } else {
+        // 为没有用电数据的日期创建数据对象
+        if (dayObj.hasDeviceHistory || dayObj.hasApiData) {
+          monthDays.push({
+            time: dayObj.time,
+            day: dayObj.day,
+            total_usage: 0,
+            total_amount: 0,
+            unit: monthDays.length > 0 ? monthDays[0].unit : '',
+            hasDeviceHistory: dayObj.hasDeviceHistory,
+            hasApiData: dayObj.hasApiData
+          });
+        }
+      }
+
+      // 动态更新已渲染单元格上的 A/H 标记（仅更新标记，不重建整个日历）
+      this._updateCalendarCellMarkers(dayObj.time, dayObj.hasDeviceHistory, dayObj.hasApiData);
+    });
+  }
+
+  // 更新单个日历单元格上的设备历史 / API 标记（A/H）
+  _updateCalendarCellMarkers(dayStr, hasDeviceHistory, hasApiData) {
+    // 若日历已切换/关闭（单元格引用被重置），直接忽略
+    if (!this._calCells || !this._calCells[dayStr]) {
+      return;
+    }
+
+    const cell = this._calCells[dayStr];
+
+    // 移除旧的标记容器（避免重复叠加）
+    const oldMarker = cell.querySelector('.marker-container');
+    if (oldMarker) {
+      oldMarker.remove();
+    }
+
+    const needMarker = (hasApiData || hasDeviceHistory);
+    if (!needMarker) {
+      return;
+    }
+
+    // 创建标记容器，用于显示 A 和 H
+    const markerContainer = document.createElement('div');
+    markerContainer.className = 'marker-container';
+    markerContainer.style.position = 'absolute';
+    markerContainer.style.top = '2px';
+    markerContainer.style.right = '2px';
+    markerContainer.style.display = 'flex';
+    markerContainer.style.gap = '2px';
+    markerContainer.style.zIndex = '2';
+
+    // 如果有API数据，显示 A 标记
+    if (hasApiData) {
+      const apiMarker = document.createElement('span');
+      apiMarker.className = 'device-history-marker';
+      apiMarker.style.position = 'relative';
+      apiMarker.style.top = 'auto';
+      apiMarker.style.right = 'auto';
+      apiMarker.textContent = 'A';
+      markerContainer.appendChild(apiMarker);
+    }
+
+    // 如果有HA历史数据，显示 H 标记
+    if (hasDeviceHistory) {
+      const deviceMarker = document.createElement('span');
+      deviceMarker.className = 'device-history-marker';
+      deviceMarker.style.position = 'relative';
+      deviceMarker.style.top = 'auto';
+      deviceMarker.style.right = 'auto';
+      deviceMarker.textContent = 'H';
+      markerContainer.appendChild(deviceMarker);
+    }
+
+    cell.appendChild(markerContainer);
+  }
+
   // 渲染日历网格
   renderCalendar(monthDays, monthUsage, monthCost) {
     // 清空日历网格，保留星期标题
@@ -9274,29 +10555,31 @@ class ElectricityInfoCard extends HTMLElement {
     while (grid.children.length > 7) {
       grid.removeChild(grid.lastChild);
     }
-    
+    // 记录本次渲染的单元格引用（用于后台异步补充设备历史标记），key 为 "年-月-日"
+    this._calCells = {};
+
     const now = new Date();
     const firstDay = new Date(this.calCurrentYear, this.calCurrentMonth - 1, 1);
     const lastDay = new Date(this.calCurrentYear, this.calCurrentMonth, 0);
-    
+
     // 获取第一天是星期几（0=周日，1=周一...）
     let startDayOfWeek = firstDay.getDay();
     // 调整为0=周一，1=周二...6=周日
     startDayOfWeek = startDayOfWeek === 0 ? 6 : startDayOfWeek - 1;
-    
+
     // 创建日历数据
     const calendarData = [];
-    
+
     // 添加空白单元格
     for (let i = 0; i < startDayOfWeek; i++) {
       calendarData.push(null);
     }
-    
+
     // 添加日期
     for (let day = 1; day <= lastDay.getDate(); day++) {
       const dayStr = `${this.calCurrentYear}-${String(this.calCurrentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const dayData = monthDays.find(d => d.time === dayStr);
-      
+
       if (dayData && dayData.total_usage > 0) {
         calendarData.push({
           day: day,
@@ -9312,21 +10595,22 @@ class ElectricityInfoCard extends HTMLElement {
           dayData: dayData ? {
             time: dayData.time,
             unit: dayData.unit,
-            hasDeviceHistory: dayData.hasDeviceHistory || false
+            hasDeviceHistory: dayData.hasDeviceHistory || false,
+            hasApiData: dayData.hasApiData || false
           } : null,
           hasData: false
         });
       }
     }
-    
+
     // 创建日期单元格
-    
+
     // 先计算当月用电量的最大值和最小值
     let maxUsage = 0;
     let minUsage = Infinity;
     let maxUsageDay = null;
     let minUsageDay = null;
-    
+
     calendarData.forEach(day => {
       if (day && day.hasData && day.dayData) {
         const usage = parseFloat(day.usage) || 0;
@@ -9340,28 +10624,28 @@ class ElectricityInfoCard extends HTMLElement {
         }
       }
     });
-    
+
     // 如果所有值都是0，重置minUsage
     if (minUsage === Infinity) {
       minUsage = 0;
     }
-    
+
     calendarData.forEach(day => {
       const cell = document.createElement('div');
       cell.className = 'calendar-day';
-      
+
       if (day) {
         cell.classList.add('has-date');
-        
+
         // 判断是否是今天
-        const isToday = day.day === now.getDate() && 
-            this.calCurrentYear === now.getFullYear() && 
+        const isToday = day.day === now.getDate() &&
+            this.calCurrentYear === now.getFullYear() &&
             this.calCurrentMonth === now.getMonth() + 1;
-        
+
         if (isToday) {
           cell.classList.add('today');
         }
-        
+
         // 判断是否是当月用电量最大或最小的单元格
         if (day.hasData && day.dayData) {
           const usage = parseFloat(day.usage) || 0;
@@ -9371,7 +10655,7 @@ class ElectricityInfoCard extends HTMLElement {
             cell.classList.add('min-usage-day');
           }
         }
-        
+
         // 添加预计使用天数的进度条
         // 从UI元素获取剩余天数，支持多用户/多类切换
         let remainingDays = 0;
@@ -9380,7 +10664,7 @@ class ElectricityInfoCard extends HTMLElement {
           const daysValue = remainingDaysElement.textContent;
           remainingDays = parseInt(daysValue, 10) || 0;
         }
-        
+
         // 检查是否是预付费用户，预付费用户显示进度条
         let isPrepaid = false;
         if (this._hass && this.entityId) {
@@ -9388,39 +10672,39 @@ class ElectricityInfoCard extends HTMLElement {
           if (entity) {
             // 从实体顶层节点获取"预付费"字段
             let prepaidValue = this.getEntityAttribute(entity, '预付费');
-            
+
             // 如果顶层节点没有，尝试从data节点的"预付费"字段获取
             if (!prepaidValue && entity.attributes && entity.attributes.data) {
               prepaidValue = entity.attributes.data['预付费'];
             }
-            
+
             isPrepaid = (prepaidValue === '否');
           }
         }
-        
+
         // 如果 remainingDays 存在且大于0，且不是预付费用户，添加进度条
         if (remainingDays > 0 && !isPrepaid) {
           const todayDate = new Date();
           const startDate = new Date(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate());
           const endDate = new Date(startDate.getTime() + remainingDays * 24 * 60 * 60 * 1000);
-          
+
           // 检查当前日期是否在进度条范围内
           const cellDate = new Date(this.calCurrentYear, this.calCurrentMonth - 1, day.day);
-          
+
           // 只在当前月份且日期在今天到结束日期之间（含）时显示进度条
-          if (cellDate >= startDate && cellDate <= endDate && 
-              cellDate.getMonth() + 1 === this.calCurrentMonth && 
+          if (cellDate >= startDate && cellDate <= endDate &&
+              cellDate.getMonth() + 1 === this.calCurrentMonth &&
               cellDate.getFullYear() === this.calCurrentYear) {
             const progressBar = document.createElement('div');
             progressBar.className = 'usage-progress-bar';
             cell.appendChild(progressBar);
           }
         }
-        
+
         // 判断是否是未来日期
         const cellDate = new Date(this.calCurrentYear, this.calCurrentMonth - 1, day.day);
         const isFutureDate = cellDate > now;
-        
+
         // 如果是未来日期，添加禁用样式
         if (isFutureDate) {
           cell.classList.add('future-date');
@@ -9430,47 +10714,77 @@ class ElectricityInfoCard extends HTMLElement {
           // 非未来日期都可以点击
           cell.style.cursor = 'pointer';
         }
-        
+
         // 创建日期圆圈
         const dateCircle = document.createElement('span');
         dateCircle.className = 'date-circle';
         dateCircle.textContent = day.day;
         cell.appendChild(dateCircle);
-        
+
         // 如果有数据，显示用量和费用
         if (day.hasData) {
           cell.classList.add('has-data');
-          
+
           // 获取单位符号（必须从数据中获取）
           const usageUnit = day.dayData.unit;
-          
+
           const dataValue = document.createElement('div');
           dataValue.className = 'data-value';
           dataValue.textContent = `${day.usage.toFixed(2)}${usageUnit}`;
           cell.appendChild(dataValue);
-          
+
           const calcValue = document.createElement('div');
           calcValue.className = 'calc-value';
           calcValue.textContent = `¥${day.amount.toFixed(2)}`;
           cell.appendChild(calcValue);
         }
-        
-        // 如果配置了device_entity且该日期有设备历史数据，显示H标记（无论是否有用电数据）
-        if (this.deviceEntityConfig && this.deviceEntityConfig.length > 0 && day.dayData && day.dayData.hasDeviceHistory) {
-          const deviceMarker = document.createElement('span');
-          deviceMarker.className = 'device-history-marker';
-          deviceMarker.textContent = 'H';
-          cell.appendChild(deviceMarker);
+
+        // 如果配置了device_entity且该日期有设备历史数据或API数据，显示标记
+        if (this.deviceEntityConfig && this.deviceEntityConfig.length > 0 && day.dayData) {
+          // 创建标记容器，用于显示 A 和 H
+          const markerContainer = document.createElement('div');
+          markerContainer.className = 'marker-container';
+          markerContainer.style.position = 'absolute';
+          markerContainer.style.top = '2px';
+          markerContainer.style.right = '2px';
+          markerContainer.style.display = 'flex';
+          markerContainer.style.gap = '2px';
+          markerContainer.style.zIndex = '2';
+
+          // 如果有API数据，显示 A 标记（覆盖 .device-history-marker 的绝对定位，避免重叠）
+          if (day.dayData.hasApiData) {
+            const apiMarker = document.createElement('span');
+            apiMarker.className = 'device-history-marker';
+            apiMarker.style.position = 'relative';
+            apiMarker.style.top = 'auto';
+            apiMarker.style.right = 'auto';
+            apiMarker.textContent = 'A';
+            markerContainer.appendChild(apiMarker);
+          }
+
+          // 如果有HA历史数据，显示 H 标记
+          if (day.dayData.hasDeviceHistory) {
+            const deviceMarker = document.createElement('span');
+            deviceMarker.className = 'device-history-marker';
+            deviceMarker.style.position = 'relative';
+            deviceMarker.style.top = 'auto';
+            deviceMarker.style.right = 'auto';
+            deviceMarker.textContent = 'H';
+            markerContainer.appendChild(deviceMarker);
+          }
+
+          if (day.dayData.hasApiData || day.dayData.hasDeviceHistory) {
+            cell.appendChild(markerContainer);
+          }
         }
-        
+
         // 为所有非未来日期的单元格添加点击事件
         if (!isFutureDate) {
           // 只有当有数据或者配置了device_entity时，才允许点击
           if (day.hasData || (this.deviceEntityConfig && this.deviceEntityConfig.length > 0)) {
             cell.addEventListener('click', () => {
               const dayStr = `${this.calCurrentYear}-${String(this.calCurrentMonth).padStart(2, '0')}-${String(day.day).padStart(2, '0')}`;
-              // 如果有数据，显示完整详情；如果无数据，显示空数据提示
-              this.showDayModal(dayStr, day.hasData ? day.dayData : null);
+              this.showDayModal(dayStr, day.dayData);
             });
           } else {
             // 无数据且没有配置device_entity时，禁用点击
@@ -9479,21 +10793,27 @@ class ElectricityInfoCard extends HTMLElement {
           }
         }
       }
-      
+
+      // 记录该日期单元格引用，便于后台异步补充设备历史标记
+      if (day) {
+        const cellDayStr = `${this.calCurrentYear}-${String(this.calCurrentMonth).padStart(2, '0')}-${String(day.day).padStart(2, '0')}`;
+        this._calCells[cellDayStr] = cell;
+      }
+
       grid.appendChild(cell);
     });
   }
-  
+
   // 显示日详情模态框
   showDayModal(dateStr, dayData) {
     // 设置标题
     const [year, month, day] = dateStr.split('-');
     const modalTitle = this.textMap && this.textMap.dayModalTitle ? this.textMap.dayModalTitle : '用电详情';
     this.dayModalTitleEl.textContent = `${year}年${parseInt(month)}月${parseInt(day)}日 ${modalTitle}`;
-    
+
     // 清空模态框内容
     this.dayModalBodyEl.innerHTML = '';
-    
+
     // 检查是否有数据
     if (!dayData) {
       // 无数据时显示提示信息
@@ -9507,12 +10827,12 @@ class ElectricityInfoCard extends HTMLElement {
         <div style="font-size: 14px;">该日期暂无用电数据</div>
         <div style="font-size: 12px; margin-top: 5px;">可能是数据尚未更新或当日无用电记录</div>
       `;
-      
+
       this.dayModalBodyEl.appendChild(noDataMessage);
-      
+
       // 如果配置了设备实体，显示设备轨道（即使没有用电数据）
       if (this.deviceEntityConfig && this.deviceEntityConfig.length > 0) {
-        this.renderDeviceTracks(dateStr);
+        this.renderDeviceTracks(dateStr, null);
       }
     } else {
       // 有数据时显示完整的详情
@@ -9536,13 +10856,13 @@ class ElectricityInfoCard extends HTMLElement {
       const barChartContainer = document.createElement('div');
       barChartContainer.className = 'pie-chart-container';
       barChartContainer.id = 'day-bar-chart';
-      
+
       barChartSection.appendChild(barChartContainer);
       this.dayModalBodyEl.appendChild(barChartSection);
 
       // 获取所有年份的今天数据
       const todayData = this.getAllYearsTodayData(dateStr);
-      
+
       // 渲染柱状图
       setTimeout(() => {
         this.renderDayBarChart(todayData, dateStr);
@@ -9558,48 +10878,49 @@ class ElectricityInfoCard extends HTMLElement {
 
       // 如果配置了设备实体，显示设备轨道
       if (this.deviceEntityConfig && this.deviceEntityConfig.length > 0) {
-        this.renderDeviceTracks(dateStr);
+        // 复用hasDeviceHistory逻辑：有H标记时HA有数据，跳过API；无H标记时调API补充
+        this.renderDeviceTracks(dateStr, dayData && dayData.hasDeviceHistory ? dayData : null);
       }
     }
 
     // 显示模态框（使用平滑动画）
     this.dayModalEl.style.display = 'flex';
-    
+
     // 强制重排以确保CSS动画生效
     this.dayModalEl.offsetHeight;
-    
+
     // 应用隐藏配置
     requestAnimationFrame(() => {
       this.applyHiddenConfig();
     });
   }
-  
+
   // 渲染日柱状图（替代原来的饼图）
   renderDayBarChart(valleyEle, peakEle, normalEle, sharpEle, noTimeEle, totalEle, hasTimeData, usageUnit = '', historyTodayData = null, dateStr = '') {
     const pieChartEl = this.dayModalBodyEl.querySelector('#day-pie-chart');
     if (!pieChartEl) {
       return;
     }
-    
+
     // 销毁之前的图表实例
     if (this.dayChart) {
       this.dayChart.dispose();
       this.dayChart = null;
     }
-    
+
     // 检查ECharts是否可用
     if (typeof echarts === 'undefined') {
       return;
     }
-    
+
     this.dayChart = echarts.init(pieChartEl, null, { width: 210, height: 140 });
-    
+
     // 根据 utility_type 设置颜色和数据
     const isElectricity = this.utilityType === 'ele';
     const pieColor = this.utilityType === 'gas' ? '#FF9800' : // 燃气黄色
                      this.utilityType === 'water' ? '#2196F3' : // 水蓝色
                      '#9E9E9E'; // 默认灰色
-    
+
     // 构建数据数组
     const data = [];
 
@@ -9620,23 +10941,23 @@ class ElectricityInfoCard extends HTMLElement {
 
       // 如果没有分时数据，显示"无分时"饼图
       if (!hasTimeData) {
-        data.push({ 
-          value: totalEle > 0 ? totalEle : 1, 
-          name: '无分时', 
-          itemStyle: { color: '#999999' }, 
-          label: { color: '#999999' } 
+        data.push({
+          value: totalEle > 0 ? totalEle : 1,
+          name: '无分时',
+          itemStyle: { color: '#999999' },
+          label: { color: '#999999' }
         });
       }
     } else {
       // 非电力类型只显示用量
-      data.push({ 
-        value: totalEle > 0 ? totalEle : 1, 
-        name: '用量', 
-        itemStyle: { color: pieColor }, 
-        label: { color: pieColor } 
+      data.push({
+        value: totalEle > 0 ? totalEle : 1,
+        name: '用量',
+        itemStyle: { color: pieColor },
+        label: { color: pieColor }
       });
     }
-    
+
     const option = {
       tooltip: {
         trigger: 'item',
@@ -9646,12 +10967,12 @@ class ElectricityInfoCard extends HTMLElement {
         formatter: (function(usageUnit) {
           return function(params) {
             if (params.name === '无分时') {
-              return params.name + '：<br/>' + 
-                     params.value + usageUnit + '<br/>' + 
+              return params.name + '：<br/>' +
+                     params.value + usageUnit + '<br/>' +
                      params.percent + '%';
             }
-            return params.name + '：<br/>' + 
-                   params.value + usageUnit + '<br/>' + 
+            return params.name + '：<br/>' +
+                   params.value + usageUnit + '<br/>' +
                    params.percent + '%';
           };
         })(usageUnit)
@@ -9711,11 +11032,11 @@ class ElectricityInfoCard extends HTMLElement {
         }
       ]
     };
-    
+
     try {
       this.dayChart.setOption(option);
       // Successfully rendered
-      
+
       // 确保图表正确渲染尺寸
       setTimeout(() => {
         if (this.dayChart) {
@@ -9726,44 +11047,44 @@ class ElectricityInfoCard extends HTMLElement {
       // Render failed
     }
   }
-  
+
   // 渲染日柱状图（显示历年今日数据对比）
   renderDayBarChart(todayData, dateStr) {
     const barChartEl = this.dayModalBodyEl.querySelector('#day-bar-chart');
     if (!barChartEl) {
       return;
     }
-    
+
     // 销毁之前的图表实例
     if (this.dayChart) {
       this.dayChart.dispose();
       this.dayChart = null;
     }
-    
+
     // 检查ECharts是否可用
     if (typeof echarts === 'undefined') {
       return;
     }
-    
+
     this.dayChart = echarts.init(barChartEl);
-    
+
     // 根据 utility_type 设置系列和颜色
     const isElectricity = this.utilityType === 'ele';
     const barColor = this.utilityType === 'gas' ? '#FF9800' : // 燃气黄色
                      this.utilityType === 'water' ? '#2196F3' : // 水蓝色
                      '#9E9E9E'; // 默认灰色
-    
+
     // 如果数据为空
     if (!todayData || todayData.length === 0) {
       return;
     }
-    
+
     // 从数据中提取年份、用量和金额
     const years = todayData.map(item => {
       const date = new Date(item.time);
       return date.getFullYear().toString();
     });
-    
+
     // 提取完整日期字符串（yyyy-mm-dd）用于tooltip
     const dates = todayData.map(item => {
       const date = new Date(item.time);
@@ -9772,23 +11093,23 @@ class ElectricityInfoCard extends HTMLElement {
       const day = String(date.getDate()).padStart(2, '0');
       return `${year}-${month}-${day}`;
     });
-    
+
     const amounts = todayData.map(item => item.total_amount || 0);
-    
+
     // 提取分时数据
     const peakData = todayData.map(item => item.usage_ele_peak || 0);
     const valleyData = todayData.map(item => item.usage_ele_valley || 0);
     const normalData = todayData.map(item => item.usage_ele_norm || 0);
     const sharpData = todayData.map(item => item.usage_ele_tip || 0);
     const noTimeData = todayData.map(item => item.usage_ele_no || 0);
-    
+
     // 获取单位符号（从数据中获取，不设置默认值）
     const usageUnit = todayData.length > 0 ? (todayData[0].unit || '') : '';
-    
+
     // 构建系列配置
     const series = [];
     const legendData = [];
-    
+
     if (isElectricity) {
       // 电力类型显示分时系列（堆叠柱状图）
       series.push(
@@ -9833,7 +11154,7 @@ class ElectricityInfoCard extends HTMLElement {
           itemStyle: { color: '#9E9E9E' }
         }
       );
-      
+
       legendData.push(
         { name: '峰', icon: 'none' },
         { name: '谷', icon: 'none' },
@@ -9852,10 +11173,10 @@ class ElectricityInfoCard extends HTMLElement {
         yAxisIndex: 0,
         itemStyle: { color: barColor }
       });
-      
+
       legendData.push({ name: '用量', icon: 'none' });
     }
-    
+
     // 所有类型都显示费用系列（折线图）
     series.push({
       name: '消费',
@@ -9901,9 +11222,10 @@ class ElectricityInfoCard extends HTMLElement {
         }
       }
     });
-    
+
     legendData.push({ name: '消费', icon: 'none' });
-    
+
+    const rootStyle = getComputedStyle(this);
     // 图表配置
     const option = {
       tooltip: {
@@ -9917,33 +11239,33 @@ class ElectricityInfoCard extends HTMLElement {
         formatter: function(params) {
           // 获取当前柱子的索引
           const dataIndex = params[0].dataIndex;
-          
+
           // 第一行：从数据中提取的正确日期格式 yyyy-mm-dd
           let result = dates[dataIndex] + '<br/>';
-          
+
           // 第二行：消费金额
           const costParam = params.find(param => param.seriesName === '消费');
           if (costParam) {
             result += costParam.marker + '消费: ¥' + costParam.value.toFixed(2) + '<br/>';
           }
-          
+
           // 第三行：总用量（计算所有分时数据的和）
           const usageParams = params.filter(param => param.seriesName !== '消费' && param.value > 0);
           const totalUsage = usageParams.reduce((sum, param) => sum + param.value, 0);
           if (totalUsage > 0) {
             result += '用量: ' + totalUsage.toFixed(2) + usageUnit + '<br/>';
           }
-          
+
           // 添加分割线
           if (usageParams.length > 0) {
             result += '<hr style="margin:3px 0;border:none;border-top:1px solid #ddd;">';
-            
+
             // 下方显示分时用电详情
             usageParams.forEach(item => {
               result += item.marker + item.seriesName + ': ' + item.value + usageUnit + '<br/>';
             });
           }
-          
+
           return result;
         }
       },
@@ -10003,10 +11325,10 @@ class ElectricityInfoCard extends HTMLElement {
         type: 'category',
         data: years,
         axisLine: {
-          lineStyle: { color: 'var(--text-color)' }
+          lineStyle: { color: rootStyle.getPropertyValue('--text-color').trim() || '#666' }
         },
         axisLabel: {
-          color: 'var(--text-color)',
+          color: rootStyle.getPropertyValue('--text-color').trim() || '#666',
           interval: 0,
           rotate: 45,
           fontSize: 10
@@ -10019,10 +11341,10 @@ class ElectricityInfoCard extends HTMLElement {
           nameLocation: 'end',
           position: 'left',
           axisLine: {
-            lineStyle: { color: 'var(--text-color)' }
+            lineStyle: { color: rootStyle.getPropertyValue('--text-color').trim() || '#666' }
           },
           axisLabel: {
-            color: 'var(--text-color)',
+            color: rootStyle.getPropertyValue('--text-color').trim() || '#666',
             formatter: function(value) {
               if (value > 100) {
                 return (value / 1000).toFixed(1) + 'k';
@@ -10031,7 +11353,7 @@ class ElectricityInfoCard extends HTMLElement {
             }
           },
           splitLine: {
-            lineStyle: { color: 'rgba(0,0,0,0.1)' }
+            lineStyle: { color: rootStyle.getPropertyValue('--button-primary-transparent').trim() || 'rgba(0,0,0,0.1)' }
           }
         },
         {
@@ -10057,10 +11379,10 @@ class ElectricityInfoCard extends HTMLElement {
       ],
       series: series
     };
-    
+
     try {
       this.dayChart.setOption(option);
-      
+
       // 确保图表正确渲染尺寸
       setTimeout(() => {
         if (this.dayChart) {
@@ -10071,49 +11393,49 @@ class ElectricityInfoCard extends HTMLElement {
       console.error('渲染日柱状图失败:', error);
     }
   }
-  
+
   // 获取历史今天的数据
   getHistoryTodayData(dateStr) {
     if (!this.standardData || !this.standardData.dayUsage || this.standardData.dayUsage.length === 0) {
       return null;
     }
-    
+
     // 解析日期字符串，获取月份和日期
     const [year, month, day] = dateStr.split('-').map(Number);
-    
+
     // 查找历史数据中相同月份和日期的数据（排除当前年）
     const historyData = this.standardData.dayUsage.find(item => {
       if (!item.time) return false;
-      
+
       const itemDate = new Date(item.time);
       const itemYear = itemDate.getFullYear();
       const itemMonth = itemDate.getMonth() + 1;
       const itemDay = itemDate.getDate();
-      
+
       // 匹配月份和日期，但不匹配年份（排除当前年）
       return itemYear !== year && itemMonth === month && itemDay === day;
     });
-    
+
     return historyData || null;
   }
-  
+
   // 获取所有年份的今天数据
   getAllYearsTodayData(dateStr) {
     if (!this.standardData || !this.standardData.dayUsage || this.standardData.dayUsage.length === 0) {
       return [];
     }
-    
+
     // 解析日期字符串，获取月份和日期
     const [year, month, day] = dateStr.split('-').map(Number);
-    
+
     // 查找所有年份中相同月份和日期的数据，按年份排序
     const allData = this.standardData.dayUsage.filter(item => {
       if (!item.time) return false;
-      
+
       const itemDate = new Date(item.time);
       const itemMonth = itemDate.getMonth() + 1;
       const itemDay = itemDate.getDate();
-      
+
       // 匹配月份和日期
       return itemMonth === month && itemDay === day;
     }).sort((a, b) => {
@@ -10122,15 +11444,16 @@ class ElectricityInfoCard extends HTMLElement {
       const yearB = new Date(b.time).getFullYear();
       return yearA - yearB;
     });
-    
+
     return allData;
   }
-  
+
 
   // 隐藏日详情模态框
   hideDayModal() {
     this.dayModalEl.style.display = 'none';
-    
+    this._stopDayCurrentTimeTimer();
+
     // 隐藏提示框
     this.hideTooltip();
     // 销毁饼图实例
@@ -10145,10 +11468,10 @@ class ElectricityInfoCard extends HTMLElement {
     }
     // 清空模态框内容，防止下次打开时冲突
     this.dayModalBodyEl.innerHTML = '';
-    
+
     // 清空设备数据
     this.dayDeviceData = null;
-    
+
     // 重置显示状态
     this.showSankeyChart = false;
   }
@@ -10165,13 +11488,14 @@ class ElectricityInfoCard extends HTMLElement {
         return;
       }
 
+      // 先显示模态框，确保DOM容器有正确的布局尺寸，再渲染内容
+      this.payHistoryModalEl.style.display = 'flex';
+
       // 渲染缴费历史
       this.renderPayHistory(payHistory);
-
-      // 显示模态框
-      this.payHistoryModalEl.style.display = 'flex';
     } catch (error) {
-      // 文件不存在或访问失败，不做反应
+      // 获取失败时隐藏可能已显示的模态框
+      this.hidePayHistoryModal();
       console.log('缴费历史数据获取失败或不存在:', error);
     }
   }
@@ -10179,13 +11503,16 @@ class ElectricityInfoCard extends HTMLElement {
   // 隐藏缴费历史模态框
   hidePayHistoryModal() {
     this.payHistoryModalEl.style.display = 'none';
-    // 销毁饼图实例
+    // 先清空内容，再销毁饼图，避免销毁后残留DOM引用
+    this.payHistoryBodyEl.innerHTML = '';
     if (this.paySourceChart) {
       this.paySourceChart.dispose();
       this.paySourceChart = null;
     }
-    // 清空模态框内容
-    this.payHistoryBodyEl.innerHTML = '';
+    if (this._pieChartResizeObserver) {
+      this._pieChartResizeObserver.disconnect();
+      this._pieChartResizeObserver = null;
+    }
   }
 
   // 更新缴费次数角标
@@ -10194,7 +11521,11 @@ class ElectricityInfoCard extends HTMLElement {
     try {
       const payHistory = await this.fetchPayHistory();
       if (payHistory && payHistory.length > 0) {
-        this.payCountBadgeEl.textContent = `${payHistory.length}次`;
+        // fetchPayHistory 返回的数据统一使用 cost 字段
+        const totalAmount = payHistory.reduce((sum, item) => {
+          return sum + (parseFloat(item.cost) || 0);
+        }, 0);
+        this.payCountBadgeEl.textContent = `${Math.round(totalAmount)}元`;
       } else {
         this.payCountBadgeEl.textContent = '';
       }
@@ -10214,33 +11545,49 @@ class ElectricityInfoCard extends HTMLElement {
         }
 
         const attributes = entityState.attributes;
-        
+
         // 必须配置 node 参数
         if (!this.jiaofeiFieldMapping || !this.jiaofeiFieldMapping.node) {
           throw new Error('缴费实体未配置 node 参数');
         }
-        
-        const nodeName = this.jiaofeiFieldMapping.node;
-        const dataArray = attributes[nodeName];
-        
-        if (!dataArray || !Array.isArray(dataArray)) {
-          throw new Error(`缴费实体的 ${nodeName} 节点不存在或不是数组`);
+
+        const nodePath = this.jiaofeiFieldMapping.node;
+        let dataArray;
+
+        if (nodePath.includes('.')) {
+          // 多层路径：从 entityState 开始逐级遍历，如 attributes.payList
+          const parts = nodePath.split('.');
+          dataArray = entityState;
+          for (const part of parts) {
+            if (dataArray == null) {
+              dataArray = undefined;
+              break;
+            }
+            dataArray = dataArray[part];
+          }
+        } else {
+          // 单层路径：向后兼容，从 attributes 下取值
+          dataArray = attributes[nodePath];
         }
-        
+
+        if (!dataArray || !Array.isArray(dataArray)) {
+          throw new Error(`缴费实体的 ${nodePath} 节点不存在或不是数组`);
+        }
+
         // 使用配置的字段映射读取数据
         const dateField = this.jiaofeiFieldMapping.date || 'time';
         const amountField = this.jiaofeiFieldMapping.pay_amount || 'cost';
         const modeField = this.jiaofeiFieldMapping.pay_mode || 'source';
-        
+
         const payHistory = dataArray.map(item => ({
           time: item[dateField],
           cost: parseFloat(item[amountField]) || 0,
           source: item[modeField] || '其他'
         }));
-        
+
         return payHistory;
       }
-      
+
       // 没有配置缴费实体，返回空数组
       return [];
     } catch (error) {
@@ -10361,15 +11708,15 @@ class ElectricityInfoCard extends HTMLElement {
     pieChartSection.className = 'pay-history-pie-chart-section';
 
     const pieChartTitle = document.createElement('div');
-    pieChartTitle.className = 'pie-chart-title';
+    pieChartTitle.className = 'pay-history-pie-title';
     pieChartTitle.textContent = '缴费方式';
     pieChartSection.appendChild(pieChartTitle);
 
     const pieChartContent = document.createElement('div');
-    pieChartContent.className = 'pie-chart-content';
+    pieChartContent.className = 'pay-history-pie-content';
 
     const pieChartContainer = document.createElement('div');
-    pieChartContainer.className = 'pie-chart-container';
+    pieChartContainer.className = 'pay-history-pie-container';
     pieChartContainer.id = 'pay-source-pie-chart';
     pieChartContent.appendChild(pieChartContainer);
 
@@ -10377,7 +11724,7 @@ class ElectricityInfoCard extends HTMLElement {
     topSection.appendChild(pieChartSection);
     this.payHistoryBodyEl.appendChild(topSection);
 
-    // 渲染饼图
+    // 渲染饼图（ResizeObserver会监听容器尺寸变化，自动在CSS过渡动画完成后resize）
     this.renderPaySourcePieChart(pieChartContainer, sortedSources, colors);
 
     // 创建缴费历史列表
@@ -10426,19 +11773,43 @@ class ElectricityInfoCard extends HTMLElement {
 
   // 渲染缴费方式饼图
   renderPaySourcePieChart(container, sortedSources, colors) {
-    // 销毁之前的图表实例
+    // 销毁之前的图表实例和观察器
     if (this.paySourceChart) {
       this.paySourceChart.dispose();
       this.paySourceChart = null;
     }
-    
+    if (this._pieChartResizeObserver) {
+      this._pieChartResizeObserver.disconnect();
+      this._pieChartResizeObserver = null;
+    }
+
     // 检查ECharts是否可用
     if (typeof echarts === 'undefined') {
       return;
     }
-    
-    this.paySourceChart = echarts.init(container, null, { width: 240, height: 140 });
-    
+
+    // 检查容器是否在DOM中
+    if (!container || !container.isConnected) {
+      return;
+    }
+
+    const option = this._buildPaySourcePieOption(sortedSources, colors);
+
+    // 始终先init，即使当前尺寸为0（ResizeObserver会在尺寸变化时自动resize）
+    this.paySourceChart = echarts.init(container);
+    this.paySourceChart.setOption(option);
+
+    // 使用ResizeObserver监听容器尺寸变化，确保CSS过渡动画完成后也能正确resize
+    this._pieChartResizeObserver = new ResizeObserver(() => {
+      if (this.paySourceChart && !this.paySourceChart.isDisposed()) {
+        this.paySourceChart.resize();
+      }
+    });
+    this._pieChartResizeObserver.observe(container);
+  }
+
+  // 构建缴费方式饼图配置
+  _buildPaySourcePieOption(sortedSources, colors) {
     const data = sortedSources.map((item, index) => ({
       value: item[1],
       name: item[0],
@@ -10446,15 +11817,15 @@ class ElectricityInfoCard extends HTMLElement {
       label: { color: colors[index % colors.length] }
     }));
 
-    const option = {
+    return {
       tooltip: {
         trigger: 'item',
         textStyle: {
           fontSize: 10
         },
         formatter: function(params) {
-          return params.name + '：<br/>' + 
-                 '¥' + params.value.toFixed(2) + '<br/>' + 
+          return params.name + '：<br/>' +
+                 '¥' + params.value.toFixed(2) + '<br/>' +
                  params.percent + '%';
         }
       },
@@ -10493,12 +11864,10 @@ class ElectricityInfoCard extends HTMLElement {
         }
       ]
     };
-
-    this.paySourceChart.setOption(option);
   }
 
   // 渲染设备轨道
-  async renderDeviceTracks(dateStr) {
+  async renderDeviceTracks(dateStr, dayData) {
     if (!this._hass || !this.deviceEntityConfig) {
       return;
     }
@@ -10510,7 +11879,7 @@ class ElectricityInfoCard extends HTMLElement {
     headerContainer.style.justifyContent = 'space-between';
     headerContainer.style.alignItems = 'center';
     headerContainer.style.marginBottom = '10px';
-    
+
     // 添加标题
     const timelineTitle = document.createElement('div');
     timelineTitle.style.textAlign = 'center';
@@ -10520,7 +11889,7 @@ class ElectricityInfoCard extends HTMLElement {
     timelineTitle.style.flex = '1';
     timelineTitle.textContent = '设备运行详情';
     headerContainer.appendChild(timelineTitle);
-    
+
     // 添加切换按钮
     const toggleButton = document.createElement('button');
     toggleButton.id = 'sankey-toggle-btn';
@@ -10535,25 +11904,25 @@ class ElectricityInfoCard extends HTMLElement {
     toggleButton.style.transition = 'all 0.2s';
     toggleButton.style.marginLeft = '10px';
     toggleButton.style.whiteSpace = 'nowrap';
-    
+
     // 添加悬停效果
     toggleButton.addEventListener('mouseenter', () => {
       toggleButton.style.background = 'var(--button-primary-transparent)';
       toggleButton.style.borderColor = 'var(--button-color-active)';
     });
-    
+
     toggleButton.addEventListener('mouseleave', () => {
       if (!this.showSankeyChart) {
         toggleButton.style.background = 'var(--card-button-bg)';
         toggleButton.style.borderColor = 'var(--button-color)';
       }
     });
-    
+
     // 添加点击事件
     toggleButton.addEventListener('click', () => {
       this.showSankeyChart = !this.showSankeyChart;
       this.toggleTimelineContent(this.showSankeyChart);
-      
+
       // 更新按钮样式和文本
       if (this.showSankeyChart) {
         // 当前显示桑基图，按钮应显示"时间轴"（点击后切换到时间轴）
@@ -10569,19 +11938,20 @@ class ElectricityInfoCard extends HTMLElement {
         toggleButton.textContent = '桑基图';
       }
     });
-    
+
     headerContainer.appendChild(toggleButton);
     this.dayModalBodyEl.appendChild(headerContainer);
 
     // 创建时间轴容器（只包含设备轨道）
     const timelineContainer = document.createElement('div');
     timelineContainer.id = 'timeline-container';
-    
+
     // 创建设备轨道容器
     const deviceTracksContainer = document.createElement('div');
     deviceTracksContainer.id = 'device-tracks-container';
+
     timelineContainer.appendChild(deviceTracksContainer);
-    
+
     // 创建时间标签容器
     const timelineAligner = document.createElement('div');
     timelineAligner.className = 'timeline-aligner';
@@ -10596,15 +11966,15 @@ class ElectricityInfoCard extends HTMLElement {
       </div>
     `;
     timelineContainer.appendChild(timelineAligner);
-    
+
     // 创建合计行容器
     const totalRowContainer = document.createElement('div');
     totalRowContainer.id = 'total-row-container';
     timelineContainer.appendChild(totalRowContainer);
-    
+
     // 添加到模态框
     this.dayModalBodyEl.appendChild(timelineContainer);
-    
+
     // 创建桑基图容器（默认隐藏）
     const sankeyContainer = document.createElement('div');
     sankeyContainer.id = 'sankey-chart-container';
@@ -10617,14 +11987,17 @@ class ElectricityInfoCard extends HTMLElement {
     this.dayModalBodyEl.appendChild(sankeyContainer);
 
     // 获取设备数据并渲染轨道
-    await this.fetchDeviceEvents(dateStr);
+    await this.fetchDeviceEvents(dateStr, dayData);
 
     // 如果没有设备运行数据，隐藏整个 timeline-container 和 header
     if (!this.deviceEvents || this.deviceEvents.length === 0) {
       timelineContainer.style.display = 'none';
       headerContainer.style.display = 'none';
     } else {
-      this.initializeTracks();
+      this.initializeTracks().then(() => {
+        // 轨道渲染完成后再更新当前时刻指示器
+        this._updateDayCurrentTimeIndicator();
+      });
     }
 
     // 应用隐藏配置
@@ -10632,40 +12005,188 @@ class ElectricityInfoCard extends HTMLElement {
   }
 
 
+  // 更新日详情弹窗中的当前时刻指示器
+  _updateDayCurrentTimeIndicator() {
+    // 先清除之前的定时器
+    this._stopDayCurrentTimeTimer();
+
+    const indicator = this.dayModalBodyEl?.querySelector('.day-current-time-indicator');
+    if (!indicator) return;
+
+    // 判断弹窗显示的日期是否是今天
+    const titleMatch = this.dayModalTitleEl?.textContent?.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+    if (!titleMatch) return;
+
+    const now = new Date();
+    const modalYear = parseInt(titleMatch[1], 10);
+    const modalMonth = parseInt(titleMatch[2], 10) - 1;
+    const modalDay = parseInt(titleMatch[3], 10);
+
+    if (now.getFullYear() !== modalYear || now.getMonth() !== modalMonth || now.getDate() !== modalDay) {
+      // 不是今天，隐藏指示器
+      indicator.style.display = 'none';
+      return;
+    }
+
+    // 是今天，显示并定位指示器
+    const doPosition = () => {
+      const container = this.dayModalBodyEl?.querySelector('#device-tracks-container');
+      if (!container) return;
+
+      const containerWidth = container.clientWidth;
+      if (containerWidth <= 0) {
+        // 容器尚未布局完成，延迟重试
+        requestAnimationFrame(doPosition);
+        return;
+      }
+
+      indicator.style.display = 'block';
+      // device-track grid: 60px 85px 1fr，gap: 2px，timeline-container padding: 10px
+      const leftOffset = 10 + 60 + 2 + 85 + 2; // padding-left + label + gap + power-usage + gap
+      const trackWidth = containerWidth - leftOffset - 10; // 减去右 padding
+      if (trackWidth <= 0) return;
+
+      const SECONDS_PER_DAY = 86400;
+      const currentSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+      const ratio = currentSeconds / SECONDS_PER_DAY;
+      const left = leftOffset + ratio * trackWidth;
+      indicator.style.left = `${left}px`;
+    };
+
+    doPosition();
+
+    // 每秒更新一次
+    this._dayCurrentTimeTimer = setInterval(() => {
+      this._updateDayCurrentTimeIndicatorPosition();
+    }, 1000);
+  }
+
+  // 仅更新位置（不重新判断日期）
+  _updateDayCurrentTimeIndicatorPosition() {
+    const indicator = this.dayModalBodyEl?.querySelector('.day-current-time-indicator');
+    if (!indicator || indicator.style.display === 'none') return;
+
+    const container = this.dayModalBodyEl?.querySelector('#device-tracks-container');
+    if (!container) return;
+
+    const containerWidth = container.clientWidth;
+    if (containerWidth <= 0) return;
+
+    const SECONDS_PER_DAY = 86400;
+    const now = new Date();
+    const currentSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const ratio = currentSeconds / SECONDS_PER_DAY;
+    const leftOffset = 10 + 60 + 2 + 85 + 2;
+    const trackWidth = containerWidth - leftOffset - 10;
+    if (trackWidth <= 0) return;
+
+    const left = leftOffset + ratio * trackWidth;
+    indicator.style.left = `${left}px`;
+  }
+
+  // 停止当前时刻指示器定时器
+  _stopDayCurrentTimeTimer() {
+    if (this._dayCurrentTimeTimer) {
+      clearInterval(this._dayCurrentTimeTimer);
+      this._dayCurrentTimeTimer = null;
+    }
+  }
+
   // 获取设备事件
-  async fetchDeviceEvents(dateStr) {
+  // 当 dayData 非空（HA已有该日用电数据）时完全跳过API，只用HA历史
+  // 当 dayData 为空（HA无该日数据）时，调用API作为补充
+  async fetchDeviceEvents(dateStr, dayData) {
     // 确保日期格式正确（YYYY-MM-DD）
     const dateMatch = dateStr.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
     if (!dateMatch) {
       return [];
     }
-    
+
     const year = dateMatch[1];
     const month = String(dateMatch[2]).padStart(2, '0');
     const day = String(dateMatch[3]).padStart(2, '0');
     const formattedDateStr = `${year}-${month}-${day}`;
-    
+
     const startOfDay = new Date(`${formattedDateStr}T00:00:00`);
     const endOfDay = new Date(`${formattedDateStr}T23:59:59`);
 
-    
+    this.apiEnergyConsumedMap = new Map();
+    this.apiRoomsDailyData = null;
+
     const events = [];
     if (!this.deviceEntityConfig) return events;
 
-    const promises = this.deviceEntityConfig.map(async (deviceConfig) => {
+    // 判断是否需要调API：当HA没有该日数据(dayData为空)时才需要
+    const needApi = !dayData && this.apiBaseUrl && this.apiKey;
+
+    // 如果需要API，先取API数据
+    let apiRoomsData = null;
+    let apiEntityMap = {};  // entity_id -> [records]
+    if (needApi) {
+      try {
+        apiRoomsData = await this.fetchRoomsDaily(formattedDateStr);
+        if (this.showDebug) {
+          console.log(`[API] rooms_daily data for ${formattedDateStr}:`, apiRoomsData);
+        }
+        // 构建entity_id -> 记录数组映射（同一个实体可能有多条开关记录）
+        if (apiRoomsData && apiRoomsData.success && apiRoomsData.data && apiRoomsData.data.rooms) {
+          for (const records of Object.values(apiRoomsData.data.rooms)) {
+            for (const record of records) {
+              const eid = record.entity_id;
+              if (!apiEntityMap[eid]) {
+                apiEntityMap[eid] = [];
+              }
+              apiEntityMap[eid].push(record);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[API] rooms_daily fetch failed:', e);
+      }
+      this.apiRoomsDailyData = apiRoomsData;
+    }
+
+    // 逐个实体处理：优先HA数据，HA无数据时用API填充
+    for (const deviceConfig of this.deviceEntityConfig) {
       const entityId = deviceConfig.entity;
+      let hasEvent = false;
+
       try {
         const history = await this.getHistory(entityId, startOfDay, endOfDay);
         if (history && history.length > 0) {
           const deviceEvents = this.processEntityHistory(entityId, deviceConfig, history);
           events.push(...deviceEvents);
+          hasEvent = true;
         }
       } catch (error) {
-        // Silently fail
+        // HA查询失败
       }
-    });
 
-    await Promise.all(promises);
+      // HA无数据时，尝试用API数据补充
+      if (!hasEvent) {
+        const apiRecords = apiEntityMap[entityId];
+        if (apiRecords && apiRecords.length > 0) {
+          // 遍历该实体的所有API记录（多次开关）
+          for (const apiRecord of apiRecords) {
+            const apiEvents = this.processApiRecord(deviceConfig, apiRecord);
+            events.push(...apiEvents);
+          }
+          // 存入API能耗数据（合计所有记录的energy_consumed）
+          let totalEnergy = 0;
+          let hasEnergyData = false;
+          for (const apiRecord of apiRecords) {
+            if (apiRecord.energy_consumed !== null && apiRecord.energy_consumed !== undefined) {
+              totalEnergy += parseFloat(apiRecord.energy_consumed) || 0;
+              hasEnergyData = true;
+            }
+          }
+          if (hasEnergyData) {
+            this.apiEnergyConsumedMap.set(deviceConfig.name || entityId, totalEnergy);
+          }
+        }
+      }
+    }
+
     this.deviceEvents = events;
     return events;
   }
@@ -10674,7 +12195,7 @@ class ElectricityInfoCard extends HTMLElement {
   async   getHistory(entityId, startTime, endTime) {
     return new Promise((resolve, reject) => {
       if (!this._hass) {
-        resolve([]); 
+        resolve([]);
         return;
       }
 
@@ -10703,7 +12224,7 @@ class ElectricityInfoCard extends HTMLElement {
   // 从历史状态对象中获取状态值（兼容不同版本的Home Assistant）
   getStateValue(stateObj) {
     if (!stateObj) return null;
-    
+
     // Home Assistant不同版本返回格式不同
     // 有些版本使用'state'属性，有些使用's'属性
     const stateValue = stateObj.state !== undefined ? stateObj.state : stateObj.s;
@@ -10714,18 +12235,18 @@ class ElectricityInfoCard extends HTMLElement {
   processEntityHistory(entityId, entityConfig, history) {
     const events = [];
     let currentEvent = null;
-    
+
     history.sort((a, b) => a.lu - b.lu);
 
     // 获取当前设备的实时状态
     const currentState = this.getCurrentEntityState(entityId);
     const isCurrentlyOn = this.isEntityOn(currentState, entityConfig);
-    
+
     for (let i = 0; i < history.length; i++) {
       const stateObj = history[i];
       const stateValue = stateObj.s;
       const timestampValue = stateObj.lu;
-      
+
       const isOn = this.isEntityOn(stateValue, entityConfig);
       const timestamp = new Date(timestampValue * 1000);
       const timeStr = this.formatTime(timestamp);
@@ -10753,22 +12274,22 @@ class ElectricityInfoCard extends HTMLElement {
     if (currentEvent) {
       // 只有当设备在当前日期（不是历史日期）且正在运行时才标记为进行中
       const today = new Date();
-      const isToday = currentEvent.start_timestamp.getDate() === today.getDate() && 
-                     currentEvent.start_timestamp.getMonth() === today.getMonth() && 
+      const isToday = currentEvent.start_timestamp.getDate() === today.getDate() &&
+                     currentEvent.start_timestamp.getMonth() === today.getMonth() &&
                      currentEvent.start_timestamp.getFullYear() === today.getFullYear();
-      
+
       if (isToday && isCurrentlyOn) {
         // 检查是否跨越午夜
         const startOfDay = new Date(today);
         startOfDay.setHours(0, 0, 0, 0);
-        
+
         if (currentEvent.start_timestamp < startOfDay) {
           // 设备在00:00:00前开启，跨越午夜后还没关闭
           // 使用00:00:00作为开启时间，当前时间作为结束时间
           currentEvent.start_timestamp = new Date(startOfDay);
           currentEvent.start = "00:00";
         }
-        
+
         currentEvent.isOngoing = true;
         currentEvent.end = null;
         currentEvent.end_timestamp = null;
@@ -10786,6 +12307,114 @@ class ElectricityInfoCard extends HTMLElement {
     return events;
   }
 
+  // 处理API返回的设备记录，转换为与processEntityHistory兼容的事件格式
+  processApiRecord(entityConfig, apiRecord) {
+    const events = [];
+    const entityId = entityConfig.entity;
+    const deviceName = entityConfig.name || entityId;
+
+    // API返回的on_time/off_time可能是完整时间戳或空值
+    if (apiRecord.on_time) {
+      const onTimeStr = apiRecord.on_time; // 格式: "2026-06-01 00:00:00"
+      const timePart = onTimeStr.length >= 16 ? onTimeStr.substring(11, 16) : '00:00';
+
+      const event = {
+        device: deviceName,
+        start: timePart,
+        entity_id: entityId,
+        config: entityConfig
+      };
+
+      if (apiRecord.off_time) {
+        const offTimeStr = apiRecord.off_time;
+        event.end = offTimeStr.length >= 16 ? offTimeStr.substring(11, 16) : '23:59';
+      } else {
+        event.isOngoing = true;
+        event.end = null;
+      }
+
+      // 记录是否为跨天事件
+      if (apiRecord.cross_day === 1) {
+        event.crossDay = true;
+      }
+
+      events.push(event);
+    }
+
+    return events;
+  }
+
+  // 通用API调用方法
+  async callApi(endpoint, params = {}) {
+    if (!this.apiBaseUrl || !this.apiKey) {
+      throw new Error('API未配置');
+    }
+
+    // 构建完整的API URL
+    const hassUrl = this._hass ? this._hass.auth.data.hassUrl : '';
+    let baseUrl = this.apiBaseUrl;
+
+    // 如果api_base_url是相对路径，拼接HA地址
+    if (baseUrl.startsWith('/')) {
+      baseUrl = `${hassUrl}${baseUrl}`;
+    }
+
+    // 确保baseUrl以/结尾
+    if (!baseUrl.endsWith('/')) {
+      baseUrl += '/';
+    }
+
+    // 构建查询参数
+    const queryParams = new URLSearchParams();
+    queryParams.set('key', this.apiKey);
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null) {
+        queryParams.set(key, value);
+      }
+    }
+
+    const url = `${baseUrl}${endpoint}?${queryParams.toString()}`;
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`API请求失败: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('[API] 请求错误:', error);
+      throw error;
+    }
+  }
+
+  // 获取指定日期的全屋设备详细信息
+  async fetchRoomsDaily(dateStr) {
+    try {
+      return await this.callApi('query', {
+        type: 'rooms_daily',
+        category: 'device',
+        date: dateStr
+      });
+    } catch (error) {
+      console.warn('[API] fetchRoomsDaily 失败:', error);
+      throw error;
+    }
+  }
+
+  // 获取指定设备指定月哪些日期有数据
+  async fetchEntityDataDates(entityId, monthStr) {
+    try {
+      return await this.callApi('query', {
+        type: 'entity_data_dates',
+        entity_id: entityId,
+        month: monthStr
+      });
+    } catch (error) {
+      console.warn('[API] fetchEntityDataDates 失败:', error);
+      throw error;
+    }
+  }
+
   // 获取当前实体状态
   getCurrentEntityState(entityId) {
     if (!this._hass || !this._hass.states) return null;
@@ -10796,24 +12425,24 @@ class ElectricityInfoCard extends HTMLElement {
   // 判断实体是否开启
   isEntityOn(state, entityConfig) {
     if (state === undefined || state === null) return false;
-    
+
     if (entityConfig.on_state) {
       const onStates = entityConfig.on_state.split(',').map(s => s.trim());
       return onStates.includes(state);
     }
-    
+
     if (entityConfig.entity.includes('input_boolean')) return state === 'on';
-    
+
     const onStates = ['on', 'open', 'true', 'home', 'active', 'playing', 'cooling', 'heating'];
     const offStates = ['off', 'closed', 'false', 'away', 'idle', 'paused', 'unavailable', 'unknown'];
-    
+
     const stateLower = String(state).toLowerCase();
-    
+
     if (onStates.includes(stateLower)) return true;
     if (offStates.includes(stateLower)) return false;
-    
+
     if (!isNaN(state) && state !== '') return parseFloat(state) > 0;
-    
+
     return !offStates.includes(stateLower);
   }
 
@@ -10830,14 +12459,14 @@ class ElectricityInfoCard extends HTMLElement {
 
     const trackBounds = trackWrapper.getBoundingClientRect();
     const clickX = e.clientX;
-    
+
     const clickOffset = clickX - trackBounds.left;
     const trackWidth = trackBounds.width;
     const clickRatio = Math.max(0, Math.min(1, clickOffset / trackWidth));
-    const newTimeSeconds = Math.round(clickRatio * 86400 / 60) * 60; 
+    const newTimeSeconds = Math.round(clickRatio * 86400 / 60) * 60;
 
     const events = this.deviceEvents.filter(ev => ev.device === deviceName);
-    
+
     this.showDetailedTooltip(e, deviceName, events, trackBounds, clickX, clickRatio, newTimeSeconds);
     e.stopPropagation();
   }
@@ -10845,7 +12474,7 @@ class ElectricityInfoCard extends HTMLElement {
   // 显示详细提示框
   showDetailedTooltip(e, deviceName, events, trackBounds, clickX, clickRatio, newTimeSeconds) {
     if (!this.eventTooltip) return;
-    
+
     e.preventDefault();
 
     // 清理之前的正在运行事件定时器
@@ -10869,7 +12498,7 @@ class ElectricityInfoCard extends HTMLElement {
     events.forEach(event => {
       const startSec = this.timeToSeconds(event.start);
       let endSec;
-      
+
       // 如果是正在运行的事件，使用当前时间计算时长
       if (event.isOngoing) {
         const now = new Date();
@@ -10877,7 +12506,7 @@ class ElectricityInfoCard extends HTMLElement {
       } else {
         endSec = event.end ? this.timeToSeconds(event.end) : 86400;
       }
-      
+
       if (endSec < startSec) {
         totalDurationSeconds += (86400 - startSec) + endSec;
       } else {
@@ -10885,19 +12514,19 @@ class ElectricityInfoCard extends HTMLElement {
       }
     });
     const totalDurationFormatted = this.formatDuration(totalDurationSeconds);
-    
+
     this.tooltipDeviceName.textContent = `${deviceName} (${totalDurationFormatted})`;
     this.tooltipEventsList.innerHTML = '';
-    
+
     const TOOLTIP_MIN_WIDTH = 160;
     const TOOLTIP_MAX_WIDTH = 200;
     const ARROW_SIZE = 7;
     const HORIZONTAL_CLEARANCE = 25;
     const MARGIN = 10;
     const TOOLTIP_MAX_HEIGHT = 150;
-    
+
     let highlightedElement = null;
-    
+
     if (events.length === 0) {
       const li = document.createElement('li');
       li.textContent = '本日无运行记录';
@@ -10908,38 +12537,38 @@ class ElectricityInfoCard extends HTMLElement {
         const startSec = this.timeToSeconds(ev.start);
         let endSec;
         let endStr;
-        
+
         // 如果是正在运行的事件，使用当前时间计算时长
         if (ev.isOngoing) {
           const now = new Date();
           endSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
           endStr = '正在运行';
-          
+
           // 为正在运行的事件添加动画效果
           li.classList.add('on-going-event');
-          
+
           // 添加实时更新的定时器
           this.startOngoingEventTimer(li, ev, startSec);
         } else {
           endSec = ev.end ? this.timeToSeconds(ev.end) : 86400;
           endStr = ev.end ? ev.end : '23:59';
         }
-        
+
         let durationSeconds;
         if (endSec < startSec) {
           durationSeconds = (86400 - startSec) + endSec;
         } else {
           durationSeconds = Math.max(0, endSec - startSec);
         }
-        
+
         const duration = this.formatDuration(durationSeconds);
-        
+
         li.innerHTML = `[${ev.start} - ${endStr}] <span>(${duration})</span>`;
-        
+
         // 检查点击时间是否在该事件内（使用10分钟容差）
         const TOLERANCE = 60 * 10;
         let isCurrentTimeInEvent = false;
-        
+
         if (endSec < startSec) {
           if (newTimeSeconds >= startSec - TOLERANCE || newTimeSeconds <= endSec + TOLERANCE) {
             isCurrentTimeInEvent = true;
@@ -10947,12 +12576,12 @@ class ElectricityInfoCard extends HTMLElement {
         } else if (newTimeSeconds >= startSec - TOLERANCE && newTimeSeconds <= endSec + TOLERANCE) {
           isCurrentTimeInEvent = true;
         }
-        
+
         if (isCurrentTimeInEvent) {
           li.classList.add('highlighted-event');
           highlightedElement = li;
         }
-        
+
         this.tooltipEventsList.appendChild(li);
       });
     }
@@ -11100,7 +12729,7 @@ class ElectricityInfoCard extends HTMLElement {
   // 格式化时长 - 统一显示为x.xh格式
   formatDuration(totalSeconds) {
     if (totalSeconds < 60) return `${(totalSeconds / 3600).toFixed(1)}h`;
-    
+
     const hours = totalSeconds / 3600;
     return `${hours.toFixed(1)}h`;
   }
@@ -11111,28 +12740,28 @@ class ElectricityInfoCard extends HTMLElement {
     if (liElement.ongoingTimer) {
       clearInterval(liElement.ongoingTimer);
     }
-    
+
     // 每秒更新一次时长
     liElement.ongoingTimer = setInterval(() => {
       const now = new Date();
       const currentSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-      
+
       let durationSeconds;
       if (currentSeconds < startSec) {
         durationSeconds = (86400 - startSec) + currentSeconds;
       } else {
         durationSeconds = Math.max(0, currentSeconds - startSec);
       }
-      
+
       const duration = this.formatDuration(durationSeconds);
-      
+
       // 更新显示内容
       const span = liElement.querySelector('span');
       if (span) {
         span.textContent = `(${duration})`;
       }
     }, 1000);
-    
+
     // 保存定时器引用以便清理
     this.ongoingEventTimers = this.ongoingEventTimers || [];
     this.ongoingEventTimers.push(liElement.ongoingTimer);
@@ -11149,11 +12778,17 @@ class ElectricityInfoCard extends HTMLElement {
   async initializeTracks() {
     const deviceTracksContainer = this.dayModalBodyEl.querySelector('#device-tracks-container');
     if (!deviceTracksContainer) return;
-    
+
     deviceTracksContainer.innerHTML = '';
-    
+
+    // 创建当前时刻指示器（每次清空后重新插入，避免被 innerHTML='' 删除）
+    const currentTimeIndicator = document.createElement('div');
+    currentTimeIndicator.className = 'day-current-time-indicator';
+    currentTimeIndicator.style.display = 'none';
+    deviceTracksContainer.appendChild(currentTimeIndicator);
+
     const activeDeviceNames = new Set(this.deviceEvents.map(event => event.device));
-    
+
     if (activeDeviceNames.size === 0) {
       deviceTracksContainer.innerHTML = `<div style="text-align:center; padding:10px; color:#999; font-size:12px;">没有找到设备事件记录</div>`;
       return;
@@ -11162,19 +12797,19 @@ class ElectricityInfoCard extends HTMLElement {
     // 获取当前日期
     const currentDate = this.dayModalTitleEl.textContent.match(/\d{4}年\d{1,2}月\d{1,2}日/);
     if (!currentDate) return;
-    
+
     // 解析日期并确保月份和日期是两位数
     const dateMatch = currentDate[0].match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
     if (!dateMatch) return;
-    
+
     const year = dateMatch[1];
     const month = String(dateMatch[2]).padStart(2, '0');
     const day = String(dateMatch[3]).padStart(2, '0');
     const dateStr = `${year}-${month}-${day}`;
-    
+
     const startOfDay = new Date(`${dateStr}T00:00:00`);
     const endOfDay = new Date(`${dateStr}T23:59:59`);
-    
+
     // 初始化设备轨道数据
     this.deviceTracks = [];
 
@@ -11186,31 +12821,31 @@ class ElectricityInfoCard extends HTMLElement {
     for (const deviceName of Array.from(activeDeviceNames).sort((a, b) => a.localeCompare(b, 'zh-CN'))) {
       const trackDiv = document.createElement('div');
       trackDiv.className = 'device-track';
-      
+
       const labelSpan = document.createElement('span');
       labelSpan.className = 'device-label';
       labelSpan.textContent = deviceName;
-      
+
       // 创建用电量和使用时长的容器
       const powerUsageContainer = document.createElement('div');
       powerUsageContainer.className = 'power-usage-container';
-      
+
       // 用电量显示元素
       const powerUsageSpan = document.createElement('span');
-      
+
       // 使用时长显示元素
       const usageDurationSpan = document.createElement('span');
       usageDurationSpan.className = 'usage-duration';
-      
+
       // 查找设备配置
       const deviceConfig = this.deviceEntityConfig?.find(config => config.name === deviceName);
       let powerUsage = null;
       let usageDuration = null;
       let isEstimate = false; // 标记是否为估算值
-      
+
       // 调试信息
 
-      
+
       // 如果有power_entity，查询用电量数据，使用最大值减去最小值计算
       if (deviceConfig && deviceConfig.power_entity) {
 
@@ -11218,7 +12853,7 @@ class ElectricityInfoCard extends HTMLElement {
           // 判断是否为当日
           const now = new Date();
           const isToday = startOfDay.toDateString() === new Date(now.getFullYear(), now.getMonth(), now.getDate()).toDateString();
-          
+
           // 如果是当日，查询到当前时间；否则查询到23:59:59
           const queryEndTime = isToday ? now : endOfDay;
           const history = await this.getHistory(deviceConfig.power_entity, startOfDay, queryEndTime);
@@ -11226,7 +12861,7 @@ class ElectricityInfoCard extends HTMLElement {
           if (history && history.length >= 1) {
             // 收集所有有效的状态值
             const validValues = [];
-            
+
             for (const state of history) {
               const stateValue = this.getStateValue(state);
               if (stateValue !== null && stateValue !== undefined && stateValue !== 'unavailable') {
@@ -11236,12 +12871,12 @@ class ElectricityInfoCard extends HTMLElement {
                 }
               }
             }
-            
+
             if (validValues.length > 0) {
               // 计算最大值和最小值
               const maxValue = Math.max(...validValues);
               const minValue = Math.min(...validValues);
-              
+
               // 计算用电量 = 最大值 - 最小值
               const dailyUsage = maxValue - minValue;
               if (dailyUsage >= 0) {
@@ -11271,7 +12906,7 @@ class ElectricityInfoCard extends HTMLElement {
             let totalSeconds = 0;
             deviceEventsForTrack.forEach(event => {
               const startSec = this.timeToSeconds(event.start);
-              
+
               // 对于正在运行的事件，使用当前时间作为结束时间
               let endSec;
               if (event.isOngoing) {
@@ -11281,7 +12916,7 @@ class ElectricityInfoCard extends HTMLElement {
               } else {
                 endSec = event.end ? this.timeToSeconds(event.end) : 86400;
               }
-              
+
               // 处理跨越午夜的情况
               if (endSec < startSec) {
                 totalSeconds += (86400 - startSec) + endSec;
@@ -11289,12 +12924,12 @@ class ElectricityInfoCard extends HTMLElement {
                 totalSeconds += Math.max(0, endSec - startSec);
               }
             });
-            
+
             // 计算用电量：功率 × 时长（小时）÷ 1000
             const totalHours = totalSeconds / 3600;
             const calculatedUsage = (powerValue * totalHours) / 1000;
             powerUsage = calculatedUsage.toFixed(2);
-            
+
             // 估算值，使用 power-usage-estimate 类
             powerUsageSpan.className = 'power-usage-estimate';
             isEstimate = true;
@@ -11305,14 +12940,24 @@ class ElectricityInfoCard extends HTMLElement {
         powerUsage = '0.00';
         powerUsageSpan.className = 'power-usage';
       }
-      
+
+      // 优先使用API返回的energy_consumed（当API有数据时覆盖现有计算值）
+      if (this.apiEnergyConsumedMap && this.apiEnergyConsumedMap.has(deviceName)) {
+        const apiEnergy = this.apiEnergyConsumedMap.get(deviceName);
+        if (apiEnergy !== null && apiEnergy !== undefined) {
+          powerUsage = typeof apiEnergy === 'number' ? apiEnergy.toFixed(2) : String(parseFloat(apiEnergy).toFixed(2));
+          powerUsageSpan.className = 'power-usage';
+          isEstimate = false;
+        }
+      }
+
       // 计算使用时长（从设备事件中获取）
       const deviceEventsForTrack = this.deviceEvents.filter(event => event.device === deviceName);
       if (deviceEventsForTrack.length > 0) {
         let totalSeconds = 0;
         deviceEventsForTrack.forEach(event => {
           const startSec = this.timeToSeconds(event.start);
-          
+
           // 对于正在运行的事件，使用当前时间作为结束时间
           let endSec;
           if (event.isOngoing) {
@@ -11322,7 +12967,7 @@ class ElectricityInfoCard extends HTMLElement {
           } else {
             endSec = event.end ? this.timeToSeconds(event.end) : 86400;
           }
-          
+
           // 处理跨越午夜的情况
           if (endSec < startSec) {
             totalSeconds += (86400 - startSec) + endSec;
@@ -11334,16 +12979,16 @@ class ElectricityInfoCard extends HTMLElement {
 
 
       }
-      
+
       // 获取单位（从统一数据格式中获取）
       const usageUnit = this.standardData.unit || '';
       powerUsageSpan.textContent = powerUsage !== null ? `${powerUsage}${usageUnit}` : '';
       usageDurationSpan.textContent = usageDuration !== null ? usageDuration : '';
-      
+
       // 将用电量和时长添加到容器中
       powerUsageContainer.appendChild(powerUsageSpan);
       powerUsageContainer.appendChild(usageDurationSpan);
-      
+
       // 保存设备轨道数据
       if (powerUsage !== null) {
         this.deviceTracks.push({
@@ -11353,18 +12998,18 @@ class ElectricityInfoCard extends HTMLElement {
           isEstimate: isEstimate
         });
       }
-      
+
       const barWrapperDiv = document.createElement('div');
       barWrapperDiv.className = 'track-bar-wrapper';
       barWrapperDiv.dataset.device = deviceName;
       barWrapperDiv.style.cursor = 'pointer';
-      
+
       // 添加点击事件监听器
       barWrapperDiv.addEventListener('click', (e) => this.handleTrackClick(e, deviceName));
-      
+
       const barDiv = document.createElement('div');
       barDiv.className = 'track-bar';
-      
+
       barWrapperDiv.appendChild(barDiv);
       trackDiv.appendChild(labelSpan);
       trackDiv.appendChild(powerUsageContainer);
@@ -11374,7 +13019,7 @@ class ElectricityInfoCard extends HTMLElement {
       // 为轨道添加事件块
       deviceEventsForTrack.forEach(event => {
         const startSec = this.timeToSeconds(event.start);
-        
+
         // 如果是正在运行的事件，使用当前时间作为结束时间
         let endSec;
         if (event.isOngoing) {
@@ -11384,30 +13029,30 @@ class ElectricityInfoCard extends HTMLElement {
         } else {
           endSec = event.end ? this.timeToSeconds(event.end) : 86400;
         }
-        
+
         const left = (startSec / 86400) * 100;
         const fill = document.createElement("div");
         fill.className = `track-fill`;
-        
+
         // 如果是正在运行的事件，添加on-going类
         if (event.isOngoing) {
           fill.classList.add('on-going');
         }
-        
+
         // 获取设备颜色
         const color = this.getDeviceColor(deviceName);
         fill.style.backgroundColor = color;
         fill.style.left = `${left}%`;
-        
+
         const durationSec = endSec - startSec;
-        
+
         if (durationSec < 300) {
           fill.style.width = "4px";
         } else {
           const width = (durationSec / 86400) * 100;
           fill.style.width = `${width}%`;
         }
-        
+
         barDiv.appendChild(fill);
       });
     }
@@ -11426,10 +13071,10 @@ class ElectricityInfoCard extends HTMLElement {
     // 格式化时长为中文格式（xx小时xx分钟）
     const formatDurationChinese = (totalSeconds) => {
       if (totalSeconds < 60) return `${Math.round(totalSeconds)}秒`;
-      
+
       const hours = Math.floor(totalSeconds / 3600);
       const minutes = Math.floor((totalSeconds % 3600) / 60);
-      
+
       if (hours > 0) {
         if (minutes > 0) {
           return `${hours}小时${minutes}分钟`;
@@ -11462,7 +13107,7 @@ class ElectricityInfoCard extends HTMLElement {
       // 计算设备使用时长
       deviceEventsForTrack.forEach(event => {
         const startSec = this.timeToSeconds(event.start);
-        
+
         // 对于正在运行的事件，使用当前时间作为结束时间
         let endSec;
         if (event.isOngoing) {
@@ -11472,7 +13117,7 @@ class ElectricityInfoCard extends HTMLElement {
         } else {
           endSec = event.end ? this.timeToSeconds(event.end) : 86400;
         }
-        
+
         // 处理跨越午夜的情况
         if (endSec < startSec) {
           deviceDurationSeconds += (86400 - startSec) + endSec;
@@ -11533,38 +13178,38 @@ class ElectricityInfoCard extends HTMLElement {
     totalRow.appendChild(trackPlaceholder);
 
     totalRowContainer.appendChild(totalRow);
-    
+
     // 提取设备数据供其他函数使用
     this.extractDeviceData();
   }
-  
+
   // 提取设备数据供其他函数使用
   extractDeviceData() {
     if (!this.deviceTracks || this.deviceTracks.length === 0) {
       this.dayDeviceData = null;
       return;
     }
-    
+
     const deviceData = [];
     const roomMap = new Map(); // 用于按房间聚合
     let totalPowerUsage = 0; // 总用电量
-    
+
     for (const track of this.deviceTracks) {
       const deviceName = track.device;
       const powerUsage = track.powerUsage;
       const usageDuration = track.usageDuration;
-      
+
       // 从deviceName中提取房间和设备名称
       // 格式：房间-设备名称（如：客厅-灯、厨房-油烟机）
       let room = '';
       let device = deviceName;
-      
+
       const separatorIndex = deviceName.indexOf('-');
       if (separatorIndex > -1) {
         room = deviceName.substring(0, separatorIndex);
         device = deviceName.substring(separatorIndex + 1);
       }
-      
+
       // 将数据添加到数组
       deviceData.push({
         room: room,
@@ -11573,12 +13218,12 @@ class ElectricityInfoCard extends HTMLElement {
         powerUsage: powerUsage,
         usageDuration: usageDuration
       });
-      
+
       // 按房间聚合使用时长和用电量
       if (room) {
         const durationSeconds = this.durationToSeconds(usageDuration);
         const powerValue = parseFloat(powerUsage) || 0;
-        
+
         if (roomMap.has(room)) {
           const existing = roomMap.get(room);
           existing.usageDuration += durationSeconds;
@@ -11591,19 +13236,19 @@ class ElectricityInfoCard extends HTMLElement {
           });
         }
       }
-      
+
       // 累加总用电量（去除单位）
       const powerValue = parseFloat(powerUsage) || 0;
       totalPowerUsage += powerValue;
     }
-    
+
     // 1. 存储设备详细数据
     const result = {
       devices: deviceData,
       roomAggregation: [],
       dayConsumption: null
     };
-    
+
     // 2. 按房间聚合数据（包含usageDuration、powerUsage，其中usageDuration转换为秒）
     for (const [room, data] of roomMap.entries()) {
       result.roomAggregation.push({
@@ -11612,15 +13257,15 @@ class ElectricityInfoCard extends HTMLElement {
         powerUsage: data.powerUsage
       });
     }
-    
+
     // 3. 提取选择日的用电数据
     // 从统一数据格式转换方法中读取点击日是否有数据
     const currentDateStr = this.getCurrentModalDateStr();
-    
+
     if (currentDateStr && this.standardData) {
       // 在 standardData.dayUsage 中查找点击日期的用电数据
       const dayUsageItem = this.standardData.dayUsage.find(item => item.time === currentDateStr);
-      
+
       if (dayUsageItem && dayUsageItem.total_usage > 0) {
         // 当有点击日的用电数据时，显示分时数据
         result.dayConsumption = {
@@ -11648,10 +13293,10 @@ class ElectricityInfoCard extends HTMLElement {
         };
       }
     }
-    
+
     // 存储完整数据供其他函数使用
     this.dayDeviceData = result;
-    
+
     // 调试用：输出提取的数据
     if (this.showDebug) {
       console.log('========== 提取的设备数据 ==========');
@@ -11661,100 +13306,100 @@ class ElectricityInfoCard extends HTMLElement {
       console.log('=====================================');
     }
   }
-  
+
   // 将时长字符串转换为秒数
   durationToSeconds(durationStr) {
     if (!durationStr || typeof durationStr !== 'string') return 0;
-    
+
     // 格式："5h30m" 或 "30m" 或 "2h"
     const hoursMatch = durationStr.match(/(\d+)h/);
     const minutesMatch = durationStr.match(/(\d+)m/);
-    
+
     let totalSeconds = 0;
-    
+
     if (hoursMatch) {
       totalSeconds += parseInt(hoursMatch[1]) * 3600;
     }
-    
+
     if (minutesMatch) {
       totalSeconds += parseInt(minutesMatch[1]) * 60;
     }
-    
+
     return totalSeconds;
   }
-  
+
   // 获取当前模态框的日期字符串
   getCurrentModalDateStr() {
     const titleText = this.dayModalTitleEl.textContent;
     const dateMatch = titleText.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
-    
+
     if (dateMatch) {
       const year = dateMatch[1];
       const month = String(dateMatch[2]).padStart(2, '0');
       const day = String(dateMatch[3]).padStart(2, '0');
       return `${year}-${month}-${day}`;
     }
-    
+
     return null;
   }
-  
+
   // 查找指定日期的用电数据
   findDayData(dateStr) {
     if (!this.historicalData || !this.historicalData.dayUsage) return null;
-    
+
     // 在日历数据或历史数据中查找
     if (this.calendarData) {
       const dayItem = this.calendarData.find(item => item.date === dateStr);
       return dayItem || null;
     }
-    
+
     return null;
   }
-  
+
   // 渲染桑基图
   renderSankeyChart() {
     if (!this.dayDeviceData) {
       return;
     }
-    
+
     // 检查ECharts是否可用
     if (typeof echarts === 'undefined') {
       console.error('ECharts 库未加载，无法渲染桑基图');
       return;
     }
-    
+
     // 获取桑基图容器
     const sankeyContainer = this.dayModalBodyEl.querySelector('#sankey-chart-container');
     if (!sankeyContainer) {
       return;
     }
-    
+
     // 销毁之前的图表实例
     if (this.sankeyChart) {
       this.sankeyChart.dispose();
       this.sankeyChart = null;
     }
-    
+
     // 初始化图表
-    this.sankeyChart = echarts.init(sankeyContainer, null, { 
-      width: 'auto', 
-      height: 400 
+    this.sankeyChart = echarts.init(sankeyContainer, null, {
+      width: 'auto',
+      height: 400
     });
-    
+
     // 准备桑基图数据
     const nodes = [];
     const links = [];
     const nodeIndexMap = new Map();
     let nodeIndex = 0;
-    
+
     // 获取消费数据
     const dayConsumption = this.dayDeviceData.dayConsumption;
     const hasDetailedData = dayConsumption && dayConsumption.hasDetailedData && dayConsumption.timeDistribution;
-    
+
     // 根据是否有分时数据决定层级结构
     if (hasDetailedData) {
       // 四层级结构：总量 -> 分时 -> 房间 -> 设备
-      
+
       // 第一层：总量
       const totalNodeName = '总量';
       nodes.push({
@@ -11764,7 +13409,7 @@ class ElectricityInfoCard extends HTMLElement {
         }
       });
       nodeIndexMap.set(totalNodeName, nodeIndex++);
-      
+
       // 第二层：分时数据（尖、峰、平、谷）
       const timeDist = dayConsumption.timeDistribution;
       const timeLabels = {
@@ -11779,7 +13424,7 @@ class ElectricityInfoCard extends HTMLElement {
         normal: '#2196F3',
         valley: '#4CAF50'
       };
-      
+
       for (const [key, value] of Object.entries(timeDist)) {
         if (value > 0) {
           const nodeName = timeLabels[key] || key;
@@ -11790,7 +13435,7 @@ class ElectricityInfoCard extends HTMLElement {
             }
           });
           nodeIndexMap.set(nodeName, nodeIndex++);
-          
+
           // 连接到总量节点
           links.push({
             source: nodeIndexMap.get(nodeName),
@@ -11799,11 +13444,11 @@ class ElectricityInfoCard extends HTMLElement {
           });
         }
       }
-      
+
       // 第三层：房间聚合（连接到总量节点）
       const roomAggregation = this.dayDeviceData.roomAggregation || [];
       let totalRoomUsage = 0;
-      
+
       for (const roomData of roomAggregation) {
         if (roomData.powerUsage > 0) {
           nodes.push({
@@ -11813,22 +13458,22 @@ class ElectricityInfoCard extends HTMLElement {
             }
           });
           nodeIndexMap.set(roomData.room, nodeIndex++);
-          
+
           // 连接到总量节点
           links.push({
             source: nodeIndexMap.get(totalNodeName),
             target: nodeIndexMap.get(roomData.room),
             value: roomData.powerUsage
           });
-          
+
           totalRoomUsage += roomData.powerUsage;
         }
       }
-      
+
       // 检查分时用电总量与房间合计的差异，添加"其他"节点
       const totalTimeUsage = dayConsumption.totalUsage || 0;
       const otherUsage = totalTimeUsage - totalRoomUsage;
-      
+
       if (otherUsage > 0) {
         const otherNodeName = '其他';
         nodes.push({
@@ -11838,7 +13483,7 @@ class ElectricityInfoCard extends HTMLElement {
           }
         });
         nodeIndexMap.set(otherNodeName, nodeIndex++);
-        
+
         // 连接到总量节点
         links.push({
           source: nodeIndexMap.get(totalNodeName),
@@ -11846,10 +13491,10 @@ class ElectricityInfoCard extends HTMLElement {
           value: otherUsage
         });
       }
-      
+
       // 第四层：设备详细数据（连接到对应的房间）
       const devices = this.dayDeviceData.devices || [];
-      
+
       for (const device of devices) {
         const powerValue = parseFloat(device.powerUsage) || 0;
         if (powerValue > 0) {
@@ -11862,7 +13507,7 @@ class ElectricityInfoCard extends HTMLElement {
             }
           });
           nodeIndexMap.set(deviceNodeName, nodeIndex++);
-          
+
           // 连接到对应的房间节点
           if (nodeIndexMap.has(device.room)) {
             links.push({
@@ -11873,7 +13518,7 @@ class ElectricityInfoCard extends HTMLElement {
           }
         }
       }
-      
+
       // 在links创建完成后，添加节点标签格式化（确保唯一性）
       for (const device of devices) {
         const powerValue = parseFloat(device.powerUsage) || 0;
@@ -11894,7 +13539,7 @@ class ElectricityInfoCard extends HTMLElement {
       }
     } else {
       // 三层级结构：总用电量 -> 房间 -> 设备
-      
+
       // 第一层：总用电量（顶层节点）
       const totalNodeName = '总用电量';
       nodes.push({
@@ -11904,11 +13549,11 @@ class ElectricityInfoCard extends HTMLElement {
         }
       });
       nodeIndexMap.set(totalNodeName, nodeIndex++);
-      
+
       // 第二层：房间聚合（连接到总用电量）
       const roomAggregation = this.dayDeviceData.roomAggregation || [];
       let totalRoomUsage = 0;
-      
+
       for (const roomData of roomAggregation) {
         if (roomData.powerUsage > 0) {
           nodes.push({
@@ -11918,22 +13563,22 @@ class ElectricityInfoCard extends HTMLElement {
             }
           });
           nodeIndexMap.set(roomData.room, nodeIndex++);
-          
+
           // 连接到总用电量节点
           links.push({
             source: nodeIndexMap.get(totalNodeName),
             target: nodeIndexMap.get(roomData.room),
             value: roomData.powerUsage
           });
-          
+
           totalRoomUsage += roomData.powerUsage;
         }
       }
-      
+
       // 检查总用电量与房间合计的差异，添加"其他"节点
       const totalPowerUsage = dayConsumption.totalUsage || 0;
       const otherUsage = totalPowerUsage - totalRoomUsage;
-      
+
       if (otherUsage > 0) {
         const otherNodeName = '其他';
         nodes.push({
@@ -11943,7 +13588,7 @@ class ElectricityInfoCard extends HTMLElement {
           }
         });
         nodeIndexMap.set(otherNodeName, nodeIndex++);
-        
+
         // 连接到总用电量节点
         links.push({
           source: nodeIndexMap.get(totalNodeName),
@@ -11951,10 +13596,10 @@ class ElectricityInfoCard extends HTMLElement {
           value: otherUsage
         });
       }
-      
+
       // 第三层：设备详细数据（连接到对应的房间）
       const devices = this.dayDeviceData.devices || [];
-      
+
       for (const device of devices) {
         const powerValue = parseFloat(device.powerUsage) || 0;
         if (powerValue > 0) {
@@ -11967,7 +13612,7 @@ class ElectricityInfoCard extends HTMLElement {
             }
           });
           nodeIndexMap.set(deviceNodeName, nodeIndex++);
-          
+
           // 连接到对应的房间节点
           if (nodeIndexMap.has(device.room)) {
             links.push({
@@ -11978,7 +13623,7 @@ class ElectricityInfoCard extends HTMLElement {
           }
         }
       }
-      
+
       // 在links创建完成后，添加节点标签格式化（确保唯一性）
       for (const device of devices) {
         const powerValue = parseFloat(device.powerUsage) || 0;
@@ -11998,7 +13643,7 @@ class ElectricityInfoCard extends HTMLElement {
         }
       }
     }
-    
+
     // 配置选项（美化）
     const option = {
       backgroundColor: 'transparent',
@@ -12056,7 +13701,7 @@ class ElectricityInfoCard extends HTMLElement {
         animationEasing: 'cubicOut'
       }
     };
-    
+
     // 数据验证：检查是否有重复节点名称
     const nodeNames = nodes.map(node => node.name);
     const duplicateNames = nodeNames.filter((name, index) => nodeNames.indexOf(name) !== index);
@@ -12065,41 +13710,41 @@ class ElectricityInfoCard extends HTMLElement {
       // 如果有重复，不渲染图表
       return;
     }
-    
+
     // 验证所有必需的字段
     if (!nodes || nodes.length === 0) {
       console.warn('桑基图警告：没有节点数据');
       return;
     }
-    
+
     if (!links || links.length === 0) {
       console.warn('桑基图警告：没有连接数据');
       return;
     }
-    
+
     // 设置选项并渲染
     this.sankeyChart.setOption(option);
-    
+
     // 调试用：输出数据
     if (this.showDebug) {
       console.log('桑基图数据:', { nodes, links, hasDetailedData });
     }
   }
-  
+
   // 切换 timeline-container 显示内容
   toggleTimelineContent(showSankey) {
     const timelineContainer = this.dayModalBodyEl.querySelector('#timeline-container');
     const sankeyContainer = this.dayModalBodyEl.querySelector('#sankey-chart-container');
-    
+
     if (!timelineContainer || !sankeyContainer) {
       return;
     }
-    
+
     if (showSankey) {
       // 显示桑基图，隐藏设备轨道
       timelineContainer.style.display = 'none';
       sankeyContainer.style.display = 'block';
-      
+
       // 渲染桑基图
       this.renderSankeyChart();
     } else {
@@ -12133,7 +13778,7 @@ class ElectricityInfoCard extends HTMLElement {
     const minutes = date.getMinutes().toString().padStart(2, '0');
     return `${hours}:${minutes}`;
   }
-  
+
   // 初始化ECharts - 使用新的加载函数
   initializeECharts() {
     // 使用全局的loadECharts函数
@@ -12152,22 +13797,38 @@ class ElectricityInfoCard extends HTMLElement {
       console.warn('updateTierAndPeriodConfig 被调用，但 utility_type 为 ele，此方法不应被调用');
       return;
     }
-    
+
+    // 【优先级规则】记录用户是否手动定义了计费标准。
+    // 若用户定义了 tier1_max/tier1_price/tier2_max/tier2_price/tier3_price/billing_cycle/period_* 等任一参数，
+    // 则优先使用用户配置，不使用实体"计费标准"节点数据（getBillingStandardData 会据此返回 null）。
+    // 若用户完全未定义，则回退到从实体状态属性的"计费标准"节点自动获取。
+    this._hasManualTierConfig =
+      config.tier1_max !== undefined ||
+      config.tier1_price !== undefined ||
+      config.tier2_max !== undefined ||
+      config.tier2_price !== undefined ||
+      config.tier3_price !== undefined ||
+      config.billing_cycle !== undefined ||
+      config.period_start_month !== undefined ||
+      config.period_start_day !== undefined ||
+      config.period_end_month !== undefined ||
+      config.period_end_day !== undefined;
+
     // 更新阶梯配置
     if (config.tier1_max !== undefined || config.tier1_price !== undefined) {
       this.tierConfig.tiers[0].max = parseFloat(config.tier1_max) || 2160;
       this.tierConfig.tiers[0].price = parseFloat(config.tier1_price) || 0.4983;
     }
-    
+
     if (config.tier2_max !== undefined || config.tier2_price !== undefined) {
       this.tierConfig.tiers[1].max = parseFloat(config.tier2_max) || 4200;
       this.tierConfig.tiers[1].price = parseFloat(config.tier2_price) || 0.5483;
     }
-    
+
     if (config.tier3_price !== undefined) {
       this.tierConfig.tiers[2].price = parseFloat(config.tier3_price) || 0.7983;
     }
-    
+
     // 更新计费周期配置
     let periodConfig;
     if (config.billing_cycle !== undefined) {
@@ -12180,20 +13841,20 @@ class ElectricityInfoCard extends HTMLElement {
         periodEndDay: parseInt(config.period_end_day) || 30
       };
     }
-    
+
     if (periodConfig) {
       this.tierConfig.periodStartMonth = periodConfig.periodStartMonth;
       this.tierConfig.periodStartDay = periodConfig.periodStartDay;
       this.tierConfig.periodEndMonth = periodConfig.periodEndMonth;
       this.tierConfig.periodEndDay = periodConfig.periodEndDay;
     }
-    
+
     // 更新阶梯显示
     if (updateDisplay) {
       this.updateTierDisplay();
     }
   }
-  
+
   // 更新阶梯电价配置（仅非电力类型使用） - 已合并到 updateTierAndPeriodConfig
   updateTierConfig(config) {
     this.updateTierAndPeriodConfig(config, true);
@@ -12217,7 +13878,7 @@ class ElectricityInfoCard extends HTMLElement {
     let periodStartDay = 1;
     let periodEndMonth = 6;
     let periodEndDay = 30;
-    
+
     if (billingCycleStr) {
       try {
         // 分割开始和结束日期
@@ -12229,7 +13890,7 @@ class ElectricityInfoCard extends HTMLElement {
             periodStartMonth = parseInt(startParts[0]);
             periodStartDay = parseInt(startParts[1]);
           }
-          
+
           // 解析结束日期
           const endParts = parts[1].split('.');
           if (endParts.length === 2) {
@@ -12241,7 +13902,7 @@ class ElectricityInfoCard extends HTMLElement {
       // Use default values silently
     }
     }
-    
+
     return {
       periodStartMonth,
       periodStartDay,
@@ -12258,13 +13919,20 @@ class ElectricityInfoCard extends HTMLElement {
   // 统一的计费标准数据获取工具函数（消除重复代码）
   getBillingStandardData() {
     // 检查基本条件
-    if (this.utilityType !== 'ele' || !this._hass || !this.entityId) {
+    if (!this._hass || !this.entityId) {
+      return null;
+    }
+
+    // 【优先级规则】对于 gas/water 等非电力类型，当用户在配置中手动定义了计费标准
+    // （tier1_max/tier1_price/tier2_max/tier2_price/tier3_price/billing_cycle 等）时，
+    // 优先使用用户配置，不使用实体状态属性中的"计费标准"节点数据。
+    if (this.utilityType !== 'ele' && this._hasManualTierConfig) {
       return null;
     }
 
     const entity = this._hass.states[this.entityId];
     const billingStandard = this.getBillingStandardObject(entity);
-    
+
     if (!billingStandard || typeof billingStandard !== 'object') {
       return null;
     }
@@ -12272,47 +13940,87 @@ class ElectricityInfoCard extends HTMLElement {
     return billingStandard;
   }
 
+  // 获取"起始档位用量"字段后缀，用于构建计费标准中的"起始X量"字段名。
+  // 注意：电力与水电不同——电力为"起始电量"（如 年阶梯第2档起始电量），
+  // 而水/气为"起始用水量/起始用气量"。
+  getStartSuffixByUtilityType() {
+    switch (this.utilityType) {
+      case 'water':
+        return '用水量';
+      case 'gas':
+        return '用气量';
+      default:
+        return '电量';
+    }
+  }
+
+  // 获取"累计用量"字段后缀（用电量/用水量/用气量），用于构建计费标准中"累计X量"字段名。
+  // 电力为"累计用电量"（如 年阶梯累计用电量），水/气为"累计用水量/累计用气量"。
+  getUsageSuffixByUtilityType() {
+    switch (this.utilityType) {
+      case 'water':
+        return '用水量';
+      case 'gas':
+        return '用气量';
+      default:
+        return '用电量';
+    }
+  }
+
+  // 获取"价格"字段后缀（电价/水价/气价），用于构建计费标准字段名
+  getPriceSuffixByUtilityType() {
+    switch (this.utilityType) {
+      case 'water':
+        return '水价';
+      case 'gas':
+        return '气价';
+      default:
+        return '电价';
+    }
+  }
+
   // 更新阶梯显示（重构版本 - 使用统一的数据获取）
   updateTierDisplay() {
     const billingStandard = this.getBillingStandardData();
-    
+
     // 【集中处理 utility_type 为 'ele' 的逻辑】从计费标准获取阶梯配置
     if (billingStandard) {
       // 判断计费标准类型，支持年阶梯、月阶梯和平均单价
       const billingStandardType = billingStandard['计费标准'] || '';
-      
+
       // 处理平均单价计费方式
       if (billingStandardType === '平均单价' || billingStandard['平均单价'] !== undefined) {
         const usageUnit = this.standardData.unit || '度';
         const avgPrice = billingStandard['平均单价'];
-        
+
         if (avgPrice !== undefined) {
           // 对于平均单价，所有阶梯显示相同的价格
           const priceHtml = `<div class="price-item-block">单价：${parseFloat(avgPrice).toFixed(4)}元/${usageUnit}</div>`;
-          
+
           // 更新阶梯范围（显示为不适用）
           this.tier1RangeEl.textContent = `不适用`;
           this.tier2RangeEl.textContent = `不适用`;
           this.tier3RangeEl.textContent = `不适用`;
-          
+
           // 更新电价显示（所有阶梯相同）
           this.tier1PriceEl.innerHTML = priceHtml;
           this.tier2PriceEl.innerHTML = priceHtml;
           this.tier3PriceEl.innerHTML = priceHtml;
-          
+
           // 更新阶梯周期显示
           this.tierPeriodEl.textContent = `计费方式: 平均单价`;
-          
+
           this.debugLog(`[updateTierDisplay] 平均单价: ${avgPrice}元/${usageUnit}`);
           return;
         }
       }
-      
+
       const isMonthlyTier = billingStandardType.includes('月阶梯');
-      
-      // 根据计费标准类型选择正确的字段名
-      const tier2Start = billingStandard[isMonthlyTier ? '月阶梯第2档起始电量' : '年阶梯第2档起始电量'];
-      const tier3Start = billingStandard[isMonthlyTier ? '月阶梯第3档起始电量' : '年阶梯第3档起始电量'];
+
+      // 根据计费标准类型选择正确的"起始档位"字段名（按 utility_type 区分：电力为 电量，水为 用水量，气为 用气量）
+      const startSuffix = this.getStartSuffixByUtilityType();
+      const tier2Start = billingStandard[isMonthlyTier ? `月阶梯第2档起始${startSuffix}` : `年阶梯第2档起始${startSuffix}`];
+      const tier3Start = billingStandard[isMonthlyTier ? `月阶梯第3档起始${startSuffix}` : `年阶梯第3档起始${startSuffix}`];
 
       if (tier2Start !== undefined && tier3Start !== undefined) {
         // 更新 tierConfig（从计费标准）
@@ -12335,21 +14043,21 @@ class ElectricityInfoCard extends HTMLElement {
         this.tier1PriceEl.innerHTML = this.renderPriceBlock({}, 1);
         this.tier2PriceEl.innerHTML = this.renderPriceBlock({}, 2);
         this.tier3PriceEl.innerHTML = this.renderPriceBlock({}, 3);
-        
+
         // 更新阶梯周期显示（从计费标准获取）- 支持年阶梯和月阶梯
         const billingStandardType = billingStandard['计费标准'] || '未知';
         let startDate, endDate;
-        
+
         if (billingStandardType.includes('月阶梯')) {
           // 月阶梯：周期为本月1日到本月最后一日
           const currentDate = new Date();
           const currentYear = currentDate.getFullYear();
           const currentMonth = currentDate.getMonth() + 1;
           const lastDay = new Date(currentYear, currentMonth, 0).getDate();
-          
+
           startDate = `${currentYear}.${currentMonth}.1`;
           endDate = `${currentYear}.${currentMonth}.${lastDay}`;
-          
+
           // 更新 tierConfig 中的周期配置
           this.tierConfig.periodStartMonth = currentMonth;
           this.tierConfig.periodStartDay = 1;
@@ -12360,17 +14068,17 @@ class ElectricityInfoCard extends HTMLElement {
           startDate = billingStandard['当前年阶梯起始日期'];
           endDate = billingStandard['当前年阶梯结束日期'];
         }
-        
+
         if (startDate && endDate) {
           // 解析日期格式 YYYY.MM.DD 并转换为 MM.DD
           const startParts = startDate.split('.');
           const endParts = endDate.split('.');
-          
+
           if (startParts.length >= 3 && endParts.length >= 3) {
             const startMMDD = `${startParts[1]}.${startParts[2]}`;
             const endMMDD = `${endParts[1]}.${endParts[2]}`;
             this.tierPeriodEl.textContent = `阶梯周期: ${startMMDD}-${endMMDD}`;
-            
+
             // === 重要：同时更新 tierConfig 中的周期配置，供 getCurrentTierPeriod 使用 ===
             if (!billingStandardType.includes('月阶梯')) {
               this.tierConfig.periodStartMonth = parseInt(startParts[1]) || 7;
@@ -12380,34 +14088,48 @@ class ElectricityInfoCard extends HTMLElement {
             }
           }
         }
-        
+
         return;
       }
-      
+
       // 【重要】当 utility_type 为 'ele' 但无法获取计费标准数据时，直接返回，不执行回退逻辑
       return;
     }
-    
+
     // 当 utility_type 不为 'ele' 时，使用原有逻辑
     const tier1 = this.tierConfig.tiers[0];
     const tier2 = this.tierConfig.tiers[1];
     const tier3 = this.tierConfig.tiers[2];
-    
+
     // 获取用电量单位（从统一数据格式中获取，不设置默认值）
     const usageUnit = this.standardData.unit || '';
-    
+
+    // 价格兜底：未手动配置且无法从实体获取时，显示 "--"，避免 null.toFixed 崩溃
+    const fmtPrice = (p) => {
+      const num = parseFloat(p);
+      return isNaN(num) ? '--' : num.toFixed(4);
+    };
+    // 档位上限兜底：避免 null/NaN 参与计算
+    const fmtMax = (m, alt) => {
+      const num = parseFloat(m);
+      return isNaN(num) ? (alt !== undefined && !isNaN(parseFloat(alt)) ? parseFloat(alt) : 0) : num;
+    };
+
+    const t1Max = fmtMax(tier1.max);
+    const t2Max = fmtMax(tier2.max, tier1.max);
+
     // 更新tier-range元素（用于tier-content中）
-    const tier1RangeText = usageUnit ? `0-${tier1.max}${usageUnit}` : `0-${tier1.max}`;
-    const tier2RangeText = usageUnit ? `${tier1.max + 1}-${tier2.max}${usageUnit}` : `${tier1.max + 1}-${tier2.max}`;
-    const tier3RangeText = usageUnit ? `${tier2.max + 1}${usageUnit}以上` : `${tier2.max + 1}以上`;
-    
+    const tier1RangeText = usageUnit ? `0-${t1Max}${usageUnit}` : `0-${t1Max}`;
+    const tier2RangeText = usageUnit ? `${t1Max + 1}-${t2Max}${usageUnit}` : `${t1Max + 1}-${t2Max}`;
+    const tier3RangeText = usageUnit ? `${t2Max + 1}${usageUnit}以上` : `${t2Max + 1}以上`;
+
     this.tier1RangeEl.textContent = tier1RangeText;
     this.tier2RangeEl.textContent = tier2RangeText;
     this.tier3RangeEl.textContent = tier3RangeText;
-    
-    this.tier1PriceEl.textContent = usageUnit ? `${tier1.price.toFixed(4)}元/${usageUnit}` : `${tier1.price.toFixed(4)}元`;
-    this.tier2PriceEl.textContent = usageUnit ? `${tier2.price.toFixed(4)}元/${usageUnit}` : `${tier2.price.toFixed(4)}元`;
-    this.tier3PriceEl.textContent = usageUnit ? `${tier3.price.toFixed(4)}元/${usageUnit}` : `${tier3.price.toFixed(4)}元`;
+
+    this.tier1PriceEl.textContent = usageUnit ? `${fmtPrice(tier1.price)}元/${usageUnit}` : `${fmtPrice(tier1.price)}元`;
+    this.tier2PriceEl.textContent = usageUnit ? `${fmtPrice(tier2.price)}元/${usageUnit}` : `${fmtPrice(tier2.price)}元`;
+    this.tier3PriceEl.textContent = usageUnit ? `${fmtPrice(tier3.price)}元/${usageUnit}` : `${fmtPrice(tier3.price)}元`;
   }
 
   // 【集中处理 utility_type 为 'ele' 的逻辑】从计费标准获取阶梯配置并更新 tierConfig - 已重构
@@ -12420,10 +14142,11 @@ class ElectricityInfoCard extends HTMLElement {
     // 判断计费标准类型，支持年阶梯和月阶梯
     const billingStandardType = billingStandard['计费标准'] || '';
     const isMonthlyTier = billingStandardType.includes('月阶梯');
-    
-    // 根据计费标准类型选择正确的字段名
-    const tier2Start = billingStandard[isMonthlyTier ? '月阶梯第2档起始电量' : '年阶梯第2档起始电量'];
-    const tier3Start = billingStandard[isMonthlyTier ? '月阶梯第3档起始电量' : '年阶梯第3档起始电量'];
+
+    // 根据计费标准类型选择正确的"起始档位"字段名（按 utility_type 区分：电力为 电量，水为 用水量，气为 用气量）
+    const startSuffix = this.getStartSuffixByUtilityType();
+    const tier2Start = billingStandard[isMonthlyTier ? `月阶梯第2档起始${startSuffix}` : `年阶梯第2档起始${startSuffix}`];
+    const tier3Start = billingStandard[isMonthlyTier ? `月阶梯第3档起始${startSuffix}` : `年阶梯第3档起始${startSuffix}`];
 
     if (tier2Start === undefined || tier3Start === undefined) {
       return false; // 缺少必要的阶梯数据
@@ -12432,7 +14155,7 @@ class ElectricityInfoCard extends HTMLElement {
     // 更新 tierConfig
     this.tierConfig.tiers[0].max = parseFloat(tier2Start);
     this.tierConfig.tiers[1].max = parseFloat(tier3Start);
-    
+
     return true; // 更新成功
   }
 
@@ -12450,7 +14173,8 @@ class ElectricityInfoCard extends HTMLElement {
     return null;
   }
 
-  // 根据当前时刻匹配配置的尖、峰、平、谷时段；没有明确配置的时间按平段处理。
+  // 根据当前时刻匹配尖、峰、平、谷时段。时段跨越零点时同样有效。
+  // 充电桩标准实体若没有写入时段，则保留黑龙江官方分时规则兜底。
   getCurrentTouPeriod(billingStandard) {
     const now = new Date();
     const current = now.getHours() * 60 + now.getMinutes();
@@ -12459,7 +14183,8 @@ class ElectricityInfoCard extends HTMLElement {
       if (!start || !end) return false;
       const toMinutes = (time) => {
         const [hour, minute] = time.split(':').map(Number);
-        return Number.isInteger(hour) && Number.isInteger(minute) && hour >= 0 && hour < 24 && minute >= 0 && minute < 60
+        return Number.isInteger(hour) && Number.isInteger(minute)
+          && hour >= 0 && hour < 24 && minute >= 0 && minute < 60
           ? hour * 60 + minute : null;
       };
       const begin = toMinutes(start);
@@ -12472,26 +14197,24 @@ class ElectricityInfoCard extends HTMLElement {
       if (inPeriods(billingStandard[key])) return period;
     }
 
-    // 黑龙江充电桩旧版配置没有将时段写入标准实体，使用当地官方时段兜底。
     if (billingStandard['计费标准'] === '充电桩计费' && billingStandard['省份'] === '黑龙江省') {
       if (inPeriods('07:00-08:00,09:00-11:30,15:30-20:00')) return 'peak';
       if (inPeriods('12:00-14:00,23:30-05:30')) return 'valley';
       return 'flat';
     }
 
-    // 兼容没有保存分时时段的旧版峰谷模式。
     return (now.getHours() >= 23 || now.getHours() < 7) ? 'valley' : 'peak';
   }
 
-  // 【集中处理 utility_type 为 'ele' 的逻辑】从计费标准获取当前时段的阶梯电价
+  // 【集中处理 utility_type 为 'ele' 的逻辑】从计费标准获取指定阶梯的第一个单价（最高的）- 已重构
   getCurrentTierPriceFromBillingStandard(tierNumber, defaultPrice = 0.4983) {
     const billingStandard = this.getBillingStandardData();
-    
+
     // 如果是电力类型且实体有计费标准数据，从实体获取
     if (billingStandard) {
       // 判断计费标准类型，支持年阶梯、月阶梯和平均单价
       const billingStandardType = billingStandard['计费标准'] || '';
-      
+
       // 处理平均单价计费方式（直接返回平均单价，不区分阶梯）
       if (billingStandardType === '平均单价' || billingStandard['平均单价'] !== undefined) {
         const avgPrice = billingStandard['平均单价'];
@@ -12501,19 +14224,21 @@ class ElectricityInfoCard extends HTMLElement {
           return currentPrice;
         }
       }
-      
+
       const isMonthlyTier = billingStandardType.includes('月阶梯');
-      
+
       // 根据计费标准类型选择正确的字段前缀
       const tierPrefix = isMonthlyTier ? '月阶梯' : '年阶梯';
-      
-      // 尝试获取当前阶梯的4个分时电价（尖、峰、平、谷）
-      const sharpPrice = billingStandard[`${tierPrefix}第${tierNumber}档尖电价`];
-      const peakPrice = billingStandard[`${tierPrefix}第${tierNumber}档峰电价`];
-      const normalPrice = billingStandard[`${tierPrefix}第${tierNumber}档平电价`];
-      const valleyPrice = billingStandard[`${tierPrefix}第${tierNumber}档谷电价`];
+      // 价格字段后缀（电价/水价/气价）
+      const priceSuffix = this.getPriceSuffixByUtilityType();
 
-      // 有时段配置时必须按当前时段取价，不能固定显示最高的峰价。
+      // 尝试获取当前阶梯的4个分时电价（尖、峰、平、谷）
+      const sharpPrice = billingStandard[`${tierPrefix}第${tierNumber}档尖${priceSuffix}`];
+      const peakPrice = billingStandard[`${tierPrefix}第${tierNumber}档峰${priceSuffix}`];
+      const normalPrice = billingStandard[`${tierPrefix}第${tierNumber}档平${priceSuffix}`];
+      const valleyPrice = billingStandard[`${tierPrefix}第${tierNumber}档谷${priceSuffix}`];
+
+      // 分时模式按当前时段显示真实单价，避免固定显示最高峰价。
       const period = this.getCurrentTouPeriod(billingStandard);
       const periodPrices = { tip: sharpPrice, peak: peakPrice, flat: normalPrice, valley: valleyPrice };
       if (periodPrices[period] !== undefined && Number.isFinite(parseFloat(periodPrices[period]))) {
@@ -12527,16 +14252,16 @@ class ElectricityInfoCard extends HTMLElement {
       if (normalPrice !== undefined) prices.push(parseFloat(normalPrice));
       if (valleyPrice !== undefined) prices.push(parseFloat(valleyPrice));
 
-      // 仅旧数据缺少当前时段对应价格时，才回退到最高价。
+      // 如果有有效的分时电价，返回第一个（最高的那个）
       if (prices.length > 0) {
         // 排序（从高到低）
         prices.sort((a, b) => b - a);
         const currentPrice = prices[0]; // 取第一个（最高的）
         return currentPrice;
       }
-      
+
       // 【降级匹配】如果没有分时电价，尝试获取统一的阶梯电价
-      const unifiedPrice = billingStandard[`${tierPrefix}第${tierNumber}档电价`];
+      const unifiedPrice = billingStandard[`${tierPrefix}第${tierNumber}档${this.getPriceSuffixByUtilityType()}`];
       if (unifiedPrice !== undefined) {
         const currentPrice = parseFloat(unifiedPrice);
         return currentPrice;
@@ -12545,87 +14270,280 @@ class ElectricityInfoCard extends HTMLElement {
       // 【重要】如果是电力类型但无法从计费标准获取数据，返回0（不再回退到tierConfig或默认值）
       return 0;
     }
-    
+
     // 对于非电力类型（如燃气），从阶梯配置获取价格
     if (this.tierConfig && this.tierConfig.tiers && this.tierConfig.tiers[tierNumber - 1]) {
       const tierPrice = this.tierConfig.tiers[tierNumber - 1].price;
       return tierPrice;
     }
-    
+
     return defaultPrice; // 如果没有有效的价格，返回默认值
   }
 
-  /* 根据计费标准和用电类型获取对应的电价信息
+  // 收集当前阶梯的所有有效单价（尖/峰/平/谷），若只有统一单价则返回单个
+  getCurrentTierAllPrices(tierNumber, defaultPrice = 0.4983) {
+    const billingStandard = this.getBillingStandardData();
+
+    if (billingStandard) {
+      const billingStandardType = billingStandard['计费标准'] || '';
+
+      // 平均单价：直接返回单个
+      if (billingStandardType === '平均单价' || billingStandard['平均单价'] !== undefined) {
+        const avgPrice = billingStandard['平均单价'];
+        if (avgPrice !== undefined) return [parseFloat(avgPrice)];
+      }
+
+      const isMonthlyTier = billingStandardType.includes('月阶梯');
+      const tierPrefix = isMonthlyTier ? '月阶梯' : '年阶梯';
+      const priceSuffix = this.getPriceSuffixByUtilityType();
+
+      // 分时电价：尖/峰/平/谷
+      const entries = [
+        ['尖', billingStandard[`${tierPrefix}第${tierNumber}档尖${priceSuffix}`]],
+        ['峰', billingStandard[`${tierPrefix}第${tierNumber}档峰${priceSuffix}`]],
+        ['平', billingStandard[`${tierPrefix}第${tierNumber}档平${priceSuffix}`]],
+        ['谷', billingStandard[`${tierPrefix}第${tierNumber}档谷${priceSuffix}`]],
+      ];
+      const timePrices = entries
+        .filter(([, v]) => v !== undefined && v !== null && v !== '')
+        .map(([name, v]) => ({ name, price: parseFloat(v) }));
+
+      if (timePrices.length > 0) {
+        // 若四个分时电价完全相同，视为统一电价，折叠为单个显示
+        const uniqueVals = [...new Set(timePrices.map(p => p.price))];
+        if (uniqueVals.length === 1) {
+          return [{ name: '', price: uniqueVals[0] }];
+        }
+        return timePrices;
+      }
+
+      // 降级：统一阶梯电价
+      const unifiedPrice = billingStandard[`${tierPrefix}第${tierNumber}档${this.getPriceSuffixByUtilityType()}`];
+      if (unifiedPrice !== undefined) {
+        return [{ name: '', price: parseFloat(unifiedPrice) }];
+      }
+
+      // 电力类型但无法从计费标准获取数据
+      return [{ name: '', price: 0 }];
+    }
+
+    // 非电力类型（如燃气/水），从阶梯配置获取价格
+    if (this.tierConfig && this.tierConfig.tiers && this.tierConfig.tiers[tierNumber - 1]) {
+      const p = parseFloat(this.tierConfig.tiers[tierNumber - 1].price);
+      // 未手动配置且无实体计费标准时 price 可能为 null，回退到 0 避免 toFixed 崩溃
+      return [{ name: '', price: isNaN(p) ? 0 : p }];
+    }
+
+    // defaultPrice 可能为 null（calculateCurrentTier 传入），回退到 0 避免 toFixed 崩溃
+    const d = parseFloat(defaultPrice);
+    return [{ name: '', price: isNaN(d) ? 0 : d }];
+  }
+
+  // 将当前阶梯单价渲染到电价区域（支持多单价自动滚动）
+  renderCurrentTierPrices(tierNumber, defaultPrice = 0.4983) {
+    const prices = this.getCurrentTierAllPrices(tierNumber, defaultPrice);
+    const usageUnit = (this.standardData && this.standardData.unit) || '';
+    const priceList = this.shadowRoot.getElementById('electricity-price-list');
+    if (!priceList) return;
+
+    // 内容无变化时跳过重建，避免刷新时滚动反复从头开始
+    const sig = JSON.stringify(prices) + '|' + usageUnit + '|' + tierNumber;
+    if (this._priceRenderSig === sig && this._priceAutoIndex !== undefined) {
+      return;
+    }
+    this._priceRenderSig = sig;
+
+    // 当前阶梯对应的颜色（与阶梯指示器保持一致）
+    const tierColorMap = {
+      1: '#55c593', // 第一阶梯（绿）
+      2: '#f8c337', // 第二阶梯（黄）
+      3: '#f79335'  // 第三阶梯（橙）
+    };
+    const tierColor = tierColorMap[tierNumber] || '#2196f3';
+
+    // 停止旧的多单价自动滚动定时器，并清空容器避免重复构建
+    this._stopPriceAutoScroll();
+    priceList.innerHTML = '';
+
+    // 多个不同单价 → 自动滚动展示（每次只显示一条）
+    const multi = prices.length > 1;
+    priceList.classList.toggle('multi', multi);
+
+    if (multi) {
+      // 构建轨道，末尾复制首行实现无缝循环
+      const track = document.createElement('div');
+      track.className = 'price-track';
+      priceList.appendChild(track);
+
+      const createRow = (p) => {
+        const row = document.createElement('div');
+        row.className = 'price-row';
+        if (p.name) {
+          const name = document.createElement('span');
+          name.className = 'price-name';
+          name.textContent = p.name;
+          name.style.color = tierColor;
+          row.appendChild(name);
+        }
+        const val = document.createElement('span');
+        val.className = 'price-value';
+        val.textContent = `${p.price.toFixed(4)}`;
+        val.style.color = tierColor;
+        const unit = document.createElement('span');
+        unit.className = 'price-unit';
+        unit.textContent = usageUnit ? `元/${usageUnit}` : '元';
+        unit.style.color = tierColor;
+        row.appendChild(val);
+        row.appendChild(unit);
+        track.appendChild(row);
+      };
+
+      prices.forEach(p => createRow(p));
+      // 复制首行追加到末尾，实现回卷时无缝循环
+      if (prices.length > 0) createRow(prices[0]);
+
+      // 保存单价引用，便于不可用状态重置（--）
+      this.priceUnitEl = track.querySelector('.price-unit');
+      this.electricityPriceEl = track.querySelector('.price-value');
+
+      this._startPriceAutoScroll(track, prices.length);
+      return;
+    }
+
+    // 单个单价：重建原有 #electricity-price / .price-unit 结构
+    const currentPrice = prices[0] ? prices[0].price : 0;
+    const singleVal = document.createElement('span');
+    singleVal.className = 'price-value';
+    singleVal.id = 'electricity-price';
+    singleVal.textContent = currentPrice.toFixed(4);
+    singleVal.style.color = tierColor;
+    const singleUnit = document.createElement('span');
+    singleUnit.className = 'price-unit';
+    singleUnit.textContent = usageUnit ? `元/${usageUnit}` : '元';
+    singleUnit.style.color = tierColor;
+    priceList.appendChild(singleVal);
+    priceList.appendChild(singleUnit);
+
+    // 保存单价引用以兼容现有逻辑（-- 重置等）
+    this.priceUnitEl = singleUnit;
+    this.electricityPriceEl = singleVal;
+  }
+
+  // 停止多单价自动滚动定时器
+  _stopPriceAutoScroll() {
+    if (this._priceAutoScrollTimer) {
+      clearInterval(this._priceAutoScrollTimer);
+      this._priceAutoScrollTimer = null;
+    }
+    this._priceAutoIndex = 0;
+  }
+
+  // 多单价自动滚动（每次显示一条，循环播放；用 transform 位移走 GPU 合成）
+  _startPriceAutoScroll(track, rowCount) {
+    this._stopPriceAutoScroll();
+
+    const ROW_H = 20;       // 单行高度（与 CSS 中 .price-row 的 height 保持一致）
+    const INTERVAL = 2600;  // 滚动间隔 = 停留 + 过渡动画时长
+
+    let index = 0;
+    const setTransform = (i) => {
+      track.style.transform = `translate3d(0, ${-(i * ROW_H)}px, 0)`;
+    };
+
+    // 首次位移为 0（显示第一条）
+    setTransform(0);
+
+    this._priceAutoScrollTimer = setInterval(() => {
+      // 开启过渡动画，滚动到下一行
+      track.classList.add('transitioning');
+      index += 1;
+
+      // 到达复制首行的位置（index == rowCount，即视觉上又回到第一条）
+      if (index > rowCount) {
+        // 瞬间回卷到第一条（禁用过渡，避免回退动画；过渡由下一次滚动重新开启）
+        index = 0;
+        track.classList.remove('transitioning');
+        setTransform(0);
+        this._priceAutoIndex = 0;
+        return;
+      }
+
+      setTransform(index);
+      this._priceAutoIndex = index;
+    }, INTERVAL);
+  }
+
+  /* 根据计费标准和用量类型获取对应的价格信息
    * 支持6种不同的计费标准：年阶梯峰平谷、年阶梯、月阶梯峰平谷、月阶梯峰平谷变动价格、月阶梯、平均单价*/
   getElectricityPrices(billingStandard, currentLevel, electricityTypes) {
-    // 检查基本条件
-    if (this.utilityType !== 'ele' || !this._hass || !this.entityId) {
+    // 检查基本条件（使用 getBillingStandardData 以便 gas/water 在未手动配置时也能从实体获取）
+    if (!this._hass || !this.entityId) {
       return {};
     }
-    
-    const entity = this._hass.states[this.entityId];
-    const billingStandardObj = this.getBillingStandardObject(entity);
+
+    const billingStandardObj = this.getBillingStandardData();
     if (!billingStandardObj) return {};
-    
+
+    const priceSuffix = this.getPriceSuffixByUtilityType();
     const prices = {};
     if (!electricityTypes || electricityTypes.length === 0) return prices;
-    
+
     electricityTypes.forEach(type => {
       switch (billingStandard) {
         case '年阶梯峰平谷':
-        case '月阶梯峰平谷季节电价':
         case '充电桩计费':
-          if (type === 'tip') prices.tip = billingStandardObj[`年阶梯第${currentLevel}档尖电价`];
-          if (type === 'peak') prices.peak = billingStandardObj[`年阶梯第${currentLevel}档峰电价`];
-          if (type === 'normal') prices.normal = billingStandardObj[`年阶梯第${currentLevel}档平电价`];
-          if (type === 'valley') prices.valley = billingStandardObj[`年阶梯第${currentLevel}档谷电价`];
+          if (type === 'tip') prices.tip = billingStandardObj[`年阶梯第${currentLevel}档尖${priceSuffix}`];
+          if (type === 'peak') prices.peak = billingStandardObj[`年阶梯第${currentLevel}档峰${priceSuffix}`];
+          if (type === 'normal') prices.normal = billingStandardObj[`年阶梯第${currentLevel}档平${priceSuffix}`];
+          if (type === 'valley') prices.valley = billingStandardObj[`年阶梯第${currentLevel}档谷${priceSuffix}`];
           break;
         case '年阶梯':
-          prices.single = billingStandardObj[`年阶梯第${currentLevel}档电价`];
+          prices.single = billingStandardObj[`年阶梯第${currentLevel}档${priceSuffix}`];
           break;
         case '月阶梯峰平谷':
-          if (type === 'tip') prices.tip = billingStandardObj[`月阶梯第${currentLevel}档尖电价`];
-          if (type === 'peak') prices.peak = billingStandardObj[`月阶梯第${currentLevel}档峰电价`];
-          if (type === 'normal') prices.normal = billingStandardObj[`月阶梯第${currentLevel}档平电价`];
-          if (type === 'valley') prices.valley = billingStandardObj[`月阶梯第${currentLevel}档谷电价`];
+        case '月阶梯峰平谷季节电价':
+          if (type === 'tip') prices.tip = billingStandardObj[`月阶梯第${currentLevel}档尖${priceSuffix}`];
+          if (type === 'peak') prices.peak = billingStandardObj[`月阶梯第${currentLevel}档峰${priceSuffix}`];
+          if (type === 'normal') prices.normal = billingStandardObj[`月阶梯第${currentLevel}档平${priceSuffix}`];
+          if (type === 'valley') prices.valley = billingStandardObj[`月阶梯第${currentLevel}档谷${priceSuffix}`];
           break;
         case '月阶梯峰平谷变动价格':
-          if (type === 'tip') prices.tip = billingStandardObj[`月阶梯第${currentLevel}档尖电价`];
-          if (type === 'peak') prices.peak = billingStandardObj[`月阶梯第${currentLevel}档峰电价`];
-          if (type === 'normal') prices.normal = billingStandardObj[`月阶梯第${currentLevel}档平电价`];
+          if (type === 'tip') prices.tip = billingStandardObj[`月阶梯第${currentLevel}档尖${priceSuffix}`];
+          if (type === 'peak') prices.peak = billingStandardObj[`月阶梯第${currentLevel}档峰${priceSuffix}`];
+          if (type === 'normal') prices.normal = billingStandardObj[`月阶梯第${currentLevel}档平${priceSuffix}`];
           if (type === 'valley') {
             const currentMonth = new Date().getMonth() + 1;
             const monthKey = `${currentMonth}月`;
-            prices.valley = billingStandardObj[`${monthKey}阶梯第${currentLevel}档谷电价`];
+            prices.valley = billingStandardObj[`${monthKey}阶梯第${currentLevel}档谷${priceSuffix}`];
           }
           break;
         case '月阶梯':
-          prices.single = billingStandardObj[`月阶梯第${currentLevel}档电价`];
+          prices.single = billingStandardObj[`月阶梯第${currentLevel}档${priceSuffix}`];
           break;
         case '平均单价':
           prices.single = billingStandardObj.平均单价;
           break;
       }
     });
-    
+
     return prices;
   }
 
   /*渲染价格区块*/
   renderPriceBlock(prices, level) {
-    // 检查基本条件
-    if (this.utilityType !== 'ele' || !this._hass || !this.entityId) {
+    // 检查基本条件（使用 getBillingStandardData 以便 gas/water 在未手动配置时也能从实体获取）
+    if (!this._hass || !this.entityId) {
       return '';
     }
-    
-    const entity = this._hass.states[this.entityId];
-    const billingStandardObj = this.getBillingStandardObject(entity);
-    if (!billingStandardObj) return `<div class="price-item-block">0.0000元/度</div>`;
-    
+
+    const billingStandardObj = this.getBillingStandardData();
+    if (!billingStandardObj) return `<div class="price-item-block">0.0000元/${this.standardData.unit || '度'}</div>`;
+
     // 获取计费标准类型（支持两种属性名）
     const billingStandard = billingStandardObj.计费标准 || billingStandardObj.计费标准类型 || '未知';
     const usageUnit = this.standardData.unit || '度';
-    
+    const priceSuffix = this.getPriceSuffixByUtilityType();
+
     // 如果是平均单价，直接显示
     if (billingStandard === '平均单价' || billingStandardObj.平均单价) {
       const singlePrice = billingStandardObj.平均单价;
@@ -12633,61 +14551,61 @@ class ElectricityInfoCard extends HTMLElement {
         return `<div class="price-item-block">单价：${parseFloat(singlePrice).toFixed(4)}元/${usageUnit}</div>`;
       }
     }
-    
+
     let blockPrices = {};
     let hasPrice = false;
-    
+
     // 根据计费标准类型获取对应的价格
     switch (billingStandard) {
       case '年阶梯峰平谷':
-      case '月阶梯峰平谷季节电价':
       case '充电桩计费':
-        blockPrices.tip = billingStandardObj[`年阶梯第${level}档尖电价`];
-        blockPrices.peak = billingStandardObj[`年阶梯第${level}档峰电价`];
-        blockPrices.normal = billingStandardObj[`年阶梯第${level}档平电价`];
-        blockPrices.valley = billingStandardObj[`年阶梯第${level}档谷电价`];
+        blockPrices.tip = billingStandardObj[`年阶梯第${level}档尖${priceSuffix}`];
+        blockPrices.peak = billingStandardObj[`年阶梯第${level}档峰${priceSuffix}`];
+        blockPrices.normal = billingStandardObj[`年阶梯第${level}档平${priceSuffix}`];
+        blockPrices.valley = billingStandardObj[`年阶梯第${level}档谷${priceSuffix}`];
         hasPrice = true;
         break;
       case '年阶梯':
-        blockPrices.single = billingStandardObj[`年阶梯第${level}档电价`];
+        blockPrices.single = billingStandardObj[`年阶梯第${level}档${priceSuffix}`];
         hasPrice = true;
         break;
       case '月阶梯峰平谷':
-        blockPrices.tip = billingStandardObj[`月阶梯第${level}档尖电价`];
-        blockPrices.peak = billingStandardObj[`月阶梯第${level}档峰电价`];
-        blockPrices.normal = billingStandardObj[`月阶梯第${level}档平电价`];
-        blockPrices.valley = billingStandardObj[`月阶梯第${level}档谷电价`];
+      case '月阶梯峰平谷季节电价':
+        blockPrices.tip = billingStandardObj[`月阶梯第${level}档尖${priceSuffix}`];
+        blockPrices.peak = billingStandardObj[`月阶梯第${level}档峰${priceSuffix}`];
+        blockPrices.normal = billingStandardObj[`月阶梯第${level}档平${priceSuffix}`];
+        blockPrices.valley = billingStandardObj[`月阶梯第${level}档谷${priceSuffix}`];
         hasPrice = true;
         break;
       case '月阶梯峰平谷变动价格':
-        blockPrices.tip = billingStandardObj[`月阶梯第${level}档尖电价`];
-        blockPrices.peak = billingStandardObj[`月阶梯第${level}档峰电价`];
-        blockPrices.normal = billingStandardObj[`月阶梯第${level}档平电价`];
+        blockPrices.tip = billingStandardObj[`月阶梯第${level}档尖${priceSuffix}`];
+        blockPrices.peak = billingStandardObj[`月阶梯第${level}档峰${priceSuffix}`];
+        blockPrices.normal = billingStandardObj[`月阶梯第${level}档平${priceSuffix}`];
         const currentMonth = new Date().getMonth() + 1;
         const monthKey = `${currentMonth}月`;
-        blockPrices.valley = billingStandardObj[`${monthKey}阶梯第${level}档谷电价`];
+        blockPrices.valley = billingStandardObj[`${monthKey}阶梯第${level}档谷${priceSuffix}`];
         hasPrice = true;
         break;
       case '月阶梯':
-        blockPrices.single = billingStandardObj[`月阶梯第${level}档电价`];
+        blockPrices.single = billingStandardObj[`月阶梯第${level}档${priceSuffix}`];
         hasPrice = true;
         break;
       default:
         // 如果没有匹配到计费标准类型，尝试直接读取价格字段
         this.debugLog(`[renderPriceBlock] 未知计费标准类型: ${billingStandard}，尝试直接读取价格字段`);
-        blockPrices.single = billingStandardObj[`第${level}档电价`] || billingStandardObj[`阶梯第${level}档电价`];
-        blockPrices.tip = billingStandardObj[`第${level}档尖电价`];
-        blockPrices.peak = billingStandardObj[`第${level}档峰电价`];
-        blockPrices.normal = billingStandardObj[`第${level}档平电价`];
-        blockPrices.valley = billingStandardObj[`第${level}档谷电价`];
+        blockPrices.single = billingStandardObj[`第${level}档${priceSuffix}`] || billingStandardObj[`阶梯第${level}档${priceSuffix}`];
+        blockPrices.tip = billingStandardObj[`第${level}档尖${priceSuffix}`];
+        blockPrices.peak = billingStandardObj[`第${level}档峰${priceSuffix}`];
+        blockPrices.normal = billingStandardObj[`第${level}档平${priceSuffix}`];
+        blockPrices.valley = billingStandardObj[`第${level}档谷${priceSuffix}`];
         hasPrice = true;
         break;
     }
-    
+
     // 生成HTML
     let html = '';
     let foundPrice = false;
-    
+
     if (blockPrices.single) {
       html = `<div class="price-item-block">单价：${parseFloat(blockPrices.single).toFixed(4)}元/${usageUnit}</div>`;
       foundPrice = true;
@@ -12710,7 +14628,7 @@ class ElectricityInfoCard extends HTMLElement {
         foundPrice = true;
       }
     }
-    
+
     if (foundPrice) {
       return html;
     } else {
@@ -12724,11 +14642,11 @@ class ElectricityInfoCard extends HTMLElement {
     const total = data.total || 0;
     const distributions = [];
     let hasNonZeroValue = false;
-    
+
     // 计算各分时用电量，过滤掉0值的时段
     for (const type of this.timeConfig.types) {
       const value = data[type.key] || 0;
-      
+
       // 只有当用电量大于0时才添加
       if (value > 0) {
         hasNonZeroValue = true;
@@ -12741,21 +14659,21 @@ class ElectricityInfoCard extends HTMLElement {
         });
       }
     }
-    
+
     // 如果没有非零值，返回空数组
     if (!hasNonZeroValue) {
       return [];
     }
-    
+
     // 计算总用电量（仅非零值）
     const sum = distributions.reduce((total, dist) => total + dist.value, 0);
-    
+
     // 计算每个时段的宽度百分比
     distributions.forEach(dist => {
       dist.percentage = (dist.value / sum) * 100;
       dist.width = dist.percentage;
     });
-    
+
     return distributions;
   }
 
@@ -12764,40 +14682,40 @@ class ElectricityInfoCard extends HTMLElement {
     // 清空现有内容
     containerEl.innerHTML = '';
     labelsEl.innerHTML = '';
-    
+
     // 如果没有数据，隐藏整个分时条区域
     if (distributions.length === 0) {
       containerEl.classList.add('empty');
       labelsEl.classList.add('empty');
       return;
     }
-    
+
     // 显示分时条区域
     containerEl.classList.remove('empty');
     labelsEl.classList.remove('empty');
-    
+
     // 创建分时段条
     distributions.forEach(dist => {
       const segment = document.createElement('div');
       segment.className = `time-segment ${dist.colorClass}`;
       segment.style.width = `${dist.width}%`;
-      
+
       // 只显示用量，不显示百分比
       const displayText = `${Math.round(dist.value)}`;
       segment.textContent = displayText;
       segment.title = `${dist.name}: ${Math.round(dist.value)}度`;
       containerEl.appendChild(segment);
     });
-    
+
     // 创建标签 - 只显示对应的分时名称
     distributions.forEach(dist => {
       const label = document.createElement('div');
       label.className = 'time-label';
-      
+
       const text = document.createElement('span');
       text.textContent = dist.name;
       text.title = `${dist.name}: ${Math.round(dist.value)}度`;
-      
+
       label.appendChild(text);
       labelsEl.appendChild(label);
     });
@@ -12805,31 +14723,50 @@ class ElectricityInfoCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    
+
     // 首次加载时应用主题（如果还没有应用过）
     if (this._config && this._config.theme && !this.lastThemeName) {
       this.updateTheme(this._config);
     }
-    
+
     // 检查主题实体状态是否变化，实时响应主题变化
     if (this._config && this._config.theme) {
       this.updateThemeFromEntity();
     }
-    
+
+    // 【数据加载补偿】若当前用户历史数据尚未加载，补加载数据。
+    // 修复 initial_tab 指向非第一个标签时 data-container 无数据的时序竞态：
+    //   setConfig 中 switchUser(targetIndex) 的 loadDataForCurrentUser 在 +400ms 执行，
+    //   其内部的 resetCardState 会把 historicalDataLoaded 置 false。若此时 _hass 尚未
+    //   注入，loadDataForCurrentUser 在 5584 行早退（return Promise.resolve()），
+    //   historicalDataLoaded 保持 false。此后 set hass 走 updateCardWithThrottle
+    //   （10分钟节流）不再调用 updateCard，导致 updateCard 中 15229 行的
+    //   `if (!historicalDataLoaded) { loadDataForCurrentUser(); return; }` 永不执行，
+    //   data-container（本月/上月/年度用电）永久空白——只有刷新页面才恢复。
+    // 用 _dataLoadPending 防重入避免高频 set hass 重复触发；loadDataForCurrentUser
+    //   内部的缓存检查（isCacheValid）保证幂等，不会重复网络请求。
+    if (this._hass && this.currentConfig && !this.historicalDataLoaded && !this._dataLoadPending) {
+      this._dataLoadPending = true;
+      Promise.resolve(this.loadDataForCurrentUser()).finally(() => {
+        this._dataLoadPending = false;
+      });
+    }
+
     this.updateCardWithThrottle();
+
+    // 公告数据实时更新（不受10分钟节流限制）
+    const noticeEntity = this.noticeEntityId ? hass.states[this.noticeEntityId] : null;
+    this._updateNoticeDisplay(noticeEntity);
   }
 
   // 节流更新函数，限制10分钟更新一次
   updateCardWithThrottle() {
     const now = Date.now();
-    
+
     // 如果是第一次更新或者距离上次更新超过10分钟，则更新卡片
     if (!this.lastUpdateTime || (now - this.lastUpdateTime) >= this.updateInterval) {
       this.lastUpdateTime = now;
       this.updateCard();
-    
-    } else {
-      const remainingMinutes = Math.ceil((this.updateInterval - (now - this.lastUpdateTime)) / 60000);
     }
   }
 
@@ -13018,16 +14955,16 @@ class ElectricityInfoCard extends HTMLElement {
       el.className = 'trend-arrow';
     }
   }
-  
+
   // 从标准格式获取当前月份数据
   getCurrentMonthStandardData() {
     const currentMonthStr = this.getCurrentMonthStr();
     const currentMonthData = this.standardData.monthUsage.find(item => item.time === currentMonthStr);
-    
+
     if (currentMonthData) {
       return currentMonthData;
     }
-    
+
     // 返回默认值
     return {
       user: 'ele_01',
@@ -13046,24 +14983,24 @@ class ElectricityInfoCard extends HTMLElement {
       usage_ele_no: 0
     };
   }
-  
+
   // 从标准格式获取上月数据
   getLastMonthStandardData() {
     const now = new Date();
     const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthStr = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}`;
-    
+
     const lastMonthData = this.standardData.monthUsage.find(item => item.time === lastMonthStr);
-    
+
     if (lastMonthData) {
       return lastMonthData;
     }
-    
+
     // 如果找不到，返回第二个数据（如果存在）
     if (this.standardData.monthUsage.length > 1) {
       return this.standardData.monthUsage[1];
     }
-    
+
     // 返回默认值
     return {
       user: 'ele_01',
@@ -13082,22 +15019,22 @@ class ElectricityInfoCard extends HTMLElement {
       usage_ele_no: 0
     };
   }
-  
+
   // 从标准格式获取当前年度数据
   getCurrentYearStandardData() {
     const currentYear = new Date().getFullYear().toString();
-    
+
     const currentYearData = this.standardData.yearUsage.find(item => item.time === currentYear);
-    
+
     if (currentYearData) {
       return currentYearData;
     }
-    
+
     // 如果找不到，返回第一个年份数据（如果存在）
     if (this.standardData.yearUsage.length > 0) {
       return this.standardData.yearUsage[0];
     }
-    
+
     // 返回默认值
     return {
       user: 'ele_01',
@@ -13120,8 +15057,8 @@ class ElectricityInfoCard extends HTMLElement {
   // 获取当前月份用电数据（原始格式，保留兼容性）
   getCurrentMonthData(monthlist) {
     if (!monthlist || !Array.isArray(monthlist)) {
-      return { 
-        monthEleNum: 0, 
+      return {
+        monthEleNum: 0,
         monthEleCost: 0,
         total: 0,
         TPq: 0,
@@ -13130,12 +15067,12 @@ class ElectricityInfoCard extends HTMLElement {
         VPq: 0
       };
     }
-    
+
     const currentMonthStr = this.getCurrentMonthStr();
-    
+
     // 查找当前月份的数据
     const currentMonthData = monthlist.find(item => item.month === currentMonthStr);
-    
+
     if (currentMonthData) {
       return {
         monthEleNum: currentMonthData.monthEleNum || 0,
@@ -13147,9 +15084,9 @@ class ElectricityInfoCard extends HTMLElement {
         VPq: currentMonthData.monthVPq || 0
       };
     }
-    
-    return { 
-      monthEleNum: 0, 
+
+    return {
+      monthEleNum: 0,
       monthEleCost: 0,
       total: 0,
       TPq: 0,
@@ -13164,21 +15101,21 @@ class ElectricityInfoCard extends HTMLElement {
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth() + 1; // 月份从0开始，所以+1
-    
+
     // 使用默认值，避免 null 导致的错误
     const periodStartMonth = this.tierConfig.periodStartMonth || 7;
     const periodStartDay = this.tierConfig.periodStartDay || 1;
     const periodEndMonth = this.tierConfig.periodEndMonth || 6;
     const periodEndDay = this.tierConfig.periodEndDay || 30;
-    
+
     let startYear, endYear;
-    
+
     // 判断当前日期属于哪个计费周期
     // 比较当前月份和计费周期开始月份
     if (currentMonth >= periodStartMonth) {
       // 如果当前月份在计费周期开始月份之后或相同
       startYear = currentYear;
-      
+
       // 计算结束年份：如果结束月份小于开始月份，说明跨年了
       if (periodEndMonth < periodStartMonth) {
         endYear = currentYear + 1;
@@ -13189,7 +15126,7 @@ class ElectricityInfoCard extends HTMLElement {
       // 如果当前月份在计费周期开始月份之前
       // 说明当前属于上一个周期的后半段
       startYear = currentYear - 1;
-      
+
       // 计算结束年份
       if (periodEndMonth < periodStartMonth) {
         endYear = currentYear;
@@ -13197,11 +15134,11 @@ class ElectricityInfoCard extends HTMLElement {
         endYear = currentYear;
       }
     }
-    
+
     // 创建周期开始和结束日期
     const periodStart = new Date(startYear, periodStartMonth - 1, periodStartDay);
     const periodEnd = new Date(endYear, periodEndMonth - 1, periodEndDay);
-    
+
     return {
       start: periodStart,
       end: periodEnd,
@@ -13222,43 +15159,43 @@ class ElectricityInfoCard extends HTMLElement {
     if (!daylist || !Array.isArray(daylist)) {
       return 0;
     }
-    
+
     const period = this.getCurrentTierPeriod();
     const periodStart = period.start;
     const periodEnd = period.end;
     const now = new Date();
-    
+
     // 使用今天的日期或周期结束日期中较早的那个
     const endDate = now < periodEnd ? now : periodEnd;
-    
+
     let totalUsage = 0;
-    
+
     // 根据 utility_type 获取对应的用量字段
     const usageField = this.getUsageFieldByUtilityType();
-    
+
     // 获取配置的日期字段名（默认为 'day'）
     const dateField = this.getDateFieldByUtilityType();
-    
+
     // 遍历daylist，累加在周期内的用电量
     for (const dayData of daylist) {
       const dayStr = dayData[dateField];
-      
+
       if (!dayStr) {
         console.warn(`Daylist 数据中缺少日期字段 '${dateField}':`, dayData);
         continue;
       }
-      
+
       // 解析日期字符串，假设格式为 "YYYY-MM-DD"
       try {
         const [year, month, day] = dayStr.split('-').map(Number);
         const date = new Date(year, month - 1, day);
-        
+
         // 检查日期是否有效
         if (isNaN(date.getTime())) {
           console.warn(`Daylist 数据中日期格式无效: ${dayStr}`);
           continue;
         }
-        
+
         // 检查日期是否在周期内
         if (date >= periodStart && date <= endDate) {
           // 根据 utility_type 使用不同的字段，确保是有效的数字
@@ -13275,29 +15212,101 @@ class ElectricityInfoCard extends HTMLElement {
         continue;
       }
     }
-    
+
     // 确保返回的是有效的数字
     return isNaN(totalUsage) ? 0 : totalUsage;
   }
-  
+
+  // 从 monthlist 计算当前周期累计用量（当没有 daylist 时使用）
+  calculatePeriodUsageFromMonthlist(monthlist) {
+    if (!monthlist || !Array.isArray(monthlist)) return 0;
+
+    const period = this.getCurrentTierPeriod();
+    const periodStart = period.start;
+    const periodEnd = period.end;
+    const now = new Date();
+    const endDate = now < periodEnd ? now : periodEnd;
+
+    // 获取 monthlist 的日期和用量字段
+    let dateField = 'month';
+    let usageField;
+
+    // entity_list 模式
+    if (this.entityListMap && this.entityListMap.monthlist) {
+      dateField = this.entityListMap.monthlist.date || 'month';
+      usageField = this.entityListMap.monthlist.usage;
+    }
+    // 标准数组检测模式（标准字段名）
+    if (!usageField && this._detectionMode === 'standard') {
+      dateField = 'day';
+      usageField = 'usage';
+    }
+    // fieldMapping 模式
+    if (!usageField && this.fieldMapping) {
+      dateField = this.fieldMapping.date || 'month';
+      usageField = this.fieldMapping.usage;
+    }
+    // 默认 fallback
+    if (!usageField) {
+      usageField = this.getUsageFieldByUtilityType();
+    }
+
+    let totalUsage = 0;
+
+    for (const monthData of monthlist) {
+      const monthStr = monthData[dateField];
+      if (!monthStr) continue;
+
+      // 解析 "YYYY-MM" 格式
+      const parts = String(monthStr).split('-');
+      if (parts.length < 2) continue;
+
+      const year = parseInt(parts[0]);
+      const month = parseInt(parts[1]) - 1; // 0-based
+      if (isNaN(year) || isNaN(month)) continue;
+
+      const monthDate = new Date(year, month, 1);
+
+      if (monthDate >= periodStart && monthDate <= endDate) {
+        const usageValue = monthData[usageField];
+        if (usageValue !== undefined && usageValue !== null) {
+          const parsedUsage = parseFloat(usageValue);
+          if (!isNaN(parsedUsage)) {
+            totalUsage += parsedUsage;
+          }
+        }
+      }
+    }
+
+    return isNaN(totalUsage) ? 0 : totalUsage;
+  }
+
   // 根据 utility_type 获取日期字段名
   getDateFieldByUtilityType() {
+    // 优先使用 entity_list 配置的 daylist 日期字段
+    if (this.entityListMap && this.entityListMap.daylist && this.entityListMap.daylist.date) {
+      return this.entityListMap.daylist.date;
+    }
     // 检查是否有自定义的字段映射（字段映射存储在 this.fieldMapping 中）
     if (this.fieldMapping && this.fieldMapping.date) {
       return this.fieldMapping.date;
     }
-    
+
     // 默认字段名
     return 'day';
   }
-  
+
   // 根据 utility_type 获取用量字段名
   getUsageFieldByUtilityType() {
+    // 优先使用 entity_list 配置的 daylist 用量字段
+    if (this.entityListMap && this.entityListMap.daylist && this.entityListMap.daylist.usage) {
+      return this.entityListMap.daylist.usage;
+    }
     // 检查是否有自定义的字段映射（字段映射存储在 this.fieldMapping 中）
     if (this.fieldMapping && this.fieldMapping.usage) {
       return this.fieldMapping.usage;
     }
-    
+
     // 默认字段名（向后兼容）
     switch (this.utilityType) {
       case 'ele':
@@ -13314,7 +15323,7 @@ class ElectricityInfoCard extends HTMLElement {
   // 计算当前阶梯
   calculateCurrentTier(usage) {
     const tiers = this.tierConfig.tiers;
-    
+
     for (let i = 0; i < tiers.length; i++) {
       if (usage <= tiers[i].max) {
         return {
@@ -13326,7 +15335,7 @@ class ElectricityInfoCard extends HTMLElement {
         };
       }
     }
-    
+
     // 如果超过所有阶梯，返回最后一个阶梯
     const lastTier = tiers[tiers.length - 1];
     return {
@@ -13349,25 +15358,25 @@ class ElectricityInfoCard extends HTMLElement {
 
       return this.calculateIndicatorPositionFallback(usage, tierInfo);
     }
-    
+
     const containerRect = this.tiersContainerEl.getBoundingClientRect();
-    
+
     // 检查容器宽度是否有效
     if (!containerRect || containerRect.width <= 0) {
 
       return this.calculateIndicatorPositionFallback(usage, tierInfo);
     }
-    
+
     const block1Rect = tierBlocks[0].getBoundingClientRect();
     const block2Rect = tierBlocks[1].getBoundingClientRect();
     const block3Rect = tierBlocks[2].getBoundingClientRect();
-    
+
     // 检查 rect 是否有效
     if (!block1Rect || !block2Rect || !block3Rect) {
 
       return this.calculateIndicatorPositionFallback(usage, tierInfo);
     }
-    
+
     // 计算每个 tier-block 的边界（相对于容器）
     const block1Left = ((block1Rect.left - containerRect.left) / containerRect.width) * 100;
     const block1Right = ((block1Rect.right - containerRect.left) / containerRect.width) * 100;
@@ -13375,9 +15384,9 @@ class ElectricityInfoCard extends HTMLElement {
     const block2Right = ((block2Rect.right - containerRect.left) / containerRect.width) * 100;
     const block3Left = ((block3Rect.left - containerRect.left) / containerRect.width) * 100;
     const block3Right = ((block3Rect.right - containerRect.left) / containerRect.width) * 100;
-    
+
     // 检查结果是否有效
-    if (isNaN(block1Left) || isNaN(block1Right) || isNaN(block2Left) || 
+    if (isNaN(block1Left) || isNaN(block1Right) || isNaN(block2Left) ||
         isNaN(block2Right) || isNaN(block3Left) || isNaN(block3Right)) {
 
       return this.calculateIndicatorPositionFallback(usage, tierInfo);
@@ -13387,9 +15396,9 @@ class ElectricityInfoCard extends HTMLElement {
     // 基于阶梯配置计算位置
     const tier1Max = this.tierConfig.tiers[0].max;
     const tier2Max = this.tierConfig.tiers[1].max;
-    
+
     let positionPercent = 0;
-    
+
     if (tierInfo.tier === 1) {
       // 在第一阶梯内：映射到 block1 的范围内
       const progress = Math.min(usage / tier1Max, 1);
@@ -13406,26 +15415,26 @@ class ElectricityInfoCard extends HTMLElement {
       positionPercent = block3Left + (progress * (block3Right - block3Left));
 
     }
-    
+
     // 确保不超过实际边界
     const finalPosition = Math.min(Math.max(positionPercent, block1Left), block3Right);
 
-    
+
     return finalPosition;
   }
-  
+
   calculateIndicatorPositionFallback(usage, tierInfo) {
     // 回退方法：基于阶梯配置计算（用于 tier-block 不可用时）
     const tier1Max = this.tierConfig.tiers[0].max;
     const tier2Max = this.tierConfig.tiers[1].max;
-    
+
     // 假设三个 tier-block 平均分配空间（每个约33.33%）
     // 由于居中对齐，假设左边有5%的空白
     const blockStartPercent = 5;
     const blockWidth = 30; // 每个 block 约 30%
-    
+
     let positionPercent = 0;
-    
+
     if (tierInfo.tier === 1) {
       // 在第一阶梯内
       const progress = Math.min(usage / tier1Max, 1);
@@ -13440,25 +15449,24 @@ class ElectricityInfoCard extends HTMLElement {
       const progress = Math.min((usage - tier2Max) / tier3Range, 1);
       positionPercent = blockStartPercent + (2 * blockWidth) + (progress * blockWidth);
     }
-    
+
     return positionPercent;
   }
 
   // 更新阶梯指示器
   updateTierIndicator(usage) {
-    // 当 utility_type 为 'ele' 时，从 entity 的"计费标准"节点获取当前阶梯档和累计用电量
-    if (this.utilityType === 'ele' && this._hass && this.entityId) {
-      const entity = this._hass.states[this.entityId];
-      const billingStandard = this.getBillingStandardObject(entity);
-
+    // 从 entity 的"计费标准"节点获取当前阶梯档和累计用量（电力/燃气/水，且未手动配置时）
+    const billingStandard = this.getBillingStandardData();
+    if (billingStandard && this._hass && this.entityId) {
       if (billingStandard) {
         // === 根据计费标准类型动态选择字段名 ===
         const billingStandardType = billingStandard['计费标准'] || '';
         const isMonthlyTier = billingStandardType.includes('月阶梯');
+        const usageSuffix = this.getUsageSuffixByUtilityType();
 
         // 动态选择字段名
         const currentTierField = isMonthlyTier ? '当前月阶梯档' : '当前年阶梯档';
-        const accumulatedUsageField = isMonthlyTier ? '月阶梯累计用电量' : '年阶梯累计用电量';
+        const accumulatedUsageField = isMonthlyTier ? `月阶梯累计${usageSuffix}` : `年阶梯累计${usageSuffix}`;
 
         // 读取当前阶梯档和累计用电量
         const currentTierStr = billingStandard[currentTierField];
@@ -13487,15 +15495,8 @@ class ElectricityInfoCard extends HTMLElement {
         this.currentPeriodUsage = actualUsage;
         this.currentTier = tierInfo.tier;
 
-        // 【集中处理 utility_type 为 'ele' 的逻辑】使用辅助方法获取当前阶梯的第一个单价
-        const currentPrice = this.getCurrentTierPriceFromBillingStandard(tierInfo.tier, tierInfo.price);
-
-        // 更新电价显示
-        this.electricityPriceEl.textContent = currentPrice.toFixed(4);
-
-        // 更新电价单位显示（元/单位）
-        const usageUnit = this.standardData.unit || '';
-        this.priceUnitEl.textContent = usageUnit ? `元/${usageUnit}` : '元';
+        // 【集中处理 utility_type 为 'ele' 的逻辑】渲染当前阶梯的全部单价（多单价竖向滚动）
+        this.renderCurrentTierPrices(tierInfo.tier, tierInfo.price);
 
         // 更新周期显示为 MM.DD-MM.DD 格式
         const startDateStr = this.formatDateMMDD(period.start);
@@ -13532,15 +15533,8 @@ class ElectricityInfoCard extends HTMLElement {
     this.currentPeriodUsage = usage;
     this.currentTier = tierInfo.tier;
 
-    // 【集中处理 utility_type 为 'ele' 的逻辑】使用辅助方法获取当前阶梯的第一个单价
-    const currentPrice = this.getCurrentTierPriceFromBillingStandard(tierInfo.tier, tierInfo.price);
-
-    // 更新电价显示
-    this.electricityPriceEl.textContent = currentPrice.toFixed(4);
-
-    // 更新电价单位显示（元/单位）
-    const usageUnit = this.standardData.unit || '';
-    this.priceUnitEl.textContent = usageUnit ? `元/${usageUnit}` : '元';
+    // 【集中处理 utility_type 为 'ele' 的逻辑】渲染当前阶梯的全部单价（多单价竖向滚动）
+    this.renderCurrentTierPrices(tierInfo.tier, tierInfo.price);
 
     // 更新周期显示为 MM.DD-MM.DD 格式
     const startDateStr = this.formatDateMMDD(period.start);
@@ -13572,7 +15566,7 @@ class ElectricityInfoCard extends HTMLElement {
     if (!this.tiersContainerEl) {
       return;
     }
-    
+
     // 确保容器已渲染且有宽度
     const containerRect = this.tiersContainerEl.getBoundingClientRect();
     if (containerRect.width <= 0) {
@@ -13584,7 +15578,7 @@ class ElectricityInfoCard extends HTMLElement {
       }, 100);
       return;
     }
-    
+
     // 使用用户代码中的精确定位方式
     const totalWidth = 100;
     const tierWidthPercent = totalWidth / 3;
@@ -13635,44 +15629,51 @@ class ElectricityInfoCard extends HTMLElement {
     // 创建完整的文本内容
     const fullText = `${circleTiers[tierInfo.tier]}${usage.toFixed(1)}°`;
 
-    // 计算当前阶梯指示器的位置和变换
-    let currentIndicatorLeft = 0;
-    let currentIndicatorTransform = '';
+    // 计算当前阶梯指示器的位置和变换（与 indicator-arrow 使用相同的 redLineLeft 值）
+    // 统一使用 indicatorPosition + translateX(-50%)，确保与三角箭头位置一致
+    let currentIndicatorLeft = redLineLeft;
+    let currentIndicatorTransform = 'translateX(-50%)';
 
-    if (tierInfo.tier === 1) {
-      // 当用电量为0时，将指示器放在最左侧
-      if (usage <= 0) {
-        currentIndicatorLeft = 0;
-        currentIndicatorTransform = 'none';
-      } else {
-        currentIndicatorLeft = 0;
-        currentIndicatorTransform = 'none';
-      }
-    } else if (tierInfo.tier === 3) {
-      currentIndicatorLeft = 100;
-      currentIndicatorTransform = 'translateX(-100%)';
-    } else {
-      currentIndicatorLeft = indicatorPosition;
-      currentIndicatorTransform = 'translateX(-50%)';
+    // 边界保护：防止溢出容器
+    if (usage <= 0) {
+      currentIndicatorLeft = 0;
+      currentIndicatorTransform = 'none';
     }
 
-    // 创建红色竖线指示器（放在tiers-container中）
+    // 创建红色竖线指示器（放在tiers-container中），颜色跟随当前阶梯
     const redLineIndicator = document.createElement('div');
-    redLineIndicator.className = 'red-line-indicator';
+    redLineIndicator.className = `red-line-indicator tier-${tierInfo.tier}`;
     redLineIndicator.style.left = `${redLineLeft}%`;
     redLineIndicator.style.position = 'absolute';
     redLineIndicator.style.top = '13px';
-    redLineIndicator.style.width = '3px';
+    redLineIndicator.style.width = '4px';
     redLineIndicator.style.height = '15px';
-    redLineIndicator.style.backgroundColor = '#ff0000';
+    redLineIndicator.style.backgroundColor = currentIndicatorBgColor;
     redLineIndicator.style.zIndex = '8';
-    redLineIndicator.style.boxShadow = '0 0 3px rgba(255, 0, 0, 0.7)';
     redLineIndicator.style.transform = 'translateX(-50%)';
     this.tiersContainerEl.appendChild(redLineIndicator);
 
     // 更新当前指示器内容
     this.currentTierEl.textContent = circleTiers[tierInfo.tier] || tierInfo.tier;
     this.currentUsageEl.textContent = usage.toFixed(1);
+
+    // 计算当前阶梯已使用百分比（当前阶梯用量占该阶梯额度的比例）
+    if (this.currentPercentEl) {
+      let tierUsage = 0;      // 当前阶梯内的用量
+      let tierCapacity = 0;   // 当前阶梯的可用额度
+      if (tierInfo.tier === 1) {
+        tierUsage = usage;
+        tierCapacity = this.tierConfig.tiers[0].max || 0;
+      } else if (tierInfo.tier === 2) {
+        tierUsage = usage - this.tierConfig.tiers[0].max;
+        tierCapacity = (this.tierConfig.tiers[1].max || 0) - this.tierConfig.tiers[0].max;
+      } else if (tierInfo.tier === 3) {
+        tierUsage = usage - this.tierConfig.tiers[1].max;
+        tierCapacity = 1000; // 第三阶梯额度无上限，按固定1000度估算
+      }
+      const percent = tierCapacity > 0 ? Math.round((tierUsage / tierCapacity) * 100) : 100;
+      this.currentPercentEl.textContent = ` (${Math.max(0, Math.min(100, percent))}%)`;
+    }
 
     // 更新当前指示器背景色
     this.currentIndicatorEl.classList.remove('tier-1', 'tier-2', 'tier-3');
@@ -13695,14 +15696,20 @@ class ElectricityInfoCard extends HTMLElement {
     this.currentIndicatorEl.style.pointerEvents = 'none';
     this.currentIndicatorEl.style.minWidth = 'auto';
     this.currentIndicatorEl.style.maxWidth = '300px';
-    this.currentIndicatorEl.style.overflow = 'hidden';
-    this.currentIndicatorEl.style.textOverflow = 'ellipsis';
+    // 允许内容完整显示，避免靠近边界时被截断（改由下方边缘保护逻辑限制位置）
+    this.currentIndicatorEl.style.overflow = 'visible';
+    this.currentIndicatorEl.style.textOverflow = 'clip';
 
     // 当用电量为0时，确保在最左侧
     if (usage <= 0) {
       this.currentIndicatorEl.style.left = '0%';
       this.currentIndicatorEl.style.transform = 'none';
     }
+
+    // 边缘保护：当使用量较小、指示器靠近容器左右边界时，
+    // 调整 transform 使指示器整体不超出容器（避免被卡片 overflow:hidden 截断）。
+    // 电力类型因使用累计用电量、位置通常居中，不受影响；主要修复非电力小用量场景。
+    this._clampIndicatorWithinContainer(currentIndicatorLeft);
 
     // 移除可能存在的旧倒三角指示器
     const oldTriangle = this.shadowRoot.querySelector('.current-indicator-triangle');
@@ -13734,19 +15741,127 @@ class ElectricityInfoCard extends HTMLElement {
     }
   }
 
-  // 辅助方法：从entity获取属性，支持从data节点下获取
-  getEntityAttribute(entity, attributeName) {
-    if (!entity || !entity.attributes) return undefined;
+  // 边缘保护：确保 current-indicator 不超出 tiers-container 左右边界
+  // 主要修复非电力类型在小用量时指示器被卡片 overflow:hidden 截断的问题。
+  // 电力类型因使用累计用电量、位置通常居中，基本不受影响。
+  _clampIndicatorWithinContainer(leftPercent) {
+    if (!this.currentIndicatorEl || !this.tiersContainerEl) return;
 
-    // 优先从顶层节点获取
-    let value = entity.attributes[attributeName];
+    const containerRect = this.tiersContainerEl.getBoundingClientRect();
+    if (!containerRect || containerRect.width <= 0) return;
 
-    // 如果顶层节点没有，尝试从data节点获取
-    if (value === undefined && entity.attributes.data) {
-      value = entity.attributes.data[attributeName];
+    // 指示器宽度（含 padding），用于计算半宽占容器的百分比
+    const indicatorRect = this.currentIndicatorEl.getBoundingClientRect();
+    const indicatorWidth = indicatorRect.width || 0;
+    if (indicatorWidth <= 0) return;
+
+    const halfWidthPercent = (indicatorWidth / 2 / containerRect.width) * 100;
+    // 左右各保留 1% 的安全间距
+    const safeMargin = 1;
+    const minLeft = halfWidthPercent + safeMargin;
+    const maxLeft = 100 - halfWidthPercent - safeMargin;
+
+    // 如果指示器宽度超过容器（极端情况），退化为贴边并取消居中变换
+    if (minLeft >= maxLeft) {
+      this.currentIndicatorEl.style.left = '50%';
+      this.currentIndicatorEl.style.transform = 'translateX(-50%)';
+      return;
     }
 
-    return value;
+    const currentLeft = typeof leftPercent === 'number' ? leftPercent : parseFloat(leftPercent) || 0;
+
+    if (currentLeft < minLeft) {
+      // 靠近左边界：固定 left 为最小值，仍使用 translateX(-50%) 保持中心对齐，
+      // 这样指示器整体停留在容器内，左半部分不会被截断
+      this.currentIndicatorEl.style.left = `${minLeft}%`;
+      this.currentIndicatorEl.style.transform = 'translateX(-50%)';
+    } else if (currentLeft > maxLeft) {
+      // 靠近右边界：同理限制到最大值
+      this.currentIndicatorEl.style.left = `${maxLeft}%`;
+      this.currentIndicatorEl.style.transform = 'translateX(-50%)';
+    }
+    // 其他情况保持调用方设置的位置不变
+  }
+
+  // 辅助方法：从entity获取属性，支持从data节点下获取
+  getEntityAttribute(entity, attributeName) {
+    if (!entity) return undefined;
+
+    // 优先从 attributes 获取
+    if (entity.attributes) {
+      let value = entity.attributes[attributeName];
+      // 如果顶层节点没有，尝试从data节点获取
+      if (value === undefined && entity.attributes.data) {
+        value = entity.attributes.data[attributeName];
+      }
+      if (value !== undefined) return value;
+    }
+
+    // fallback: 从 entity 顶层获取（兼容无 attributes 的实体）
+    return entity[attributeName];
+  }
+
+  // 辅助方法：通过点号路径获取嵌套属性（如 "a.b.monthlist"）
+  getNestedAttribute(obj, path) {
+    if (!obj || !path || typeof path !== 'string') return undefined;
+
+    const parts = path.split('.');
+    let current = obj;
+
+    for (const part of parts) {
+      if (current == null || typeof current !== 'object') return undefined;
+      // 支持从 entity.attributes 开始
+      if (part === 'attributes' && current.attributes) {
+        current = current.attributes;
+      } else {
+        current = current[part];
+      }
+    }
+
+    return current;
+  }
+
+  // 日期规范化：根据粒度统一格式
+  _normalizeDate(rawValue, granularity) {
+    if (!rawValue) return '';
+    const clean = String(rawValue).replace(/"/g, '').trim();
+    if (!clean) return '';
+
+    switch (granularity) {
+      case 'day': {
+        // 目标格式: YYYY-MM-DD
+        // 已经是 YYYY-MM-DD 格式则直接返回
+        if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
+        // 尝试截取日期部分（去掉时间）
+        const cleanParts = clean.split(' ');
+        const datePart = cleanParts[0];
+        if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart;
+        // 用 Date 解析
+        const d = new Date(clean);
+        if (isNaN(d.getTime())) return clean;
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      }
+      case 'month': {
+        // 目标格式: YYYY-MM
+        if (/^\d{4}-\d{2}$/.test(clean)) return clean;
+        // 如果包含完整日期，截取 YYYY-MM
+        const mParts = clean.split(' ');
+        const mDatePart = mParts[0];
+        if (/^\d{4}-\d{2}/.test(mDatePart)) {
+          return mDatePart.substring(0, 7);
+        }
+        const dm = new Date(clean);
+        if (isNaN(dm.getTime())) return clean;
+        return `${dm.getFullYear()}-${String(dm.getMonth() + 1).padStart(2, '0')}`;
+      }
+      case 'year': {
+        // 目标格式: YYYY
+        const yearMatch = clean.match(/(\d{4})/);
+        return yearMatch ? yearMatch[1] : clean;
+      }
+      default:
+        return clean;
+    }
   }
 
   // 辅助方法：判断是否使用data节点
@@ -13760,45 +15875,37 @@ class ElectricityInfoCard extends HTMLElement {
     // 获取实体
     const entity = this._hass.states[this.entityId];
     let balance = 0;
-    
+
     // 检查实体是否可用（不存在或状态为unknown/unavailable）
     const isEntityUnavailable = !entity || entity.state === 'unknown' || entity.state === 'unavailable';
-    
+
     if (isEntityUnavailable) {
       // 实体不可用，显示"--"
-      if (this.balanceEl) {
-        this.balanceEl.textContent = '--';
-      }
-      if (this.electricityPriceEl) {
-        this.electricityPriceEl.textContent = '--';
-      }
-      if (this.remainingDaysEl) {
-        this.remainingDaysEl.textContent = '--';
-      }
-      if (this.remainingDaysDateEl) {
-        this.remainingDaysDateEl.textContent = '';
-      }
-      
-      // data-container中三个按钮的用量和金额显示为"--"
-      if (this.currentMonthElectricityEl) this.currentMonthElectricityEl.textContent = '--';
-      if (this.currentMonthCostEl) this.currentMonthCostEl.textContent = '--';
-      if (this.lastMonthElectricityEl) this.lastMonthElectricityEl.textContent = '--';
-      if (this.lastMonthCostEl) this.lastMonthCostEl.textContent = '--';
-      if (this.yearElectricityEl) this.yearElectricityEl.textContent = '--';
-      if (this.yearCostEl) this.yearCostEl.textContent = '--';
-      
-      // tiers-container中的阶梯值和阶梯单价显示为"--"
-      if (this.tier1RangeEl) this.tier1RangeEl.textContent = '--';
-      if (this.tier1PriceEl) this.tier1PriceEl.textContent = '--';
-      if (this.tier2RangeEl) this.tier2RangeEl.textContent = '--';
-      if (this.tier2PriceEl) this.tier2PriceEl.textContent = '--';
-      if (this.tier3RangeEl) this.tier3RangeEl.textContent = '--';
-      if (this.tier3PriceEl) this.tier3PriceEl.textContent = '--';
-      
-      // current-indicator中的阶梯值和合计用电值显示为"--"
-      if (this.currentTierEl) this.currentTierEl.textContent = '--';
-      if (this.currentUsageEl) this.currentUsageEl.textContent = '--';
-      
+      this._setElsText([
+        [this.balanceEl, '--'],
+        [this.electricityPriceEl, '--'],
+        [this.remainingDaysEl, '--'],
+        [this.remainingDaysDateEl, ''],
+        // data-container中三个按钮的用量和金额显示为"--"
+        [this.currentMonthElectricityEl, '--'],
+        [this.currentMonthCostEl, '--'],
+        [this.lastMonthElectricityEl, '--'],
+        [this.lastMonthCostEl, '--'],
+        [this.yearElectricityEl, '--'],
+        [this.yearCostEl, '--'],
+        // tiers-container中的阶梯值和阶梯单价显示为"--"
+        [this.tier1RangeEl, '--'],
+        [this.tier1PriceEl, '--'],
+        [this.tier2RangeEl, '--'],
+        [this.tier2PriceEl, '--'],
+        [this.tier3RangeEl, '--'],
+        [this.tier3PriceEl, '--'],
+        // current-indicator中的阶梯值和合计用电值显示为"--"
+        [this.currentTierEl, '--'],
+        [this.currentUsageEl, '--'],
+        [this.currentPercentEl, '']
+      ]);
+
       // 将阶梯指示器移动到最左侧
       if (this.currentIndicatorEl) {
         this.currentIndicatorEl.style.left = '0%';
@@ -13806,13 +15913,13 @@ class ElectricityInfoCard extends HTMLElement {
         // 移除阶梯样式类，保持默认样式
         this.currentIndicatorEl.className = 'current-indicator';
       }
-      
+
       // 将indicator-arrow也移动到最左侧
       if (this.indicatorArrowEl) {
         this.indicatorArrowEl.style.left = '0%';
         this.indicatorArrowEl.style.transform = 'none';
       }
-      
+
       // 移除红色竖线和倒三角指示器
       if (this.tiersContainerEl) {
         const redLines = this.tiersContainerEl.querySelectorAll('.red-line-indicator');
@@ -13820,10 +15927,14 @@ class ElectricityInfoCard extends HTMLElement {
         const triangles = this.tiersContainerEl.querySelectorAll('.current-indicator-triangle');
         triangles.forEach(triangle => triangle.remove());
       }
-      
+
+      // 实体不可用时隐藏公告区域并停止滚动
+      this._stopNoticeAutoScroll();
+      if (this.noticeDisplayEl) this.noticeDisplayEl.style.display = 'none';
+
       return;
     }
-    
+
     if (entity) {
       // 优先从entity.state获取余额，如果state不是数值，则尝试从data节点获取
       balance = parseFloat(entity.state);
@@ -13837,12 +15948,12 @@ class ElectricityInfoCard extends HTMLElement {
       if (this.utilityType === 'ele' && this.balanceLabelEl) {
         // 从实体顶层节点获取"预付费"字段
         let isPrepaid = this.getEntityAttribute(entity, '预付费');
-        
+
         // 如果顶层节点没有，尝试从data节点的"预付费"字段获取
         if (!isPrepaid && entity.attributes && entity.attributes.data) {
           isPrepaid = entity.attributes.data['预付费'];
         }
-        
+
         if (isPrepaid === '是') {
           this.balanceLabelEl.textContent = '账户余额';
         } else {
@@ -13882,16 +15993,20 @@ class ElectricityInfoCard extends HTMLElement {
         // 获取近30天的数据（daylist前面是最新的）
         if (daylist && daylist.length > 0) {
           const recent30Days = daylist.slice(0, 30);
-          const mapping = this.fieldMapping || {};
 
-          // 根据utility_type确定金额字段
+          // 优先使用 entity_list 配置的 amount 字段
           let amountField;
-          if (this.utilityType === 'gas') {
-            amountField = mapping.amount || 'e_gas';
-          } else if (this.utilityType === 'water') {
-            amountField = mapping.amount || 'money';
+          if (this.entityListMap && this.entityListMap.daylist && this.entityListMap.daylist.amount) {
+            amountField = this.entityListMap.daylist.amount;
           } else {
-            amountField = mapping.amount || 'cost';
+            const mapping = this.fieldMapping || {};
+            if (this.utilityType === 'gas') {
+              amountField = mapping.amount || 'e_gas';
+            } else if (this.utilityType === 'water') {
+              amountField = mapping.amount || 'money';
+            } else {
+              amountField = mapping.amount || 'cost';
+            }
           }
 
           // 计算近30天总金额
@@ -13922,7 +16037,7 @@ class ElectricityInfoCard extends HTMLElement {
       if (this.remainingDaysEl) {
         this.remainingDaysEl.textContent = remainingDays;
       }
-      
+
       // 计算并显示剩余天数对应的日期
       if (this.remainingDaysDateEl && remainingDays > 0) {
         const today = new Date();
@@ -13934,7 +16049,11 @@ class ElectricityInfoCard extends HTMLElement {
         this.remainingDaysDateEl.textContent = '';
       }
     }
-    
+
+    // 更新电网公告信息（使用 notice 配置指定的独立实体）
+    const noticeEntity = this.noticeEntityId ? this._hass.states[this.noticeEntityId] : null;
+    this._updateNoticeDisplay(noticeEntity);
+
     // 获取 daylist 数据用于阶梯计算
     let daylist = [];
     if (entity && entity.attributes) {
@@ -13948,7 +16067,7 @@ class ElectricityInfoCard extends HTMLElement {
         }
       }
     }
-    
+
     // 如果标准数据还没有加载，先加载数据
     if (!this.historicalDataLoaded) {
       this.loadDataForCurrentUser();
@@ -13957,57 +16076,58 @@ class ElectricityInfoCard extends HTMLElement {
 
     // 从标准格式获取本月数据
     const currentMonthStandard = this.getCurrentMonthStandardData();
-    this.currentMonthElectricityEl.textContent = currentMonthStandard.total_usage.toFixed(1);
-    this.currentMonthCostEl.textContent = currentMonthStandard.total_amount.toFixed(1);
+    this.currentMonthElectricityEl.textContent = (currentMonthStandard.total_usage || 0).toFixed(1);
+    this.currentMonthCostEl.textContent = (currentMonthStandard.total_amount || 0).toFixed(1);
     this.currentMonthEleUnitEl.textContent = currentMonthStandard.unit;
     this.currentMonthCostUnitEl.textContent = '元';
-    
+
     // 更新本月分时用电条（从标准格式提取）
     const currentMonthDistribution = this.extractTimeDistributionFromStandard(currentMonthStandard);
     this.createTimeDistributionBar(currentMonthDistribution, this.currentMonthDistributionEl, this.currentMonthLabelsEl);
-    
+
     // 更新上月数据（从标准格式获取）
     const lastMonthStandard = this.getLastMonthStandardData();
-    this.lastMonthElectricityEl.textContent = lastMonthStandard.total_usage.toFixed(1);
-    this.lastMonthCostEl.textContent = lastMonthStandard.total_amount.toFixed(1);
+    this.lastMonthElectricityEl.textContent = (lastMonthStandard.total_usage || 0).toFixed(1);
+    this.lastMonthCostEl.textContent = (lastMonthStandard.total_amount || 0).toFixed(1);
     this.lastMonthEleUnitEl.textContent = lastMonthStandard.unit;
     this.lastMonthCostUnitEl.textContent = '元';
-    
+
     // 更新上月分时用电条（从标准格式提取）
     const lastMonthDistribution = this.extractTimeDistributionFromStandard(lastMonthStandard);
     this.createTimeDistributionBar(lastMonthDistribution, this.lastMonthDistributionEl, this.lastMonthLabelsEl);
-    
+
     // 更新年度数据（从标准格式获取）
     const currentYearStandard = this.getCurrentYearStandardData();
     const yearValue = currentYearStandard.time || new Date().getFullYear().toString();
     this.currentYearEl.textContent = yearValue;
-    
-    this.yearElectricityEl.textContent = currentYearStandard.total_usage.toFixed(1);
-    this.yearCostEl.textContent = currentYearStandard.total_amount.toFixed(1);
+
+    this.yearElectricityEl.textContent = (currentYearStandard.total_usage || 0).toFixed(1);
+    this.yearCostEl.textContent = (currentYearStandard.total_amount || 0).toFixed(1);
     this.yearEleUnitEl.textContent = currentYearStandard.unit;
     this.yearCostUnitEl.textContent = '元';
-    
+
     // 更新年度分时用电条（从标准格式提取）
     const yearDistribution = this.extractTimeDistributionFromStandard(currentYearStandard);
     this.createTimeDistributionBar(yearDistribution, this.yearDistributionEl, this.yearLabelsEl);
-    
+
     // 更新趋势箭头（本月同比、本年同比）
     this.updateTrendArrows();
-    
+
     // 计算并更新阶梯电价
     let currentPeriodUsage = 0;
 
-    // 当 utility_type 为 'ele' 时，从 entity 的"计费标准"节点获取数据
-    if (this.utilityType === 'ele' && this._hass && entity) {
-      const billingStandard = this.getBillingStandardObject(entity);
-      if (billingStandard) {
+    // 从 entity 的"计费标准"节点获取数据（电力/燃气/水，且未手动配置时）
+    const billingStandardData = this.getBillingStandardData();
+    if (billingStandardData && this._hass && entity) {
+      if (billingStandardData) {
         // === 根据计费标准类型动态选择字段名 ===
-        const billingStandardType = billingStandard['计费标准'] || '';
+        const billingStandardType = billingStandardData['计费标准'] || '';
         const isMonthlyTier = billingStandardType.includes('月阶梯');
-        const accumulatedUsageField = isMonthlyTier ? '月阶梯累计用电量' : '年阶梯累计用电量';
-        
-        currentPeriodUsage = billingStandard[accumulatedUsageField] !== undefined ?
-          parseFloat(billingStandard[accumulatedUsageField]) : 0;
+        const usageSuffix = this.getUsageSuffixByUtilityType();
+        const accumulatedUsageField = isMonthlyTier ? `月阶梯累计${usageSuffix}` : `年阶梯累计${usageSuffix}`;
+
+        currentPeriodUsage = billingStandardData[accumulatedUsageField] !== undefined ?
+          parseFloat(billingStandardData[accumulatedUsageField]) : 0;
       }
     }
 
@@ -14016,23 +16136,404 @@ class ElectricityInfoCard extends HTMLElement {
       currentPeriodUsage = this.calculatePeriodUsageFromDaylist(daylist);
       this.debugLog('从 daylist 计算当前周期用电量:', currentPeriodUsage);
     }
-    
+
+    // 当 daylist 无法提供时，尝试从 monthlist 计算（如只有月/年数据的场景）
+    if (currentPeriodUsage === 0 && this.monthlistData && this.monthlistData.length > 0) {
+      currentPeriodUsage = this.calculatePeriodUsageFromMonthlist(this.monthlistData);
+      this.debugLog('从 monthlist 计算当前周期用电量:', currentPeriodUsage);
+    }
+
     // 延迟更新阶梯指示器，确保DOM已经渲染完成
     // 使用 setTimeout 给予更充足的时间确保DOM和样式都准备好
     setTimeout(() => {
       this.updateTierIndicator(currentPeriodUsage);
     }, 150);
-    
+
     // 更新阶梯显示（确保单位从统一数据格式中获取）
     this.updateTierDisplay();
-    
+
     // 更新主题（以便实时响应开关实体的状态变化）
     this.updateTheme(this._config);
-    
+
+    // 根据可用数据类型控制视图可见性
+    this._applyViewVisibility();
+
     // 延迟应用隐藏配置，确保动态元素已创建
     requestAnimationFrame(() => {
       this.applyHiddenConfig();
     });
+  }
+
+  // 更新电网公告信息显示（紧凑单行滚动 + 点击弹窗）
+  _updateNoticeDisplay(entity) {
+    if (!this.noticeDisplayEl || !this.noticeScrollEl) return;
+
+    // 获取公告数据
+    let noticeList = null;
+    if (entity && entity.attributes) {
+      let gongGaoList = entity.attributes['公告列表'];
+      if (gongGaoList) {
+        if (typeof gongGaoList === 'string') {
+          try { gongGaoList = JSON.parse(gongGaoList); } catch (e) {}
+        }
+        if (Array.isArray(gongGaoList) && gongGaoList.length > 0) {
+          noticeList = gongGaoList;
+        }
+      }
+    }
+
+    // 回退到主实体
+    if ((!noticeList || noticeList.length === 0) && this._hass && this.entityId) {
+      const mainEntity = this._hass.states[this.entityId];
+      if (mainEntity && mainEntity.attributes) {
+        let gongGaoList = mainEntity.attributes['公告列表'];
+        if (gongGaoList) {
+          if (typeof gongGaoList === 'string') {
+            try { gongGaoList = JSON.parse(gongGaoList); } catch (e) {}
+          }
+          if (Array.isArray(gongGaoList) && gongGaoList.length > 0) {
+            noticeList = gongGaoList;
+          }
+        }
+      }
+    }
+
+    // 未配置 notice 时隐藏公告区域
+    if (!this.noticeEntityId) {
+      this.noticeDisplayEl.style.display = 'none';
+      return;
+    }
+
+    // 数据无变化时跳过重建（避免频繁重置滚动定时器）
+    const dataSig = JSON.stringify(noticeList);
+    if (this._noticeDataSig === dataSig && this.noticeScrollEl.children.length > 0) {
+      return;
+    }
+    this._noticeDataSig = dataSig;
+
+    // 停止旧的滚动定时器
+    this._stopNoticeAutoScroll();
+
+    if (!noticeList || noticeList.length === 0) {
+      this.noticeDisplayEl.style.display = 'none';
+      return;
+    }
+
+    // 缓存公告数据（点击弹窗用）
+    this._noticeData = noticeList;
+
+    // 显示公告区域
+    this.noticeDisplayEl.style.display = '';
+
+    // 标记关注项
+    const attention = this.noticeAttention || '';
+    const isAttention = (item) => attention && item.powerRange && item.powerRange.includes(attention);
+
+    // 排序：关注项排前面，其余按 startTime 倒序
+    const sortedList = [...noticeList].sort((a, b) => {
+      const aAtt = isAttention(a);
+      const bAtt = isAttention(b);
+      if (aAtt && !bAtt) return -1;
+      if (!aAtt && bAtt) return 1;
+      return (b.startTime || '').localeCompare(a.startTime || '');
+    });
+
+    // 缓存关注列表供弹窗使用
+    this._noticeAttentionItems = sortedList.filter(isAttention);
+
+    // 构建滚动列表
+    this.noticeScrollEl.innerHTML = '';
+
+    const createRow = (item, index, total) => {
+      const dateStr = this._formatNoticeTime(item);
+      const powerType = item.powerType || '';
+      const rangeText = (item.powerRange || '').replace(/\s+/g, ' ').trim();
+      const attClass = isAttention(item) ? ' notice-row-attention' : '';
+      const row = document.createElement('div');
+      row.className = 'notice-row' + attClass;
+      row.innerHTML = `<span class="notice-badge">${index + 1}/${total}</span>${dateStr}<span class="notice-type-text">${this._escapeHtml(powerType)}</span><span class="notice-range-text">${this._escapeHtml(rangeText)}</span>`;
+      return row;
+    };
+
+    // 只有一个公告时不需要滚动
+    if (sortedList.length <= 1) {
+      const row = document.createElement('div');
+      row.className = 'notice-row' + (isAttention(sortedList[0]) ? ' notice-row-attention' : '');
+      const item = sortedList[0];
+      const dateStr = this._formatNoticeTime(item);
+      const rangeText = (item.powerRange || '').replace(/\s+/g, ' ').trim();
+      row.innerHTML = `<span class="notice-badge">${sortedList.length}条</span>${dateStr}<span class="notice-type-text">${this._escapeHtml(item.powerType || '')}</span><span class="notice-range-text">${this._escapeHtml(rangeText)}</span>`;
+      this.noticeScrollEl.appendChild(row);
+      this._bindNoticeClick();
+      return;
+    }
+
+    // 多个公告：构建滚动轨道
+    const track = document.createElement('div');
+    track.className = 'notice-track';
+    this.noticeScrollEl.appendChild(track);
+
+    sortedList.forEach((item, i) => track.appendChild(createRow(item, i, sortedList.length)));
+    // 复制首行实现无缝循环
+    if (sortedList.length > 0) track.appendChild(createRow(sortedList[0], 0, sortedList.length));
+
+    this._startNoticeAutoScroll(track, sortedList.length);
+    this._bindNoticeClick();
+  }
+
+  // 格式化公告时间（紧凑格式: 8.13）
+  _formatNoticeTime(item) {
+    const startTime = item.startTime || '';
+    if (!startTime) return '';
+    const d = startTime.split(' ')[0] || ''; // 2026-08-13
+    const parts = d.split('-');
+    if (parts.length === 3) {
+      return `${parseInt(parts[1])}.${parseInt(parts[2])}`; // 8.13
+    }
+    return d;
+  }
+
+  // 绑定点击事件（打开详情弹窗）
+  _bindNoticeClick() {
+    // 先解绑旧的再绑定，防止重复
+    this._unbindNoticeClick();
+    this._noticeClickHandler = () => this._showNoticeModal();
+    this.noticeDisplayEl.addEventListener('click', this._noticeClickHandler);
+  }
+
+  _unbindNoticeClick() {
+    if (this._noticeClickHandler && this.noticeDisplayEl) {
+      this.noticeDisplayEl.removeEventListener('click', this._noticeClickHandler);
+      this._noticeClickHandler = null;
+    }
+  }
+
+  // 公告滚动
+  _startNoticeAutoScroll(track, rowCount) {
+    this._stopNoticeAutoScroll();
+    const ROW_H = 20;
+    const INTERVAL = 3000;
+
+    let index = 0;
+    const setTransform = (i) => {
+      track.style.transform = `translate3d(0, ${-(i * ROW_H)}px, 0)`;
+    };
+    setTransform(0);
+
+    this._noticeAutoScrollTimer = setInterval(() => {
+      track.classList.add('transitioning');
+      index += 1;
+      if (index > rowCount) {
+        index = 0;
+        track.classList.remove('transitioning');
+        setTransform(0);
+        return;
+      }
+      setTransform(index);
+    }, INTERVAL);
+  }
+
+  _stopNoticeAutoScroll() {
+    if (this._noticeAutoScrollTimer) {
+      clearInterval(this._noticeAutoScrollTimer);
+      this._noticeAutoScrollTimer = null;
+    }
+  }
+
+  // 确保弹窗 CSS 已注入到 document.head（弹窗在 body 中，shadow DOM CSS 不生效）
+  _ensureNoticeModalStyles() {
+    if (document.getElementById('electricity-notice-modal-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'electricity-notice-modal-styles';
+    style.textContent = `
+      .notice-modal-overlay {
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        display: flex; align-items: center; justify-content: center;
+        z-index: 10000;
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+      }
+      .notice-modal-content {
+        position: relative;
+        background: var(--card-bg, #fff);
+        border-radius: 12px;
+        padding: 5px 10px 10px 10px;
+        max-width: 450px;
+        width: 90%;
+        max-height: 80vh;
+        overflow-y: auto;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+        color: var(--text-color, #333);
+      }
+      .notice-modal-header {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 5px; padding-bottom: 0;
+        border-bottom: 2px solid rgba(0,0,0,0.1);
+      }
+      .notice-modal-title {
+        font-size: 14px; font-weight: 600;
+        color: var(--text-color, #333);
+        display: flex; align-items: center; gap: 6px;
+      }
+      .notice-modal-close {
+        background: none; border: none; font-size: 20px; cursor: pointer;
+        color: var(--text-color, #666); padding: 2px 6px;
+      }
+      .notice-modal-item {
+        padding: 10px 0; border-bottom: 1px solid rgba(0,0,0,0.06);
+      }
+      .notice-modal-item:last-child { border-bottom: none; }
+      .notice-modal-item-type {
+        font-weight: 600; color: #ff9800; font-size: 13px; margin-bottom: 4px;
+      }
+      .notice-modal-item-time {
+        font-size: 12px; color: var(--text-color, #666); margin-bottom: 2px; opacity: 0.7;
+      }
+      .notice-modal-item-cause {
+        font-size: 12px; color: var(--text-color, #333); opacity: 0.85; line-height: 1.4;
+      }
+      .notice-modal-item-attention {
+        background: rgba(244, 67, 54, 0.06);
+        border-radius: 6px;
+        padding: 10px 8px;
+        margin: 4px 0;
+        border-bottom: 1px solid rgba(244, 67, 54, 0.15);
+      }
+      .notice-modal-item-attention .notice-modal-item-type {
+        color: #f44336;
+      }
+      .notice-modal-attention-section {
+        margin-bottom: 10px;
+      }
+      .notice-modal-attention-title {
+        display: flex; align-items: center; gap: 4px;
+        font-size: 13px; font-weight: 600; color: #f44336;
+        margin-bottom: 4px; padding-bottom: 4px;
+        border-bottom: 1px solid rgba(244, 67, 54, 0.15);
+      }
+      .notice-modal-other-section {
+        margin-bottom: 4px;
+      }
+      .notice-modal-other-title {
+        font-size: 13px; font-weight: 600; color: var(--text-color, #666);
+        margin-bottom: 4px; padding-bottom: 4px;
+        border-bottom: 1px solid rgba(0,0,0,0.08);
+      }
+      .notice-modal-item-range {
+        font-size: 11px; color: var(--text-color, #666); opacity: 0.7; margin-top: 2px; line-height: 1.3;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // 显示公告详情弹窗
+  _showNoticeModal() {
+    const noticeList = this._noticeData;
+    if (!noticeList || noticeList.length === 0) return;
+
+    this._ensureNoticeModalStyles();
+
+    // 关闭已有弹窗
+    this._closeNoticeModal();
+
+    const attention = this.noticeAttention || '';
+    const isAttention = (item) => attention && item.powerRange && item.powerRange.includes(attention);
+
+    const sortedList = [...noticeList].sort((a, b) => {
+      const aAtt = isAttention(a);
+      const bAtt = isAttention(b);
+      if (aAtt && !bAtt) return -1;
+      if (!aAtt && bAtt) return 1;
+      return (b.startTime || '').localeCompare(a.startTime || '');
+    });
+
+    const attentionItems = sortedList.filter(isAttention);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'notice-modal-overlay';
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) this._closeNoticeModal();
+    });
+
+    const renderItem = (item, isAtt) => {
+      const powerType = item.powerType || '';
+      const powerCause = item.powerCause || '';
+      const powerRange = item.powerRange || '';
+      const startTime = item.startTime || '';
+      const stopTime = item.stopTime || '';
+      let timeDisplay = startTime;
+      if (startTime && stopTime) {
+        timeDisplay = `${startTime} ~ ${stopTime}`;
+      }
+      return `
+        <div class="notice-modal-item${isAtt ? ' notice-modal-item-attention' : ''}">
+          <div class="notice-modal-item-type">${this._escapeHtml(powerType)}</div>
+          <div class="notice-modal-item-time">${this._escapeHtml(timeDisplay)}</div>
+          <div class="notice-modal-item-cause">原因：${this._escapeHtml(powerCause)}</div>
+          <div class="notice-modal-item-range">范围：${this._escapeHtml(powerRange)}</div>
+        </div>
+      `;
+    };
+
+    // 关注区域（如果有）
+    let attentionHtml = '';
+    if (attentionItems.length > 0) {
+      attentionHtml = `
+        <div class="notice-modal-attention-section">
+          <div class="notice-modal-attention-title">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="#f44336" d="M12,2L1,21H23M12,6L19.53,19H4.47M11,10V14H13V10M11,16V18H13V16"/></svg>
+            关注
+          </div>
+          ${attentionItems.map(item => renderItem(item, true)).join('')}
+        </div>
+      `;
+    }
+
+    // 其他公告
+    const otherItems = sortedList.filter(item => !isAttention(item));
+    let otherHtml = '';
+    if (otherItems.length > 0) {
+      otherHtml = `
+        <div class="notice-modal-other-section">
+          <div class="notice-modal-other-title">常规</div>
+          ${otherItems.map(item => renderItem(item, false)).join('')}
+        </div>
+      `;
+    }
+
+    overlay.innerHTML = `
+      <div class="notice-modal-content">
+        <div class="notice-modal-header">
+          <div class="notice-modal-title">
+            <svg viewBox="0 0 24 24" width="20" height="20"><path fill="#ff9800" d="M12,2L4,5V11.09C4,16.14 7.41,20.85 12,22C16.59,20.85 20,16.14 20,11.09V5L12,2M12,4.15L18,6.72V11.09C18,15.25 15.21,19.11 12,20.03C8.79,19.11 6,15.25 6,11.09V6.72L12,4.15M11,7H13V13H11V7M11,15H13V17H11V15Z"/></svg>
+            电网检修公告 (${sortedList.length}条)
+          </div>
+          <button class="notice-modal-close">&times;</button>
+        </div>
+        <div class="notice-modal-list">${attentionHtml}${otherHtml}</div>
+      </div>
+    `;
+
+    overlay.querySelector('.notice-modal-close').addEventListener('click', () => this._closeNoticeModal());
+    document.body.appendChild(overlay);
+    this._noticeModalOverlay = overlay;
+  }
+
+  _closeNoticeModal() {
+    if (this._noticeModalOverlay) {
+      this._noticeModalOverlay.remove();
+      this._noticeModalOverlay = null;
+    }
+  }
+
+  // HTML 转义
+  _escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 
   // 定义卡片配置架构
