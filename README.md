@@ -64,9 +64,15 @@ multiclass:
     # 替换为自己的“缴费记录实体”
     jiaofei_entity: >-
       sensor.你的缴费记录实体,[node:payList,date:payDate,pay_amount:rcvAmt,pay_mode:chanCls]
+    # 可选：替换为自己的“电网检修公告实体”
+    # 未配置时，卡片不显示检修公告区域
+    notice: sensor.你的电网检修公告实体
+    # 可选：填写小区、街道等关键词，匹配的公告会优先显示
+    notice_attention: 河柏小区
 ```
 
 卡片会按当前尖峰、峰、平、谷时段显示电价；充电桩模式同时显示各阶梯的峰平谷价格。
+“电网检修公告”实体由本集成创建，属性中的“公告列表”会显示在卡片中；多户号时，请在每个户号对应的 `multiclass` 配置内分别填写该户号的公告实体。
 
 ## 传感器说明
 
