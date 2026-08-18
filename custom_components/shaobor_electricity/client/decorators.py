@@ -3,7 +3,11 @@ import asyncio
 import aiohttp  # type: ignore[import-untyped]
 from typing import Any
 
-from .exceptions import StateGridAuthError, StateGridTokenExpiredError
+from .exceptions import (
+    StateGridAuthError,
+    StateGridConnectionError,
+    StateGridTokenExpiredError,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,7 +60,11 @@ def retry_on_network_error(max_retries: int = 3, delay: float = 1.0):
             for attempt in range(max_retries):
                 try:
                     return await func(*args, **kwargs)
-                except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+                except (
+                    aiohttp.ClientError,
+                    asyncio.TimeoutError,
+                    StateGridConnectionError,
+                ) as err:
                     last_err = err
                     if attempt < max_retries - 1:
                         wait_time = delay * (2 ** attempt)
@@ -65,6 +73,8 @@ def retry_on_network_error(max_retries: int = 3, delay: float = 1.0):
                             func.__name__, err, wait_time
                         )
                         await asyncio.sleep(wait_time)
-            raise StateGridAuthError(f"Network error after {max_retries} attempts: {last_err}")
+            raise StateGridConnectionError(
+                f"Network error after {max_retries} attempts: {last_err}"
+            ) from last_err
         return wrapper
     return decorator

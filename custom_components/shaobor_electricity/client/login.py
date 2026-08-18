@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 
 from .base import BaseStateGridApi
 from .const import ENCRYPT_API_URL, SGCC_HOST, APP_KEY, VERSION
-from .exceptions import StateGridAuthError
+from .exceptions import StateGridAuthError, StateGridConnectionError
 from .decorators import auto_relogin_on_auth_error, retry_on_network_error
 
 _LOGGER = logging.getLogger(__name__)
@@ -398,6 +398,9 @@ class LoginMixin(BaseStateGridApi):
             result = await self.exchange_user_token_for_access_token(str(self._user_token))
             _LOGGER.warning("[Token刷新] access_token 刷新成功")
             return result
+        except StateGridConnectionError:
+            # 网络不可用时不触发自动重新登录，交由协调器使用本地缓存。
+            raise
         except Exception as e:
             _LOGGER.error("[Token刷新] 刷新失败: %s", str(e))
             
@@ -859,4 +862,3 @@ class LoginMixin(BaseStateGridApi):
             },
             "data": decrypted_login,
         }
-

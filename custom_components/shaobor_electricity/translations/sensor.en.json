@@ -12,6 +12,9 @@
             },
             "shaobor_electricity__electricity_price": {
                 "name": "Electricity price"
+            },
+            "shaobor_electricity__data_mode": {
+                "name": "Electricity data mode"
             }
         }
     }

@@ -32,6 +32,9 @@ class Shaobor95598Coordinator(DataUpdateCoordinator):
         self.api = api
         self.store = store
         self.data_store = data_store
+        self._data_mode = "local_cache"
+        self._last_api_success: float | None = None
+        self._last_error_reason: str | None = None
         
         self.cons_no = entry.data.get("cons_no") or entry.data.get("selected_cons_no")
         if not self.cons_no:
@@ -98,10 +101,24 @@ class Shaobor95598Coordinator(DataUpdateCoordinator):
         
         hass.async_create_task(_init_task())
 
+    @property
+    def data_mode(self) -> str:
+        """Return the current source of the displayed electricity data."""
+        return self._data_mode
+
+    @property
+    def last_api_success(self) -> float | None:
+        """Return the timestamp of the last successful live API request."""
+        return self._last_api_success
+
+    @property
+    def last_error_reason(self) -> str | None:
+        """Return a non-sensitive reason for the last failed live request."""
+        return self._last_error_reason
+
     async def _async_update_data(self) -> dict[str, Any]:
         """100% Database-centric update flow. 数据库优先，API 仅作为增量补充。"""
         login_acc = self.api._login_account or self.entry.data.get("login_account")
-        auth_error = None
         api_data = None
         
         _LOGGER.debug(f"[数据中心] 开始更新流程，户号: {self.cons_no}")
@@ -125,6 +142,11 @@ class Shaobor95598Coordinator(DataUpdateCoordinator):
 
             # 抓取最新数据
             api_data = await self.api.get_electricity_data(cons_no=self.cons_no)
+
+            if api_data:
+                self._data_mode = "network"
+                self._last_api_success = time.time()
+                self._last_error_reason = None
             
             if api_data:
                 # 【自动补全户号】：如果初始化时没拿到户号（首次登录），则从 API 返回结果中提取
@@ -170,7 +192,8 @@ class Shaobor95598Coordinator(DataUpdateCoordinator):
                 })
 
         except StateGridAuthError as err:
-            auth_error = err
+            self._data_mode = "local_cache"
+            self._last_error_reason = "auth_expired"
             _LOGGER.warning(f"[认证失效] 认证已过期，将使用本地数据库缓存展示: {err}")
             # 1. 触发持久化通知
             self.hass.async_create_task(
@@ -186,8 +209,15 @@ class Shaobor95598Coordinator(DataUpdateCoordinator):
             )
             # 2. 触发 Home Assistant 的重新认证流程 (UI 会出现“重新配置”按钮)
             self.entry.async_start_reauth(self.hass)
+
+        except StateGridConnectionError as err:
+            self._data_mode = "local_cache"
+            self._last_error_reason = "network_error"
+            _LOGGER.warning(f"[网络异常] 无法获取实时数据，将使用本地数据库缓存展示: {err}")
             
         except Exception as err:
+            self._data_mode = "local_cache"
+            self._last_error_reason = "unknown_error"
             _LOGGER.error(f"[更新失败] API 刷新出现非认证异常: {err}")
 
         # 2. 第二步：无论 API 是否成功，都从数据库读回全量数据进行展示
@@ -227,7 +257,7 @@ class Shaobor95598Coordinator(DataUpdateCoordinator):
         final_data = {
             "daylist": db_days,
             "payment_records": db_payments,
-            "last_update": time.time(),
+            "last_update": self._last_api_success,
             "selected_cons_no": self.cons_no,
         }
         final_data.update(aggregated)

@@ -12,6 +12,9 @@
             },
             "shaobor_electricity__electricity_price": {
                 "name": "电费单价"
+            },
+            "shaobor_electricity__data_mode": {
+                "name": "电费数据模式"
             }
         }
     }

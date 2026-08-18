@@ -11,6 +11,7 @@ from .monthly_usage import Shaobor95598MonthlyUsageSensor
 from .yearly_usage import Shaobor95598YearlyUsageSensor
 from .electricity_price import Shaobor95598ElectricityPriceSensor
 from .power_grid_maintenance import Shaobor95598PowerGridMaintenanceSensor
+from .data_mode import Shaobor95598DataModeSensor
 
 __all__ = [
     "Shaobor95598BalanceSensor",
@@ -24,4 +25,5 @@ __all__ = [
     "Shaobor95598YearlyUsageSensor",
     "Shaobor95598ElectricityPriceSensor",
     "Shaobor95598PowerGridMaintenanceSensor",
+    "Shaobor95598DataModeSensor",
 ]
