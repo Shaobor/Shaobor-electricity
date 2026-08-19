@@ -497,15 +497,54 @@ template.innerHTML = `
       flex: 0 0 auto;
     }
 
-    .date-info {
-      font-size: 9px;
-      opacity: 0.7;
+    /* 第一行：更新时间 + 在线状态标签 */
+    .date-row {
+      display: block;
       margin-top: -11px;
       margin-left: 20px;
+    }
+
+    .date-info {
+      display: inline-block;
+      font-size: 9px;
+      opacity: 0.7;
       touch-action: manipulation;
       -webkit-touch-callout: none;
       -webkit-user-select: none;
       user-select: none;
+    }
+
+    /* 在线/离线状态标签 - 默认隐藏，仅配置 online 时显示 */
+    .online-tag {
+      display: none;
+      font-size: 9px;
+      font-weight: 600;
+      padding: 0 5px;
+      margin-left: 6px;
+      border-radius: 3px;
+      vertical-align: middle;
+      line-height: 1.6;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    .online-tag.online {
+      display: inline-block;
+      background: rgba(76, 175, 80, 0.15);
+      color: #4caf50;
+    }
+
+    .online-tag.offline {
+      display: inline-block;
+      background: rgba(244, 67, 54, 0.15);
+      color: #f44336;
+    }
+
+    .online-tag.unknown {
+      display: inline-block;
+      background: rgba(158, 158, 158, 0.15);
+      color: #9e9e9e;
     }
 
     .data-date-info {
@@ -2417,7 +2456,10 @@ template.innerHTML = `
           <span class="price-unit" id="remaining-days-date"></span>
         </div>
       </div>
-      <div class="date-info" id="date">更新时间 --</div>
+      <div class="date-row">
+        <div class="date-info" id="date">更新时间 --</div>
+        <span class="online-tag" id="online-tag"></span>
+      </div>
       <div class="data-date-info" id="data-date">数据:--</div>
       <div class="relative-date-info" id="relative-date"></div>
     </div>
@@ -4563,6 +4605,9 @@ class ElectricityInfoCard extends HTMLElement {
     this.noticeScrollEl = this.shadowRoot.getElementById('notice-scroll');
     this.noticeDisplayEl.style.display = 'none';
 
+    // 在线/离线状态标签元素引用（默认隐藏，仅配置 online 时显示）
+    this.onlineTagEl = this.shadowRoot.getElementById('online-tag');
+
     // 阶梯电价相关元素
     this.tierPeriodEl = this.shadowRoot.getElementById('tier-period');
     this.tier1El = this.shadowRoot.getElementById('tier-1');
@@ -5681,6 +5726,16 @@ class ElectricityInfoCard extends HTMLElement {
     if (!this.noticeEntityId && this.noticeDisplayEl) {
       this._stopNoticeAutoScroll();
       this.noticeDisplayEl.style.display = 'none';
+    }
+
+    // 读取 online 在线状态实体配置（区分在线/离线）。
+    // 网络模式显示在线，本地缓存模式显示离线，其他状态显示未知。
+    this.onlineEntityId = currentConfig.online || null;
+
+    // 切换到未配置 online 的用户时，清理上一个用户的状态标签。
+    if (!this.onlineEntityId && this.onlineTagEl) {
+      this.onlineTagEl.textContent = '';
+      this.onlineTagEl.className = 'online-tag';
     }
 
     // 【重要】每次切换用户都必须重置手动计费标准标志，避免上一个用户（如 gas 手动配置）
@@ -14757,6 +14812,9 @@ class ElectricityInfoCard extends HTMLElement {
     // 公告数据实时更新（不受10分钟节流限制）
     const noticeEntity = this.noticeEntityId ? hass.states[this.noticeEntityId] : null;
     this._updateNoticeDisplay(noticeEntity);
+
+    // 在线/离线状态实时更新，不受 10 分钟卡片刷新节流限制。
+    this._updateOnlineDisplay();
   }
 
   // 节流更新函数，限制10分钟更新一次
@@ -16054,6 +16112,9 @@ class ElectricityInfoCard extends HTMLElement {
     const noticeEntity = this.noticeEntityId ? this._hass.states[this.noticeEntityId] : null;
     this._updateNoticeDisplay(noticeEntity);
 
+    // 更新在线/离线状态标签。
+    this._updateOnlineDisplay();
+
     // 获取 daylist 数据用于阶梯计算
     let daylist = [];
     if (entity && entity.attributes) {
@@ -16162,6 +16223,32 @@ class ElectricityInfoCard extends HTMLElement {
     requestAnimationFrame(() => {
       this.applyHiddenConfig();
     });
+  }
+
+  // 根据 online 配置的实体状态显示在线/离线/未知标签。
+  _updateOnlineDisplay() {
+    if (!this.onlineEntityId || !this.onlineTagEl) return;
+
+    const entity = this._hass && this._hass.states
+      ? this._hass.states[this.onlineEntityId]
+      : null;
+    const normalized = entity ? String(entity.state || '').trim().toLowerCase() : '';
+
+    const onlineValues = ['on', '网络模式', 'online', '在线'];
+    const offlineValues = ['off', '本地缓存模式', 'offline', '离线'];
+    let status = 'unknown';
+    let text = '未知';
+
+    if (onlineValues.includes(normalized)) {
+      status = 'online';
+      text = '在线';
+    } else if (offlineValues.includes(normalized)) {
+      status = 'offline';
+      text = '离线';
+    }
+
+    this.onlineTagEl.textContent = text;
+    this.onlineTagEl.className = `online-tag ${status}`;
   }
 
   // 更新电网公告信息显示（紧凑单行滚动 + 点击弹窗）
