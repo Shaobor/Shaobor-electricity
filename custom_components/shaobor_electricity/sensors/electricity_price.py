@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+from homeassistant.core import callback
 from homeassistant.helpers.event import async_track_time_change
 
 from .base import Shaobor95598SensorBase
@@ -38,6 +39,7 @@ class Shaobor95598ElectricityPriceSensor(Shaobor95598SensorBase):
         await super().async_added_to_hass()
         self.async_on_remove(async_track_time_change(self.hass, self._handle_tariff_boundary, minute=list(range(60)), second=0))
 
+    @callback
     def _handle_tariff_boundary(self, _now: datetime) -> None:
         self.async_write_ha_state()
 
