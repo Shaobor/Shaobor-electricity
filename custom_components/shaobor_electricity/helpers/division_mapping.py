@@ -52,7 +52,13 @@ class DivisionMapping:
         return re.sub(r"\D", "", value or "")
 
     def lookup_org_no(self, org_no: str | None) -> DivisionMatch | None:
-        """Match a service-office number using the longest known org-code prefix."""
+        """Match a service-office number using the longest known org-code prefix.
+
+        Some account responses use a final digit for a subordinate service point,
+        while the division table records the parent customer-service centre.  If a
+        strict prefix match reaches only city level, accept a district record that
+        differs solely in that final digit.
+        """
         normalized = self._digits(org_no)
         if not normalized:
             return None
@@ -60,9 +66,32 @@ class DivisionMapping:
             item for item in self._org_records
             if normalized.startswith(self._digits(str(item.get("org_code"))))
         ]
-        if not matches:
-            return None
-        record = max(matches, key=lambda item: (len(self._digits(str(item["org_code"]))), item.get("level", 0)))
+        if matches:
+            record = max(
+                matches,
+                key=lambda item: (
+                    len(self._digits(str(item["org_code"]))), item.get("level", 0)
+                ),
+            )
+            if record.get("level", 0) >= 2:
+                return self._build_match(record)
+
+        # E.g. account orgNo 374092303 and table org_code 374092301 both belong
+        # to the Feicheng customer-service centre.  Require all digits except the
+        # final one to match so neighbouring districts cannot be selected.
+        final_digit_matches = [
+            item for item in self._org_records
+            if item.get("level", 0) >= 2
+            and len(normalized) == len(self._digits(str(item["org_code"])))
+            and len(normalized) > 1
+            and normalized[:-1] == self._digits(str(item["org_code"]))[:-1]
+        ]
+        if not final_digit_matches:
+            return self._build_match(record) if matches else None
+        record = max(
+            final_digit_matches,
+            key=lambda item: (len(self._digits(str(item["org_code"]))), item.get("level", 0)),
+        )
         return self._build_match(record)
 
     def _build_match(self, record: dict[str, Any]) -> DivisionMatch:
