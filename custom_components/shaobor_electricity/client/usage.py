@@ -282,52 +282,60 @@ class UsageMixin(BaseStateGridApi):
                 "org_no": raw_org_no,
             }
 
-        encrypt_payload = {
-            "token": self._encrypt_token,
-            "machineId": self._machine_id,
-            "uuid": self._uuid,
-            "publicKey": self._public_key,
-            "target": target,
-            # 95598 停电公告接口使用地区映射中最长匹配到的供电单位编号。
-            "orgNo": match.org_code,
-            "powerCutNo": "02",
-            "areaNo": match.district_code,
-            "pageSize": "20",
-            "pageNo": 1,
-            "keyWord": "",
-        }
-        encrypted = await self._secure_post_encrypt(
-            f"{ENCRYPT_API_URL}/encrypt/c4f08", encrypt_payload
-        )
-        headers = self._get_sgcc_headers(str(encrypted.get("timestamp")))
-        payload_sgcc = {
-            "data": encrypted.get("data"),
-            "skey": encrypted.get("skey"),
-            "timestamp": encrypted.get("timestamp"),
-        }
+        async def _query_notices(query_org_no: str) -> list[dict[str, Any]]:
+            encrypt_payload = {
+                "token": self._encrypt_token,
+                "machineId": self._machine_id,
+                "uuid": self._uuid,
+                "publicKey": self._public_key,
+                "target": target,
+                "orgNo": query_org_no,
+                "powerCutNo": "02",
+                "areaNo": match.district_code,
+                "pageSize": "20",
+                "pageNo": 1,
+                "keyWord": "",
+            }
+            encrypted = await self._secure_post_encrypt(
+                f"{ENCRYPT_API_URL}/encrypt/c4f08", encrypt_payload
+            )
+            headers = self._get_sgcc_headers(str(encrypted.get("timestamp")))
+            payload_sgcc = {
+                "data": encrypted.get("data"),
+                "skey": encrypted.get("skey"),
+                "timestamp": encrypted.get("timestamp"),
+            }
+            async with self._session.post(
+                "https://www.95598.cn/api/osg-web0004/member/c4/f08",
+                json=payload_sgcc,
+                headers=headers,
+            ) as response:
+                response.raise_for_status()
+                text = await response.text()
 
-        async with self._session.post(
-            "https://www.95598.cn/api/osg-web0004/member/c4/f08",
-            json=payload_sgcc,
-            headers=headers,
-        ) as response:
-            response.raise_for_status()
-            text = await response.text()
+            raw = self._parse_sgcc_response(text)
+            encrypted_data = self._get_encrypted_data(raw) or (
+                text.strip() if self._is_likely_encrypted(text) else ""
+            )
+            if not encrypted_data:
+                raise StateGridAuthError("c4/f08 did not return decryptable payload")
+            decrypted = await self._decrypt_to_data(encrypted_data)
+            return self._extract_maintenance_notices(decrypted)
 
-        raw = self._parse_sgcc_response(text)
-        encrypted_data = self._get_encrypted_data(raw) or (
-            text.strip() if self._is_likely_encrypted(text) else ""
-        )
-        if not encrypted_data:
-            raise StateGridAuthError("c4/f08 did not return decryptable payload")
-        decrypted = await self._decrypt_to_data(encrypted_data)
-        notices = self._extract_maintenance_notices(decrypted)
+        # 区县供电单位为空时回退市级编号：95598 网页公告查询采用市级
+        # 供电公司编号与区县 areaNo 的组合。
+        query_org_no = match.org_code
+        notices = await _query_notices(query_org_no)
+        if not notices and match.city_org_code and match.city_org_code != query_org_no:
+            query_org_no = match.city_org_code
+            notices = await _query_notices(query_org_no)
 
         return {
             "notices": notices,
             "region": match.display_name,
             "area_no": match.district_code,
             "org_no": match.org_code,
+            "query_org_no": query_org_no,
             "updated_at": datetime.now().isoformat(timespec="seconds"),
         }
 

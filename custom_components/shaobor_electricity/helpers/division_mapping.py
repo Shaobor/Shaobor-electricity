@@ -22,6 +22,7 @@ class DivisionMatch:
     province_name: str
     city_code: str | None
     city_name: str | None
+    city_org_code: str | None
     district_code: str | None
     district_name: str | None
     power_company: str
@@ -118,6 +119,7 @@ class DivisionMapping:
             province_name=province_name,
             city_code=city_code,
             city_name=city_name,
+            city_org_code=str(city.get("org_code") or "") if city else None,
             district_code=district.get("code") if district else None,
             district_name=district.get("name") if district else None,
             power_company=str(record.get("power_company") or ""),

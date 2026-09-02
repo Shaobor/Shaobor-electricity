@@ -40,6 +40,7 @@ class Shaobor95598PowerGridMaintenanceSensor(Shaobor95598SensorBase):
             "地区": "region",
             "行政区划代码": "area_no",
             "匹配供电单位编号": "org_no",
+            "实际查询供电单位编号": "query_org_no",
             "最后查询": "updated_at",
             "查询错误": "error",
         }
