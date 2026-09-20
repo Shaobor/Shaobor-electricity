@@ -121,6 +121,23 @@ class StateGridDatabase:
                         level TEXT, module TEXT, message TEXT
                     )
                 """)
+                # 11. 手机登录档案表（本地真值：session 令牌 + 户号档案，
+                #     HA 每次请求自带 session 调中转后端，对齐 web 版 shaobor_auth_store）
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS shaobor_mobile_auth_store (
+                        machine_id TEXT PRIMARY KEY, mobile TEXT, user_id TEXT, province TEXT,
+                        login_via TEXT, login_at TEXT, logged_in INTEGER,
+                        session_token TEXT, session_user_id TEXT, session_province TEXT,
+                        power_users TEXT, last_update TEXT
+                    )
+                """)
+                # 兼容升级：旧镜像表补 session 列
+                cursor.execute("PRAGMA table_info(shaobor_mobile_auth_store)")
+                mobile_auth_cols = [c[1] for c in cursor.fetchall()]
+                for col_name in ("session_token", "session_user_id", "session_province"):
+                    if col_name not in mobile_auth_cols:
+                        cursor.execute(f"ALTER TABLE shaobor_mobile_auth_store ADD COLUMN {col_name} TEXT")
+                        _LOGGER.info(f"[数据库] 手机档案表已补全缺失列: {col_name}")
                 # 11. 索引优化
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_cons ON shaobor_daily_usage(cons_no)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_day ON shaobor_daily_usage(day)")
@@ -222,10 +239,21 @@ class StateGridDatabase:
                         self._safe_float(item.get("thisVPq") or item.get("dayVPq") or item.get("valley"))
                     ))
                 
+                # UPSERT：手机源（c11/f01）不返回每日电费（ele_cost=0），
+                # 不能用它覆盖已入库的官方电费（否则 daily_avg/剩余天数失效）；
+                # 新值为 0 时保留旧值，仅电量/峰平谷照常覆盖。
                 cursor.executemany("""
-                    INSERT OR REPLACE INTO shaobor_daily_usage 
+                    INSERT INTO shaobor_daily_usage
                     (cons_no, day, ele_num, ele_cost, tpq, ppq, npq, vpq)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(cons_no, day) DO UPDATE SET
+                        ele_num = excluded.ele_num,
+                        ele_cost = CASE WHEN excluded.ele_cost > 0
+                            THEN excluded.ele_cost ELSE shaobor_daily_usage.ele_cost END,
+                        tpq = excluded.tpq,
+                        ppq = excluded.ppq,
+                        npq = excluded.npq,
+                        vpq = excluded.vpq
                 """, data)
                 conn.commit()
             finally:
@@ -433,6 +461,65 @@ class StateGridDatabase:
                     except: pass
                     return res
                 return None
+            finally:
+                conn.close()
+        return await self.hass.async_add_executor_job(_get)
+
+    async def async_save_mobile_auth(
+        self, machine_id: str, profile: Dict, session: Dict | None = None
+    ) -> None:
+        """保存手机源登录档案与会话（本地真值，HA 请求时自带 session 调中转）."""
+        import json
+        if not machine_id:
+            return
+        account = profile.get("account") or {}
+        sess = session or {}
+        def _save():
+            conn = self._get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO shaobor_mobile_auth_store
+                    (machine_id, mobile, user_id, province, login_via, login_at,
+                     logged_in, session_token, session_user_id, session_province,
+                     power_users, last_update)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    machine_id,
+                    account.get("mobile") or "",
+                    account.get("userId") or "",
+                    account.get("province") or "",
+                    account.get("via") or "",
+                    account.get("loginAt") or "",
+                    1 if (profile.get("logged_in") or sess.get("token")) else 0,
+                    sess.get("token") or "",
+                    sess.get("userId") or "",
+                    sess.get("province") or "",
+                    json.dumps(account.get("powerUsers") or [], ensure_ascii=False),
+                    datetime.now().isoformat(timespec="seconds"),
+                ))
+                conn.commit()
+            finally:
+                conn.close()
+        await self.hass.async_add_executor_job(_save)
+
+    async def async_get_mobile_auth(self, machine_id: str) -> Dict | None:
+        """读取手机源登录档案与会话（含 session_token 等）."""
+        import json
+        def _get():
+            conn = self._get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM shaobor_mobile_auth_store WHERE machine_id = ?", (machine_id,))
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                res = dict(row)
+                try:
+                    res["power_users"] = json.loads(res["power_users"])
+                except Exception:
+                    res["power_users"] = []
+                return res
             finally:
                 conn.close()
         return await self.hass.async_add_executor_job(_get)

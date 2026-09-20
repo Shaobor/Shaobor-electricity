@@ -12,6 +12,7 @@ from .usage import UsageMixin
 
 _LOGGER = logging.getLogger(__name__)
 
+# 手机App（iOS 链路）客户端已独立到 mobile/ 文件夹（与网页版平级）
 # Re-exporting for backward compatibility
 __all__ = [
     "Shaobor95598ApiClient",

@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 from datetime import datetime, timedelta
-from homeassistant.components.sensor import SensorStateClass, SensorDeviceClass  # type: ignore
+from homeassistant.components.sensor import SensorDeviceClass  # type: ignore
 from homeassistant.helpers.storage import Store  # type: ignore
 from .base import Shaobor95598SensorBase
 from ..helpers.regional_prices import get_region_price_config, get_region_name
@@ -20,7 +20,7 @@ class Shaobor95598StandardEntitySensor(Shaobor95598SensorBase):
     _attr_native_unit_of_measurement = "元"
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_icon = "mdi:flash"
-    _attr_state_class = SensorStateClass.MEASUREMENT
+    # monetary 设备类不允许 state_class=measurement，置空避免 HA 警告
     _attr_suggested_display_precision = 2
 
     def __init__(self, coordinator, entry):

@@ -93,13 +93,34 @@
                 "title": "月阶梯峰平谷季节电价计费配置",
                 "description": "请配置常规月（1-6、10-12月）及夏季（7-9月）的阶梯上限，并分别配置丰水期（6-10月）和枯、平水期（11月-次年5月）的各档峰平谷电价。如没有该时段请填写0。",
                 "data": {
-                    "normal_ladder_level_1": "常规月第1档上限（度）", "normal_ladder_level_2": "常规月第2档上限（度）", "summer_ladder_level_1": "夏季第1档上限（度）", "summer_ladder_level_2": "夏季第2档上限（度）",
-                    "season_wet_ladder_1_tip": "丰水期第1档尖峰电价（元/度）", "season_wet_ladder_1_peak": "丰水期第1档峰时电价（元/度）", "season_wet_ladder_1_flat": "丰水期第1档平时电价（元/度）", "season_wet_ladder_1_valley": "丰水期第1档谷时电价（元/度）",
-                    "season_wet_ladder_2_tip": "丰水期第2档尖峰电价（元/度）", "season_wet_ladder_2_peak": "丰水期第2档峰时电价（元/度）", "season_wet_ladder_2_flat": "丰水期第2档平时电价（元/度）", "season_wet_ladder_2_valley": "丰水期第2档谷时电价（元/度）",
-                    "season_wet_ladder_3_tip": "丰水期第3档尖峰电价（元/度）", "season_wet_ladder_3_peak": "丰水期第3档峰时电价（元/度）", "season_wet_ladder_3_flat": "丰水期第3档平时电价（元/度）", "season_wet_ladder_3_valley": "丰水期第3档谷时电价（元/度）",
-                    "season_dry_ladder_1_tip": "枯、平水期第1档尖峰电价（元/度）", "season_dry_ladder_1_peak": "枯、平水期第1档峰时电价（元/度）", "season_dry_ladder_1_flat": "枯、平水期第1档平时电价（元/度）", "season_dry_ladder_1_valley": "枯、平水期第1档谷时电价（元/度）",
-                    "season_dry_ladder_2_tip": "枯、平水期第2档尖峰电价（元/度）", "season_dry_ladder_2_peak": "枯、平水期第2档峰时电价（元/度）", "season_dry_ladder_2_flat": "枯、平水期第2档平时电价（元/度）", "season_dry_ladder_2_valley": "枯、平水期第2档谷时电价（元/度）",
-                    "season_dry_ladder_3_tip": "枯、平水期第3档尖峰电价（元/度）", "season_dry_ladder_3_peak": "枯、平水期第3档峰时电价（元/度）", "season_dry_ladder_3_flat": "枯、平水期第3档平时电价（元/度）", "season_dry_ladder_3_valley": "枯、平水期第3档谷时电价（元/度）"
+                    "normal_ladder_level_1": "常规月第1档上限（度）",
+                    "normal_ladder_level_2": "常规月第2档上限（度）",
+                    "summer_ladder_level_1": "夏季第1档上限（度）",
+                    "summer_ladder_level_2": "夏季第2档上限（度）",
+                    "season_wet_ladder_1_tip": "丰水期第1档尖峰电价（元/度）",
+                    "season_wet_ladder_1_peak": "丰水期第1档峰时电价（元/度）",
+                    "season_wet_ladder_1_flat": "丰水期第1档平时电价（元/度）",
+                    "season_wet_ladder_1_valley": "丰水期第1档谷时电价（元/度）",
+                    "season_wet_ladder_2_tip": "丰水期第2档尖峰电价（元/度）",
+                    "season_wet_ladder_2_peak": "丰水期第2档峰时电价（元/度）",
+                    "season_wet_ladder_2_flat": "丰水期第2档平时电价（元/度）",
+                    "season_wet_ladder_2_valley": "丰水期第2档谷时电价（元/度）",
+                    "season_wet_ladder_3_tip": "丰水期第3档尖峰电价（元/度）",
+                    "season_wet_ladder_3_peak": "丰水期第3档峰时电价（元/度）",
+                    "season_wet_ladder_3_flat": "丰水期第3档平时电价（元/度）",
+                    "season_wet_ladder_3_valley": "丰水期第3档谷时电价（元/度）",
+                    "season_dry_ladder_1_tip": "枯、平水期第1档尖峰电价（元/度）",
+                    "season_dry_ladder_1_peak": "枯、平水期第1档峰时电价（元/度）",
+                    "season_dry_ladder_1_flat": "枯、平水期第1档平时电价（元/度）",
+                    "season_dry_ladder_1_valley": "枯、平水期第1档谷时电价（元/度）",
+                    "season_dry_ladder_2_tip": "枯、平水期第2档尖峰电价（元/度）",
+                    "season_dry_ladder_2_peak": "枯、平水期第2档峰时电价（元/度）",
+                    "season_dry_ladder_2_flat": "枯、平水期第2档平时电价（元/度）",
+                    "season_dry_ladder_2_valley": "枯、平水期第2档谷时电价（元/度）",
+                    "season_dry_ladder_3_tip": "枯、平水期第3档尖峰电价（元/度）",
+                    "season_dry_ladder_3_peak": "枯、平水期第3档峰时电价（元/度）",
+                    "season_dry_ladder_3_flat": "枯、平水期第3档平时电价（元/度）",
+                    "season_dry_ladder_3_valley": "枯、平水期第3档谷时电价（元/度）"
                 }
             },
             "year_ladder_config": {
@@ -306,6 +327,37 @@
             "reauth_confirm": {
                 "title": "重新认证",
                 "description": "登录已过期，请重新选择登录方式。"
+            },
+            "mobile_login_method": {
+                "title": "手机App源登录方式",
+                "description": "{description}",
+                "data": {
+                    "mobile_login_method": "登录方式"
+                }
+            },
+            "mobile_sms": {
+                "title": "手机App源短信登录",
+                "description": "请输入国网账号手机号发送验证码。{error}",
+                "data": {
+                    "account": "手机号",
+                    "back_to_login_method": "返回上一步（重新选择登录方式）"
+                }
+            },
+            "mobile_sms_code": {
+                "title": "输入短信验证码",
+                "description": "请输入发送到 {account} 的验证码。{error}",
+                "data": {
+                    "code": "验证码"
+                }
+            },
+            "mobile_password": {
+                "title": "手机App源密码登录",
+                "description": "请输入国网账号手机号和密码（仅限已通过短信验证过的设备使用）。{error}",
+                "data": {
+                    "account": "手机号",
+                    "password": "密码",
+                    "back_to_login_method": "返回上一步（改用短信验证码登录）"
+                }
             }
         },
         "error": {
@@ -323,7 +375,12 @@
             "sms_not_supported": "暂不支持短信登录，请使用扫码登录。",
             "unknown": "未知错误。",
             "already_configured": "该户号已添加",
-            "empty_json": "未找到有效的数据记录 (daylist, monthlist 或 yearlist)"
+            "empty_json": "未找到有效的数据记录 (daylist, monthlist 或 yearlist)",
+            "backend_unreachable": "中转后端不可达，请稍后重试。",
+            "sms_send_failed": "验证码发送失败（详细原因见下方说明）",
+            "sms_login_failed": "短信登录失败（详细原因见下方说明）",
+            "password_requires_sms": "该设备尚未通过短信验证，密码登录被拒，请返回改用短信验证码登录。",
+            "mobile_form_incomplete": "请填写完整信息后再提交（或勾选返回上一步）。"
         },
         "abort": {
             "already_configured": "该户号已添加",
@@ -372,13 +429,34 @@
                 "title": "月阶梯峰平谷季节电价计费配置",
                 "description": "请配置常规月（1-6、10-12月）及夏季（7-9月）的阶梯上限，并分别配置丰水期（6-10月）和枯、平水期（11月-次年5月）的各档峰平谷电价。如没有该时段请填写0。",
                 "data": {
-                    "normal_ladder_level_1": "常规月第1档上限（度）", "normal_ladder_level_2": "常规月第2档上限（度）", "summer_ladder_level_1": "夏季第1档上限（度）", "summer_ladder_level_2": "夏季第2档上限（度）",
-                    "season_wet_ladder_1_tip": "丰水期第1档尖峰电价（元/度）", "season_wet_ladder_1_peak": "丰水期第1档峰时电价（元/度）", "season_wet_ladder_1_flat": "丰水期第1档平时电价（元/度）", "season_wet_ladder_1_valley": "丰水期第1档谷时电价（元/度）",
-                    "season_wet_ladder_2_tip": "丰水期第2档尖峰电价（元/度）", "season_wet_ladder_2_peak": "丰水期第2档峰时电价（元/度）", "season_wet_ladder_2_flat": "丰水期第2档平时电价（元/度）", "season_wet_ladder_2_valley": "丰水期第2档谷时电价（元/度）",
-                    "season_wet_ladder_3_tip": "丰水期第3档尖峰电价（元/度）", "season_wet_ladder_3_peak": "丰水期第3档峰时电价（元/度）", "season_wet_ladder_3_flat": "丰水期第3档平时电价（元/度）", "season_wet_ladder_3_valley": "丰水期第3档谷时电价（元/度）",
-                    "season_dry_ladder_1_tip": "枯、平水期第1档尖峰电价（元/度）", "season_dry_ladder_1_peak": "枯、平水期第1档峰时电价（元/度）", "season_dry_ladder_1_flat": "枯、平水期第1档平时电价（元/度）", "season_dry_ladder_1_valley": "枯、平水期第1档谷时电价（元/度）",
-                    "season_dry_ladder_2_tip": "枯、平水期第2档尖峰电价（元/度）", "season_dry_ladder_2_peak": "枯、平水期第2档峰时电价（元/度）", "season_dry_ladder_2_flat": "枯、平水期第2档平时电价（元/度）", "season_dry_ladder_2_valley": "枯、平水期第2档谷时电价（元/度）",
-                    "season_dry_ladder_3_tip": "枯、平水期第3档尖峰电价（元/度）", "season_dry_ladder_3_peak": "枯、平水期第3档峰时电价（元/度）", "season_dry_ladder_3_flat": "枯、平水期第3档平时电价（元/度）", "season_dry_ladder_3_valley": "枯、平水期第3档谷时电价（元/度）"
+                    "normal_ladder_level_1": "常规月第1档上限（度）",
+                    "normal_ladder_level_2": "常规月第2档上限（度）",
+                    "summer_ladder_level_1": "夏季第1档上限（度）",
+                    "summer_ladder_level_2": "夏季第2档上限（度）",
+                    "season_wet_ladder_1_tip": "丰水期第1档尖峰电价（元/度）",
+                    "season_wet_ladder_1_peak": "丰水期第1档峰时电价（元/度）",
+                    "season_wet_ladder_1_flat": "丰水期第1档平时电价（元/度）",
+                    "season_wet_ladder_1_valley": "丰水期第1档谷时电价（元/度）",
+                    "season_wet_ladder_2_tip": "丰水期第2档尖峰电价（元/度）",
+                    "season_wet_ladder_2_peak": "丰水期第2档峰时电价（元/度）",
+                    "season_wet_ladder_2_flat": "丰水期第2档平时电价（元/度）",
+                    "season_wet_ladder_2_valley": "丰水期第2档谷时电价（元/度）",
+                    "season_wet_ladder_3_tip": "丰水期第3档尖峰电价（元/度）",
+                    "season_wet_ladder_3_peak": "丰水期第3档峰时电价（元/度）",
+                    "season_wet_ladder_3_flat": "丰水期第3档平时电价（元/度）",
+                    "season_wet_ladder_3_valley": "丰水期第3档谷时电价（元/度）",
+                    "season_dry_ladder_1_tip": "枯、平水期第1档尖峰电价（元/度）",
+                    "season_dry_ladder_1_peak": "枯、平水期第1档峰时电价（元/度）",
+                    "season_dry_ladder_1_flat": "枯、平水期第1档平时电价（元/度）",
+                    "season_dry_ladder_1_valley": "枯、平水期第1档谷时电价（元/度）",
+                    "season_dry_ladder_2_tip": "枯、平水期第2档尖峰电价（元/度）",
+                    "season_dry_ladder_2_peak": "枯、平水期第2档峰时电价（元/度）",
+                    "season_dry_ladder_2_flat": "枯、平水期第2档平时电价（元/度）",
+                    "season_dry_ladder_2_valley": "枯、平水期第2档谷时电价（元/度）",
+                    "season_dry_ladder_3_tip": "枯、平水期第3档尖峰电价（元/度）",
+                    "season_dry_ladder_3_peak": "枯、平水期第3档峰时电价（元/度）",
+                    "season_dry_ladder_3_flat": "枯、平水期第3档平时电价（元/度）",
+                    "season_dry_ladder_3_valley": "枯、平水期第3档谷时电价（元/度）"
                 }
             },
             "year_ladder_config": {
@@ -610,7 +688,54 @@
                 "data": {
                     "user_token_copy": "User Token (rsi)"
                 }
+            },
+            "data_source": {
+                "title": "数据源切换",
+                "description": "当前生效数据源：{current}\n\n选择将写入中转后端数据库 system_settings 表的全局配置（upstream_source），对所有账号/户号一律生效。保存后立即生效，无需重启。",
+                "data": {
+                    "source": "数据源"
+                }
+            },
+            "mobile_sms": {
+                "title": "手机App源短信登录",
+                "description": "请输入国网账号手机号发送验证码。{error}",
+                "data": {
+                    "account": "手机号",
+                    "back_to_login_method": "返回上一步（重新选择登录方式）"
+                }
+            },
+            "mobile_sms_code": {
+                "title": "输入短信验证码",
+                "description": "请输入发送到 {account} 的验证码，登录成功后自动写入数据源路由。{error}",
+                "data": {
+                    "code": "验证码"
+                }
+            },
+            "mobile_login_method": {
+                "title": "手机App源登录方式",
+                "description": "{description}",
+                "data": {
+                    "mobile_login_method": "登录方式"
+                }
+            },
+            "mobile_password": {
+                "title": "手机App源密码登录",
+                "description": "请输入国网账号手机号和密码（仅限已通过短信验证过的设备使用）。{error}",
+                "data": {
+                    "account": "手机号",
+                    "password": "密码",
+                    "back_to_login_method": "返回上一步（改用短信验证码登录）"
+                }
             }
+        },
+        "error": {
+            "invalid_token": "授权密钥无效。",
+            "backend_unreachable": "中转后端不可达，请稍后重试。",
+            "sms_send_failed": "验证码发送失败（详细原因见下方说明）",
+            "sms_login_failed": "登录失败（详细原因见下方说明）",
+            "password_requires_sms": "该设备尚未通过短信验证，密码登录被拒，请返回改用短信验证码登录。",
+            "apply_failed": "写入数据源路由失败，请稍后重试。",
+            "mobile_form_incomplete": "请填写完整信息后再提交（或勾选返回上一步）。"
         }
     },
     "selector": {

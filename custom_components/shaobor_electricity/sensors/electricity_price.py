@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.core import callback
 from homeassistant.helpers.event import async_track_time_change
 
@@ -19,7 +19,7 @@ class Shaobor95598ElectricityPriceSensor(Shaobor95598SensorBase):
     _attr_translation_key = "electricity_price"
     _attr_icon = "mdi:cash"
     _attr_device_class = SensorDeviceClass.MONETARY
-    _attr_state_class = SensorStateClass.MEASUREMENT
+    # 单价非累计值，monetary 设备类不允许 state_class=measurement，置空避免 HA 警告
     _attr_native_unit_of_measurement = "CNY/kWh"
     _attr_suggested_display_precision = 4
 

@@ -35,6 +35,11 @@ class Shaobor95598Coordinator(DataUpdateCoordinator):
         self._data_mode = "local_cache"
         self._last_api_success: float | None = None
         self._last_error_reason: str | None = None
+
+        # 数据源路由：数据库(system_settings.upstream_source)说了算，刷新前热切换
+        from .helpers.upstream import SOURCE_WEB
+        self._current_source = getattr(api, "_upstream_source", SOURCE_WEB)
+        self._upstream_lock = asyncio.Lock()
         
         self.cons_no = entry.data.get("cons_no") or entry.data.get("selected_cons_no")
         if not self.cons_no:
@@ -116,8 +121,58 @@ class Shaobor95598Coordinator(DataUpdateCoordinator):
         """Return a non-sensitive reason for the last failed live request."""
         return self._last_error_reason
 
+    async def _async_sync_upstream_source(self) -> None:
+        """查询数据库数据源配置，与当前不一致时热切换客户端。
+
+        system_settings.upstream_source 一条配置管所有前端：'mobile' 走手机
+        App 链路，其余（含未设置）一律 web。resolve 失败（后端不可达等）
+        时保持现状，不切换、不报错。
+        """
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+        from .helpers.upstream import (
+            build_mobile_client,
+            build_web_client,
+            resolve_upstream_source,
+            SOURCE_MOBILE,
+        )
+
+        entry = self.entry
+        async with self._upstream_lock:
+            target = await resolve_upstream_source(self.hass, entry)
+            if target is None or target == self._current_source:
+                return
+
+            session = async_get_clientsession(self.hass)
+            try:
+                if target == SOURCE_MOBILE:
+                    new_api = build_mobile_client(self.hass, entry, session, self.db)
+                else:
+                    new_api = await build_web_client(self.hass, entry, session, self.db)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning(
+                    "[数据源路由] 热切换到 %s 失败，保持原数据源: %s", target, err
+                )
+                return
+
+            old_source = self._current_source
+            self.api = new_api
+            self._current_source = target
+            # 同步替换全局注册表里的 api 引用（卸载流程等会读取）
+            entry_store = self.hass.data.get(DOMAIN, {}).get(entry.entry_id)
+            if isinstance(entry_store, dict):
+                entry_store["api"] = new_api
+            _LOGGER.info(
+                "[数据源路由] 已按数据库路由热切换数据源: %s → %s",
+                old_source,
+                target,
+            )
+
     async def _async_update_data(self) -> dict[str, Any]:
         """100% Database-centric update flow. 数据库优先，API 仅作为增量补充。"""
+        # 0. 数据源路由：每次刷新前询问后端数据库，变化即热切换（无需重载集成）
+        await self._async_sync_upstream_source()
+
         login_acc = self.api._login_account or self.entry.data.get("login_account")
         api_data = None
         
@@ -182,14 +237,17 @@ class Shaobor95598Coordinator(DataUpdateCoordinator):
                 
                 await self.db.async_save_account_info({**api_data, "cons_no": self.cons_no})
                 
+                # 仅网页源持有本地 Token；手机源 Token 由后端持有（空值写入会
+                # 覆盖网页源的登录态，导致切回网页源时无法恢复认证）
                 auth_acc = login_acc or f"account_{self.entry.entry_id[:8]}"
-                await self.db.async_save_auth(auth_acc, {
-                    "user_token": self.api._user_token,
-                    "access_token": self.api._access_token,
-                    "refresh_token": self.api._refresh_token,
-                    "user_id": self.api._user_id,
-                    "power_user_list": self.api._power_user_list
-                })
+                if getattr(self.api, "_user_token", ""):
+                    await self.db.async_save_auth(auth_acc, {
+                        "user_token": self.api._user_token,
+                        "access_token": self.api._access_token,
+                        "refresh_token": self.api._refresh_token,
+                        "user_id": self.api._user_id,
+                        "power_user_list": self.api._power_user_list
+                    })
 
         except StateGridAuthError as err:
             self._data_mode = "local_cache"
@@ -263,7 +321,10 @@ class Shaobor95598Coordinator(DataUpdateCoordinator):
         final_data.update(aggregated)
         
         if len(db_days) >= 3:
-            last_days = db_days[:7]
+            # 用聚合器重算过电费的 daylist 求日均——手机源（c11/f01）不返回
+            # 每日电费，db_days 原始值可能为 0，直接求和会把日均算成 0。
+            calc_days = final_data.get("daylist") or db_days
+            last_days = calc_days[:7]
             avg = sum(d.get("dayEleCost", 0) for d in last_days) / len(last_days)
             final_data["daily_avg"] = round(avg, 2)
         

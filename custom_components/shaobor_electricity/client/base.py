@@ -57,8 +57,9 @@ class BaseStateGridApi:
             inner_data = data.get("data", {})
                 
             if not success_flag or inner_data.get("code") not in (1, "1", 0, "0", "00"):
-                msg = inner_data.get("message", "Unknown error")
-                raise StateGridAuthError(f"Init failed: {msg}")
+                msg = inner_data.get("message") or "no message"
+                code = inner_data.get("code", "no code")
+                raise StateGridAuthError(f"Init failed: code={code}, message={msg}")
                 
             result = inner_data.get("data") or {}
             self._key_code = result.get("keyCode") or ""

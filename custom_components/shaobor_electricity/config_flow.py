@@ -18,6 +18,7 @@ from homeassistant.helpers.selector import SelectSelector, SelectSelectorConfig,
 from .client import Shaobor95598ApiClient, StateGridAuthError, STORAGE_KEY, STORAGE_VERSION
 from .storage import AuthStore
 from .login_methods import QRCodeLoginHandler, PasswordLoginHandler, SMSLoginHandler
+from .mobile import MobileIosLoginMixin
 from .helpers.schemas import (
     get_year_ladder_tou_schema,
     get_month_ladder_tou_seasonal_schema,
@@ -81,6 +82,8 @@ from .const import (
     CONF_LADDER_PRICE_3_PEAK,
     CONF_LADDER_PRICE_3_FLAT,
     CONF_MACHINE_ID,
+    CONF_DATA_SOURCE,
+    DATA_SOURCE_MOBILE_IOS,
 )
 try:
     import pyqrcode  # type: ignore[import-untyped]
@@ -98,16 +101,31 @@ class InvalidAuthToken(Exception):
     """Error to indicate we cannot authorize."""
 
 
-async def validate_token(hass: HomeAssistant, token: str) -> None:
+async def validate_token(
+    hass: HomeAssistant, token: str, machine_id: str | None = None
+) -> None:
     """Validate the user input token."""
     session = async_get_clientsession(hass)
-    machine_id = hass.data.get("core.uuid")
+    machine_id = machine_id or hass.data.get("core.uuid")
+    # 授权密钥校验必须与数据源无关：mobile 模式下没有网页链路，
+    # 先走 /mobile/ios/capabilities（后端纯库校验 token↔machineId 绑定，
+    # 不请求 95598），失败再回退网页 initialize（f02 会话握手）。
+    from .mobile import MobileIosApiClient
+
+    mobile_api = MobileIosApiClient(
+        token=token, session=session, hass=hass, machine_id=machine_id
+    )
+    try:
+        if await mobile_api.validate_token():
+            return
+    except Exception as err:  # noqa: BLE001 任何 mobile 链路异常都回退网页校验
+        _LOGGER.warning("[配置流程] mobile 授权校验异常，回退网页校验: %s", err)
     api = Shaobor95598ApiClient(token=token, session=session, machine_id=machine_id)
     valid = await api.validate_token()
     if not valid:
         raise InvalidAuthToken
 
-class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Shaobor_95598."""
 
     VERSION = 1
@@ -123,16 +141,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._qr_image_md: str | None = None
         self._pending_entry_data: dict[str, Any] | None = None  # 登录成功后待创建 entry 的数据（户号选择前）
         self._skip_auto_load_token: bool = False  # 是否跳过自动加载 token（用于重新配置授权码）
+        self._reauth_machine_id: str | None = None
         
         # 登录处理器（延迟初始化）
         self._qrcode_handler: QRCodeLoginHandler | None = None
         self._password_handler: PasswordLoginHandler | None = None
         self._sms_handler: SMSLoginHandler | None = None
-        
-        # 登录处理器（延迟初始化）
-        self._qrcode_handler: QRCodeLoginHandler | None = None
-        self._password_handler: PasswordLoginHandler | None = None
-        self._sms_handler: SMSLoginHandler | None = None
+        # 手机App（iOS 链路）登录流程状态由 MobileIosLoginMixin 持有
 
     @staticmethod
     def async_get_options_flow(config_entry):
@@ -193,8 +208,15 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return None
 
     async def _save_token(self, token: str) -> None:
-        """Save token to persistent storage."""
-        await self._get_store().async_save({"token": token})
+        """不再持久化到 .storage（授权码真值在 ConfigEntry.data 与 SQLite）。"""
+        # 顺带清掉历史遗留的 auth JSON 文件，避免 .storage 里再出现
+        try:
+            await self._get_store().async_remove()
+            await AuthStore(
+                self.hass, STORAGE_VERSION, "shaobor_electricity_auth"
+            ).async_remove()
+        except Exception:  # noqa: BLE001 文件不存在等
+            pass
 
     async def _save_auth_store(
         self,
@@ -257,6 +279,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             entry_id = self.context.get("entry_id")
             entry = self.hass.config_entries.async_get_entry(entry_id)
             if entry:
+                data = {
+                    **data,
+                    CONF_MACHINE_ID: data.get(CONF_MACHINE_ID)
+                    or entry.data.get(CONF_MACHINE_ID)
+                    or self.hass.data.get("core.uuid"),
+                }
                 self.hass.config_entries.async_update_entry(entry, data=data)
                 
                 # 关键修复：强制保存最新认证信息到全局 Store，供其他联动户号读取
@@ -319,6 +347,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> FlowResult:
         """Reauth 时先执行刷新 token：优先尝试从共享 Store 静默修复，失败才要求重新登录."""
         self._auth_token = entry_data.get(CONF_AUTH_TOKEN) or ""
+        self._reauth_machine_id = (
+            entry_data.get(CONF_MACHINE_ID) or self.hass.data.get("core.uuid")
+        )
         
         # 【静默修复】首先检查是否有其他同账号条目已经更新了全局 AuthStore
         store = AuthStore(self.hass, STORAGE_VERSION, STORAGE_KEY)
@@ -339,7 +370,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     temp_api = Shaobor95598ApiClient(
                         token=self._auth_token,
                         session=async_get_clientsession(self.hass),
-                        machine_id=self.hass.data.get("core.uuid"),
+                        machine_id=self._reauth_machine_id,
                     )
                     # 手动注入共享的 access_token 进行验证
                     temp_api._access_token = stored.get("access_token")
@@ -362,12 +393,16 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._api = Shaobor95598ApiClient(
             token=self._auth_token,
             session=async_get_clientsession(self.hass),
-            machine_id=self.hass.data.get("core.uuid"),
+            machine_id=self._reauth_machine_id,
         )
         try:
             await self._api.initialize()
-        except Exception:
-            return self.async_abort(reason="invalid_token")
+        except Exception as err:
+            # 授权密钥仅在首次安装时录入。国家电网登录会话过期或初始化
+            # 临时失败时，仍保留已有授权密钥，直接让用户选择登录方式完成
+            # 重新认证；各登录方式会自行再次初始化并重试。
+            _LOGGER.warning("[重新认证] 初始化失败，保留授权密钥并进入登录方式选择: %s", err)
+            return await self.async_step_login_method()
         # 先尝试刷新 token（authorize + getWebToken），能返回 access_token 即视为有效
         user_token = entry_data.get(CONF_USER_TOKEN) or ""
         if user_token:
@@ -435,7 +470,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # 尝试从 Store 读取已保存的 token 用于预填充
         stored_token = await self._get_stored_token()
         # 预填逻辑：优先使用用户刚才输入的值，其次使用存储的值
-        default_token = (user_input or {}).get(CONF_AUTH_TOKEN) or stored_token or ""
+        is_reauth = self.context.get("source") == SOURCE_REAUTH
+        default_token = (user_input or {}).get(CONF_AUTH_TOKEN) or (
+            "" if is_reauth else stored_token or ""
+        )
 
         # Try to auto-load token if user hasn't input anything yet
         if user_input is None:
@@ -452,12 +490,29 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             
             if stored_token:
                 try:
-                    await validate_token(self.hass, stored_token)
+                    await validate_token(
+                        self.hass, stored_token, self._reauth_machine_id
+                    )
                     self._auth_token = stored_token
+                    # 数据源分流（对齐 web 自动检测跳转）：mobile 源不走网页链路
+                    # （initialize / 网页会话自检 / 网页档案自动跳转均不适用，
+                    # 且残留网页会话会劫持流程建出网页条目），直接进手机源登录
+                    # 闸门——本地已有有效会话时免登录直达户号选择。
+                    from .helpers.upstream import resolve_upstream_source_raw, SOURCE_MOBILE
+
+                    auto_source = await resolve_upstream_source_raw(
+                        self.hass,
+                        stored_token,
+                        # resolve 走绑定码校验，首次安装 _reauth_machine_id 为 None，
+                        # 必须兜底 core.uuid，否则后端 403 误判 web 源
+                        self._reauth_machine_id or self.hass.data.get("core.uuid"),
+                    )
+                    if auto_source == SOURCE_MOBILE:
+                        return await self.async_step_mobile_login_gate()
                     self._api = Shaobor95598ApiClient(
                         token=self._auth_token,
                         session=async_get_clientsession(self.hass),
-                        machine_id=self.hass.data.get("core.uuid"),
+                        machine_id=self._reauth_machine_id or self.hass.data.get("core.uuid"),
                     )
                     await self._api.initialize()
                     # 登录有效时，若 Store 中已有户号列表，尝试校验会话并进入选择户号（或仅一户则直接创建），跳过「选择登录方式」
@@ -509,21 +564,45 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 # Validate the token
                 token = user_input[CONF_AUTH_TOKEN]
-                await validate_token(self.hass, token)
+                await validate_token(self.hass, token, self._reauth_machine_id)
                 
                 # Store it globally for future setups
                 await self._save_token(token)
                 
                 # Store the token safely and initialize instance API
                 self._auth_token = token
-                self._api = Shaobor95598ApiClient(
-                    token=self._auth_token, 
-                    session=async_get_clientsession(self.hass),
-                    machine_id=self.hass.data.get("core.uuid"),
+                # mobile 源下不需要网页链路初始化（keyCode/publicKey 是网页
+                # 加密会话概念）；此时打 /api/initialize 会因网页链路不可用
+                # 被误判为授权密钥无效。登录方式闸门会自行按源分流。
+                from .helpers.upstream import resolve_upstream_source_raw, SOURCE_MOBILE
+
+                source = await resolve_upstream_source_raw(
+                    self.hass,
+                    token,
+                    # resolve 走绑定码校验，首次安装 _reauth_machine_id 为 None，
+                    # 必须兜底 core.uuid，否则后端 403"未提供绑定码"→ 误判 web 源
+                    self._reauth_machine_id or self.hass.data.get("core.uuid"),
                 )
-                await self._api.initialize()
+                if source != SOURCE_MOBILE:
+                    self._api = Shaobor95598ApiClient(
+                        token=self._auth_token, 
+                        session=async_get_clientsession(self.hass),
+                        machine_id=self._reauth_machine_id or self.hass.data.get("core.uuid"),
+                    )
+                    try:
+                        await self._api.initialize()
+                    except Exception as err:  # noqa: BLE001
+                        # 网页链路初始化失败不拦截授权（与 reauth 路径同策略），
+                        # 各登录方式会自行再次初始化并重试
+                        _LOGGER.warning(
+                            "[配置流程] 网页链路初始化失败，交由登录方式处理: %s", err
+                        )
                 
                 # Validation successful, move to next step
+                # mobile 源直接进登录闸门（本地会话有效即直达户号选择），
+                # 免去登录方式页的二次 source resolve
+                if source == SOURCE_MOBILE:
+                    return await self.async_step_mobile_login_gate()
                 return await self.async_step_login_method()
                 
             except InvalidAuthToken:
@@ -545,6 +624,18 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle choice of login method."""
+        # 数据源闸门：后端 system_settings.upstream_source 为 'mobile' 时走手机App
+        # iOS 登录链路（无扫码选项；登录态/设备指纹由后端持有），网页登录方式不适用。
+        from .helpers.upstream import resolve_upstream_source_raw, SOURCE_MOBILE
+        if user_input is None:
+            source = await resolve_upstream_source_raw(
+                self.hass,
+                self._auth_token,
+                # 同上：首次安装兜底 core.uuid，否则 resolve 403 误判 web 源
+                self._reauth_machine_id or self.hass.data.get("core.uuid"),
+            )
+            if source == SOURCE_MOBILE:
+                return await self.async_step_mobile_login_gate()
         if user_input is not None:
             self._login_method = user_input[CONF_LOGIN_METHOD]
             if self._login_method == LOGIN_METHOD_PASSWORD:
@@ -580,6 +671,85 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
             ),
         )
+
+    # ------------------------------------------------------------------
+    # 手机App（iOS 链路）登录钩子：流程步骤（闸门/方式选择/短信/密码）在
+    # mobile/login_flow.py 的 MobileIosLoginMixin 中，此处只实现配置流特有的收尾
+    # ------------------------------------------------------------------
+
+    def _mobile_auth_token(self) -> str | None:
+        """当前授权码。"""
+        return self._auth_token
+
+    def _mobile_machine_id(self) -> str | None:
+        """当前 machineId（reauth 场景优先用原机器，保证查到原登录档案）。"""
+        return self._reauth_machine_id or self.hass.data.get("core.uuid")
+
+    async def _async_mobile_invalid_token(self) -> FlowResult:
+        """授权码校验失败时返回授权码输入页（保留已输入值）。"""
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_AUTH_TOKEN, default=self._auth_token or ""): str}
+            ),
+            errors={"base": "invalid_token"},
+        )
+
+    async def _async_mobile_login_complete(self, account: str) -> FlowResult:
+        """手机源登录成功/已有档案：取户号列表，进入户号选择或计费配置。"""
+        from .mobile import MobileIosApiClient
+
+        errors: dict[str, str] = {}
+        client = await self._mobile_client_with_session()
+        try:
+            profile = await client.async_get_profile()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("[手机源登录] 获取档案失败: %s", err)
+            errors["base"] = "backend_unreachable"
+            return await self.async_step_mobile_login_method(errors)
+
+        acc = profile.get("account") or {}
+        users = [u for u in (acc.get("powerUsers") or []) if isinstance(u, dict)]
+        if not users:
+            errors["base"] = "power_user_list_failed"
+            return await self.async_step_mobile_login_method(errors)
+
+        power_list = [MobileIosApiClient._map_power_user(u) for u in users]
+        entry_data = {
+            CONF_AUTH_TOKEN: self._auth_token,
+            CONF_LOGIN_METHOD: self._login_method or LOGIN_METHOD_SMS,
+            CONF_USER_TOKEN: "",
+            CONF_USER_ID: acc.get("userId") or "",
+            CONF_ACCESS_TOKEN: "",
+            CONF_REFRESH_TOKEN: "",
+            CONF_POWER_USER_LIST: power_list,
+            CONF_LOGIN_ACCOUNT: account,
+            CONF_DATA_SOURCE: DATA_SOURCE_MOBILE_IOS,
+            CONF_MACHINE_ID: self._mobile_machine_id(),
+        }
+
+        # 重新认证流程：沿用原户号选择与计费配置，更新 entry 后重载
+        if self.context.get("source") == SOURCE_REAUTH:
+            entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+            if entry:
+                selected_index = entry.data.get(CONF_SELECTED_ACCOUNT_INDEX, 0)
+                entry_data[CONF_SELECTED_ACCOUNT_INDEX] = selected_index
+                for key in [CONF_BILLING_MODE, CONF_LADDER_LEVEL_1, CONF_LADDER_LEVEL_2,
+                            CONF_LADDER_PRICE_1, CONF_LADDER_PRICE_2, CONF_LADDER_PRICE_3,
+                            CONF_PRICE_TIP, CONF_PRICE_PEAK, CONF_PRICE_FLAT, CONF_PRICE_VALLEY,
+                            CONF_AVERAGE_PRICE, CONF_YEAR_LADDER_START]:
+                    if key in entry.data:
+                        entry_data[key] = entry.data[key]
+                self.hass.config_entries.async_update_entry(entry, data=entry_data)
+                await self.hass.config_entries.async_reload(entry.entry_id)
+                return self.async_abort(reason="reauth_successful")
+
+        if len(power_list) > 1:
+            self._pending_entry_data = {**entry_data, "_title": f"Shaobor_95598 ({account})"}
+            return await self.async_step_select_account()
+        entry_data[CONF_SELECTED_ACCOUNT_INDEX] = 0
+        self._pending_entry_data = {**entry_data, "_title": f"Shaobor_95598 ({account})"}
+        return await self.async_step_billing_mode()
 
     def _get_existing_cons_nos(self) -> set[str]:
         """Return set of cons_nos already configured in existing entries."""

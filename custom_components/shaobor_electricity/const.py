@@ -7,6 +7,11 @@ CONF_AUTH_TOKEN: Final = "auth_token"
 CONF_LOGIN_METHOD: Final = "login_method"
 CONF_MACHINE_ID: Final = "machine_id"
 
+# 数据源（网页 95598 / 手机 App iOS 链路）
+CONF_DATA_SOURCE: Final = "data_source"
+DATA_SOURCE_WEB: Final = "web"
+DATA_SOURCE_MOBILE_IOS: Final = "mobile_ios"
+
 
 # Stored auth/session fields
 CONF_USER_TOKEN: Final = "user_token"

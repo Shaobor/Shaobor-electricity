@@ -53,19 +53,17 @@ async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
 async def _async_migrate_stores(hass: HomeAssistant) -> None:
     """迁移旧的 store 文件到新的子文件夹路径."""
     
-    # 迁移 auth store: shaobor_electricity_auth -> shaobor_electricity/shaobor_electricity_auth
+    # 旧 auth store（shaobor_electricity_auth）不再迁移也不再新建：
+    # 授权码真值在 ConfigEntry.data，登录会话在 SQLite，发现即删除
     old_auth_store = Store(hass, STORAGE_VERSION, "shaobor_electricity_auth")
     old_auth_data = await old_auth_store.async_load()
     if old_auth_data:
-        _LOGGER.info("[迁移] 发现旧的 auth store，迁移到新路径...")
-        new_auth_store = AuthStore(hass, STORAGE_VERSION, STORAGE_KEY)
-        existing = await new_auth_store.async_load()
-        if not existing:
-            await new_auth_store.async_save(old_auth_data)
-            await old_auth_store.async_remove()
-            _LOGGER.info("[迁移] auth store 迁移完成")
-        else:
-            _LOGGER.info("[迁移] 新路径已有数据，跳过迁移")
+        _LOGGER.info("[迁移] 发现旧的 auth store，直接删除（授权真值已入库）")
+        await old_auth_store.async_remove()
+    new_auth_store = AuthStore(hass, STORAGE_VERSION, STORAGE_KEY)
+    if await new_auth_store.async_load():
+        _LOGGER.info("[迁移] 清除冗余的 auth JSON 缓存")
+        await new_auth_store.async_remove()
     
     # 迁移 history store: shaobor_electricity_history -> shaobor_electricity/shaobor_electricity_history
     old_history_store = Store(hass, version=1, key="shaobor_electricity_history")
@@ -81,6 +79,120 @@ async def _async_migrate_stores(hass: HomeAssistant) -> None:
         else:
             _LOGGER.info("[迁移] 新路径已有历史数据，跳过迁移")
 
+async def _async_setup_mobile_ios_entry(
+    hass: HomeAssistant, entry: ConfigEntry, token: str, session
+) -> bool:
+    """手机 App（iOS 链路）数据源的集成装配。
+
+    与网页版入口同构（共享 StateGridDatabase / Coordinator / 日志处理器），
+    仅 api 换成 MobileIosApiClient：登录态、设备指纹、信封全部由中转后端持有。
+    """
+    from .mobile.client import MobileIosApiClient
+    from .helpers.database import StateGridDatabase
+
+    # 1. 数据库与网页版共享（单点真值），历史电量/月账单/小贴士直接复用
+    db_path = hass.config.path(".storage", DOMAIN, "shaobor_electricity.db")
+    db = StateGridDatabase(hass, db_path)
+    await db.async_init()
+
+    store = AuthStore(hass, STORAGE_VERSION, STORAGE_KEY)
+
+    machine_id = entry.data.get(CONF_MACHINE_ID) or hass.data.get("core.uuid")
+    api = MobileIosApiClient(
+        token, session, hass, entry_id=entry.entry_id, machine_id=machine_id
+    )
+    api.set_db(db)
+    # 标记当前数据源，Coordinator 初始化与热切换判定使用
+    api._upstream_source = "mobile"
+
+    # 本地会话预热：从 HA 本地库恢复 session 与户号档案（本地真值，
+    # 业务请求自带 session 调中转后端，无需后端落库状态）
+    try:
+        mirror = await db.async_get_mobile_auth(machine_id)
+    except Exception:  # noqa: BLE001 镜像缺失/损坏不阻断装配
+        mirror = None
+    if mirror:
+        api._login_account = mirror.get("mobile") or api._login_account
+        mirror_users = mirror.get("power_users") or []
+        if mirror_users:
+            api._raw_power_users = [
+                u for u in mirror_users if isinstance(u, dict)
+            ]
+            api._power_user_list = [api._map_power_user(u) for u in api._raw_power_users]
+        if mirror.get("session_token"):
+            api._ios_session = {
+                "token": mirror.get("session_token") or "",
+                "userId": mirror.get("session_user_id") or "",
+                "province": mirror.get("session_province") or "",
+            }
+        _LOGGER.info(
+            "[mobile_ios] 已从本地库恢复登录态: %s（登录于 %s，户号 %d 个，会话 %s）",
+            mirror.get("mobile") or "未知账号",
+            mirror.get("login_at") or "未知时间",
+            len(mirror_users),
+            "已恢复" if mirror.get("session_token") else "缺失",
+        )
+
+    # 校验后端授权（登录态不在此校验：未登录时 Coordinator 首轮刷新报 AuthFailed）
+    if not await api.validate_token():
+        raise ConfigEntryAuthFailed("中转后端授权校验失败，请检查授权码")
+
+    # 2. 计费配置（与网页版一致，从 entry.data 读取）
+    from .const import (
+        CONF_BILLING_MODE,
+        CONF_AVERAGE_PRICE,
+        CONF_LADDER_PRICE_1,
+        CONF_LADDER_PRICE_2,
+        CONF_LADDER_PRICE_3,
+        CONF_PRICE_TIP,
+        CONF_PRICE_PEAK,
+        CONF_PRICE_FLAT,
+        CONF_PRICE_VALLEY,
+    )
+    api.set_billing_config({
+        "billing_mode": entry.data.get(CONF_BILLING_MODE, ""),
+        "average_price": entry.data.get(CONF_AVERAGE_PRICE),
+        "ladder_price_1": entry.data.get(CONF_LADDER_PRICE_1),
+        "ladder_price_2": entry.data.get(CONF_LADDER_PRICE_2),
+        "ladder_price_3": entry.data.get(CONF_LADDER_PRICE_3),
+        "price_tip": entry.data.get(CONF_PRICE_TIP),
+        "price_peak": entry.data.get(CONF_PRICE_PEAK),
+        "price_flat": entry.data.get(CONF_PRICE_FLAT),
+        "price_valley": entry.data.get(CONF_PRICE_VALLEY),
+    })
+
+    # 3. 数据存储 Store（与网页版同键，历史备份无缝衔接）
+    data_store = Store(hass, 1, f"{DOMAIN}/shaobor_data_{entry.entry_id}")
+
+    from .coordinator import Shaobor95598Coordinator
+    coordinator = Shaobor95598Coordinator(
+        hass=hass,
+        entry=entry,
+        api=api,
+        store=store,
+        data_store=data_store,
+        db=db,
+    )
+    await coordinator.async_load_from_db()
+
+    hass.data[DOMAIN][entry.entry_id] = {
+        "api": api,
+        "coordinator": coordinator,
+    }
+
+    # 挂载数据库日志处理器（与网页版一致，防重复添加）
+    from .helpers.database import DBLogHandler
+    db_handler = DBLogHandler(hass, coordinator.db)
+    db_handler.setFormatter(logging.Formatter("%(message)s"))
+    root_logger = logging.getLogger("custom_components.shaobor_electricity")
+    if not any(isinstance(h, DBLogHandler) for h in root_logger.handlers):
+        root_logger.addHandler(db_handler)
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    hass.async_create_task(coordinator.async_config_entry_first_refresh())
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up shaobor_electricity from a config entry."""
     # 首先确保全局数据字典已就绪，防止 coordinator 刷新时因无法读写标志位而崩溃
@@ -90,7 +202,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if "auth_lock" not in hass.data[DOMAIN]:
         import asyncio
         hass.data[DOMAIN]["auth_lock"] = asyncio.Lock()
-    
+
     session = async_get_clientsession(hass)
     token = entry.data.get(CONF_AUTH_TOKEN)
     if not token:
@@ -98,6 +210,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # 自动迁移旧 store 文件到新路径（shaobor_electricity/ 子文件夹）
     await _async_migrate_stores(hass)
+
+    # 数据源路由：由后端数据库 system_settings.upstream_source 一条配置决定
+    # （'mobile' 走手机 App 链路，其余一律 web）。resolve 失败（后端不可达）时回退到
+    # entry.data 的旧版 data_source 标记（兼容历史配置）。
+    from .const import CONF_DATA_SOURCE, DATA_SOURCE_MOBILE_IOS
+    from .helpers.upstream import resolve_upstream_source, SOURCE_MOBILE
+    source = await resolve_upstream_source(hass, entry, session=session)
+    if source is None and entry.data.get(CONF_DATA_SOURCE) == DATA_SOURCE_MOBILE_IOS:
+        source = SOURCE_MOBILE
+    if source == SOURCE_MOBILE:
+        return await _async_setup_mobile_ios_entry(hass, entry, token, session)
 
     # 1. 优先从数据库加载授权信息 (单点真值)
     from .helpers.database import StateGridDatabase
@@ -347,5 +470,10 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 _LOGGER.error("清除数据库敏感信息失败: %s", e)
 
         await hass.async_add_executor_job(_clear_sensitive_data)
+        # Store 与数据库共同保存过授权信息。删除最后一个实例时必须一并
+        # 清理，避免重新添加时又加载到已过期的授权码或登录会话。
+        await AuthStore(hass, STORAGE_VERSION, STORAGE_KEY).async_remove()
+        await Store(hass, STORAGE_VERSION, "shaobor_electricity_auth").async_remove()
+        _LOGGER.info("已清除共享授权缓存，重新添加将使用当前设备 UUID 建立新会话")
     else:
         _LOGGER.info("仍有其他实例存在，保留授权 Token。")
