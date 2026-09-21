@@ -145,57 +145,6 @@
             }
         }
     },
-    "options": {
-        "step": {
-            "data_source": {
-                "title": "数据源切换",
-                "description": "当前生效数据源：{current}\n\n选择将写入中转后端数据库 system_settings 表的全局配置（upstream_source），对所有账号/户号一律生效。保存后立即生效，无需重启。",
-                "data": {
-                    "source": "数据源"
-                }
-            },
-            "mobile_sms": {
-                "title": "手机App源短信登录",
-                "description": "请输入国网账号手机号发送验证码。{error}",
-                "data": {
-                    "account": "手机号",
-                    "back_to_login_method": "返回上一步（重新选择登录方式）"
-                }
-            },
-            "mobile_sms_code": {
-                "title": "输入短信验证码",
-                "description": "请输入发送到 {account} 的验证码，登录成功后自动写入数据源路由。{error}",
-                "data": {
-                    "code": "验证码"
-                }
-            },
-            "mobile_login_method": {
-                "title": "手机App源登录方式",
-                "description": "{description}",
-                "data": {
-                    "mobile_login_method": "登录方式"
-                }
-            },
-            "mobile_password": {
-                "title": "手机App源密码登录",
-                "description": "请输入国网账号手机号和密码（仅限已通过短信验证过的设备使用）。{error}",
-                "data": {
-                    "account": "手机号",
-                    "password": "密码",
-                    "back_to_login_method": "返回上一步（改用短信验证码登录）"
-                }
-            }
-        },
-        "error": {
-            "invalid_token": "授权密钥无效。",
-            "backend_unreachable": "中转后端不可达，请稍后重试。",
-            "sms_send_failed": "验证码发送失败（详细原因见下方说明）",
-            "sms_login_failed": "登录失败（详细原因见下方说明）",
-            "password_requires_sms": "该设备尚未通过短信验证，密码登录被拒，请返回改用短信验证码登录。",
-            "apply_failed": "写入数据源路由失败，请稍后重试。",
-            "mobile_form_incomplete": "请填写完整信息后再提交（或勾选返回上一步）。"
-        }
-    },
     "entity": {
         "sensor": {
             "shaobor_electricity__balance": {

@@ -13,7 +13,6 @@ except ImportError:
     from homeassistant.data_entry_flow import FlowResult  # type: ignore[import-untyped]
 from homeassistant.helpers.selector import SelectSelector, SelectSelectorConfig, SelectSelectorMode  # type: ignore[import-untyped]
 from .data_importer import validate_import_json
-from ..mobile import MobileIosLoginMixin
 
 from ..const import (
     DOMAIN,
@@ -54,7 +53,7 @@ from .schemas import (
     get_average_config_schema,
 )
 
-class OptionsFlowHandler(MobileIosLoginMixin, config_entries.OptionsFlow):
+class OptionsFlowHandler(config_entries.OptionsFlow):
     """Handle options flow for Shaobor_95598."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
@@ -121,112 +120,6 @@ class OptionsFlowHandler(MobileIosLoginMixin, config_entries.OptionsFlow):
                 }
             ),
         )
-
-    # ------------------------------------------------------------------
-    # 数据源切换（数据库说了算：写入 system_settings.upstream_source 并即时生效）
-    # 手机源登录步骤（闸门/方式选择/短信/密码）在 mobile/login_flow.py 混入，
-    # 此处只实现选项流特有的钩子（授权码/machineId 来源、完成后的写库切换）
-    # ------------------------------------------------------------------
-
-    def _mobile_auth_token(self) -> str | None:
-        """当前授权码（取自本配置项）。"""
-        from ..const import CONF_AUTH_TOKEN
-        return self.config_entry.data.get(CONF_AUTH_TOKEN)
-
-    def _mobile_machine_id(self) -> str | None:
-        """当前 machineId（与集成运行时一致，保证命中同一台后端 iOS 设备行）。"""
-        from ..const import CONF_MACHINE_ID
-        return (
-            self.config_entry.data.get(CONF_MACHINE_ID)
-            or self.hass.data.get("core.uuid")
-        )
-
-    async def _async_mobile_invalid_token(self) -> FlowResult:
-        """授权码无效时回到数据源选择页并提示。"""
-        return self.async_show_form(
-            step_id="data_source",
-            errors={"base": "invalid_token"},
-            description_placeholders={"current": await self._async_current_source_label()},
-        )
-
-    async def _async_current_source_label(self) -> str:
-        """当前生效数据源（用于 data_source 表单描述，查询失败显示未知）。"""
-        from ..helpers.upstream import resolve_upstream_source
-        try:
-            return await resolve_upstream_source(self.hass, self.config_entry) or "未知"
-        except Exception:  # noqa: BLE001
-            return "未知"
-
-    async def _async_mobile_login_complete(self, account: str) -> FlowResult:
-        """手机源登录成功/已有档案：写库切换数据源并立即刷新。"""
-        return await self._async_apply_upstream_source("mobile")
-
-    def _get_coordinator(self):
-        """获取当前集成实例的 coordinator（可能尚未就绪）。"""
-        entry_id = self.config_entry.entry_id
-        if DOMAIN in self.hass.data and entry_id in self.hass.data[DOMAIN]:
-            return self.hass.data[DOMAIN][entry_id].get("coordinator")
-        return None
-
-    async def _async_apply_upstream_source(self, source: str) -> FlowResult:
-        """写入全局数据源配置（system_settings.upstream_source）并立即触发刷新。
-
-        一条配置管所有前端，下一轮刷新即热切换。
-        """
-        from ..helpers.upstream import set_upstream_source
-        try:
-            await set_upstream_source(self.hass, self.config_entry, source)
-        except Exception as e:  # noqa: BLE001
-            _LOGGER.warning("[数据源切换] 写入数据库失败: %s", e)
-            return self.async_show_form(
-                step_id="data_source",
-                errors={"base": "apply_failed"},
-                description_placeholders={"current": await self._async_current_source_label()},
-            )
-        # 立即触发一次刷新：coordinator 会在刷新前 resolve 并热切换
-        coordinator = self._get_coordinator()
-        if coordinator:
-            self.hass.async_create_task(coordinator.async_request_refresh())
-        return self.async_create_entry(title="", data={})
-
-    async def async_step_data_source(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """切换全局数据源（写入后端 system_settings.upstream_source，对所有前端生效）。"""
-        from ..helpers.upstream import resolve_upstream_source, SOURCE_WEB, SOURCE_MOBILE
-        if user_input is not None:
-            if user_input.get("source") == SOURCE_MOBILE:
-                return await self.async_step_mobile_ios_setup()
-            return await self._async_apply_upstream_source(SOURCE_WEB)
-        current = await resolve_upstream_source(self.hass, self.config_entry) or "未知"
-        return self.async_show_form(
-            step_id="data_source",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("source", default=SOURCE_WEB): SelectSelector(
-                        SelectSelectorConfig(
-                            options=[
-                                {"value": SOURCE_WEB, "label": "网页版 (www.95598.cn 直连)"},
-                                {"value": SOURCE_MOBILE, "label": "手机App (iOS 链路, 经中转后端)"},
-                            ],
-                            mode=SelectSelectorMode.LIST,
-                        )
-                    ),
-                }
-            ),
-            description_placeholders={"current": current},
-        )
-
-    async def async_step_mobile_ios_setup(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """校验后端授权与登录档案：已登录直接写库切换；未登录按记录决定可用的登录方式。
-
-        首次（无任何登录记录）仅短信登录——新设备指纹必须短信验证后进信任名单；
-        已有登录记录（设备已信任）时，密码登录与短信登录均可选。
-        流程步骤与规则统一由 mobile/login_flow.py 提供。
-        """
-        return await self.async_step_mobile_login_gate()
 
     async def _async_save_price_to_db(self, config: dict[str, Any]):
         """将电价配置保存到数据库."""
