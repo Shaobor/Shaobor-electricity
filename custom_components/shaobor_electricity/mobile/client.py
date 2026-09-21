@@ -71,6 +71,8 @@ class MobileIosApiClient:
         # 停电公告缓存（key: machineId:areaNo）：上游对该接口有频控（S1009
         # "系统繁忙"），公告变化频率低，缓存 1 小时并在失败时回退旧值。
         self._notices_cache: dict[str, dict[str, Any]] = {}
+        # 最近一次实际发起查询的时间（1 小时节流窗口）
+        self._notices_last_attempt: dict[str, datetime] = {}
 
         # 登录会话（本地真值：登录后/启动预热时写入，请求时随带上送中转后端）
         self._ios_session: dict[str, Any] = {}
@@ -438,6 +440,21 @@ class MobileIosApiClient:
         query_org_no = match.org_code
         cache_key = f"{self._machine_id}:{match.district_code}"
         cached = self._notices_cache.get(cache_key)
+        now = datetime.now()
+
+        # 节流：该接口上游有频控（S1009"系统繁忙"），实际查询间隔限 1 小时；
+        # 窗口内直接复用缓存（允许过期值），无缓存时返回空结构且不打上游。
+        last_attempt = self._notices_last_attempt.get(cache_key)
+        if last_attempt and (now - last_attempt).total_seconds() < 3600:
+            if cached:
+                return cached["data"]
+            return {
+                "notices": [],
+                "error": "停电信息处于 1 小时节流窗口内，跳过本次查询",
+                "org_no": match.org_code,
+            }
+
+        self._notices_last_attempt[cache_key] = now
         try:
             notices = await _query_notices(query_org_no)
             if not notices and match.city_org_code and match.city_org_code != query_org_no:
