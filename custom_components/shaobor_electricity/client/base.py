@@ -13,6 +13,15 @@ from .exceptions import StateGridAuthError, StateGridTokenExpiredError, StateGri
 
 _LOGGER = logging.getLogger(__name__)
 
+# 全局网络请求超时：HA shared session 默认 ClientTimeout(total=None)
+# 即无限等；后端一旦卡死会拖死整个 10 分钟轮询。改为分层超时：
+# - total 30s：整体上限（含建连 + 等响应 + 读 body）
+# - connect 10s：建连阶段上限
+# - sock_connect 10s：底层 socket 建连上限
+REQUEST_TIMEOUT = aiohttp.ClientTimeout(
+    total=30, connect=10, sock_connect=10
+)
+
 class BaseStateGridApi:
     """Base class for State Grid API communication."""
 
@@ -49,7 +58,7 @@ class BaseStateGridApi:
             "machineId": self._machine_id,
         }
         try:
-            async with self._session.post(url, json=payload, headers=self._headers) as response:
+            async with self._session.post(url, json=payload, headers=self._headers, timeout=REQUEST_TIMEOUT) as response:
                 response.raise_for_status()
                 data = await response.json()
                 
@@ -77,7 +86,7 @@ class BaseStateGridApi:
         """Send encrypted POST request to bridge server."""
         headers = {"Authorization": f"Bearer {self._encrypt_token}"}
         try:
-            async with self._session.post(url, json=payload, headers=headers) as response:
+            async with self._session.post(url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT) as response:
                 if response.status == 401:
                     raise StateGridAuthError("Encryption server: Unauthorized (check token)")
                 response.raise_for_status()

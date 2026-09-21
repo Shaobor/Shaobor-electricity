@@ -22,6 +22,7 @@ from typing import Any
 import aiohttp  # type: ignore[import-untyped]
 
 from ..client.const import ENCRYPT_API_URL
+from ..client.base import REQUEST_TIMEOUT
 from ..client.exceptions import StateGridAuthError, StateGridConnectionError
 
 _LOGGER = logging.getLogger(__name__)
@@ -51,7 +52,10 @@ async def _post(
     body = {"token": token, "machineId": machine_id, **payload}
     try:
         async with session.post(
-            url, json=body, headers={"Content-Type": "application/json"}
+            url,
+            json=body,
+            headers={"Content-Type": "application/json"},
+            timeout=REQUEST_TIMEOUT,
         ) as resp:
             data: Any = await resp.json(content_type=None)
             if resp.status in (401, 403):

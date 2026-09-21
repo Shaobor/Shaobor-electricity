@@ -8,7 +8,7 @@ import random
 from typing import Any, Optional
 from urllib.parse import urlencode
 
-from .base import BaseStateGridApi
+from .base import BaseStateGridApi, REQUEST_TIMEOUT
 from .const import ENCRYPT_API_URL, SGCC_HOST, APP_KEY, VERSION
 from .exceptions import StateGridAuthError, StateGridConnectionError
 from .decorators import auto_relogin_on_auth_error, retry_on_network_error
@@ -52,6 +52,7 @@ class LoginMixin(BaseStateGridApi):
         #         "https://www.95598.cn/api/osg-web0004/open/c44/f05",
         #         json=payload_f05,
         #         headers=headers_f05,
+        #         timeout=REQUEST_TIMEOUT,
         #     ) as resp:
         #         resp.raise_for_status()
         #         text_f05 = await resp.text()
@@ -130,6 +131,7 @@ class LoginMixin(BaseStateGridApi):
             "https://www.95598.cn/api/osg-web0004/open/c44/f06",
             json=payload_f06_init,
             headers=headers_f06_init,
+            timeout=REQUEST_TIMEOUT,
         ) as resp:
             resp.raise_for_status()
             text_f06_init = await resp.text()
@@ -182,6 +184,7 @@ class LoginMixin(BaseStateGridApi):
             "https://www.95598.cn/api/osg-web0004/open/c44/f06",
             json=payload_f06_final,
             headers=headers_f06_final,
+            timeout=REQUEST_TIMEOUT,
         ) as resp:
             resp.raise_for_status()
             text_f06 = await resp.text()
@@ -304,6 +307,7 @@ class LoginMixin(BaseStateGridApi):
             "https://www.95598.cn/api/oauth2/oauth/authorize",
             data=form_payload,
             headers=headers,
+            timeout=REQUEST_TIMEOUT,
         ) as resp:
             resp.raise_for_status()
             authorize_text = await resp.text()
@@ -350,6 +354,7 @@ class LoginMixin(BaseStateGridApi):
             "https://www.95598.cn/api/oauth2/outer/getWebToken",
             json=web_token_payload,
             headers=web_token_headers,
+            timeout=REQUEST_TIMEOUT,
         ) as resp:
             resp.raise_for_status()
             web_token_text = await resp.text()
@@ -490,7 +495,7 @@ class LoginMixin(BaseStateGridApi):
                 },
                 "timestamp": timestamp
             }
-            async with self._session.post(url, json=payload, headers=headers) as resp:
+            async with self._session.post(url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT) as resp:
                 resp.raise_for_status()
                 text = await resp.text()
                 
@@ -561,7 +566,7 @@ class LoginMixin(BaseStateGridApi):
                 _LOGGER.debug("[扫码登录] c50/f02 请求 Headers: %s", headers)
                 _LOGGER.debug("[扫码登录] c50/f02 请求 Payload: %s", payload_sgcc)
                 
-                async with self._session.post(url, json=payload_sgcc, headers=headers) as resp:
+                async with self._session.post(url, json=payload_sgcc, headers=headers, timeout=REQUEST_TIMEOUT) as resp:
                     resp.raise_for_status()
                     text = await resp.text()
                     
@@ -657,6 +662,7 @@ class LoginMixin(BaseStateGridApi):
                 "https://www.95598.cn/api/osg-open-uc0001/member/c8/f04",
                 json=payload,
                 headers=headers,
+                timeout=REQUEST_TIMEOUT,
             ) as resp:
                 resp.raise_for_status()
                 text = await resp.text()
@@ -778,6 +784,7 @@ class LoginMixin(BaseStateGridApi):
                 "https://www.95598.cn/api/osg-uc0013/member/c4/f02",
                 json=payload,
                 headers=headers,
+                timeout=REQUEST_TIMEOUT,
             ) as resp:
                 resp.raise_for_status()
                 text = await resp.text()

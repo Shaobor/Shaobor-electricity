@@ -19,6 +19,7 @@ from typing import Any
 import aiohttp  # type: ignore[import-untyped]
 
 from ..client.const import ENCRYPT_API_URL
+from ..client.base import REQUEST_TIMEOUT
 from ..client.exceptions import StateGridAuthError, StateGridConnectionError
 from ..const import DOMAIN
 
@@ -128,7 +129,10 @@ class MobileIosApiClient:
         }
         try:
             async with self._session.post(
-                url, json=body, headers={"Content-Type": "application/json"}
+                url,
+                json=body,
+                headers={"Content-Type": "application/json"},
+                timeout=REQUEST_TIMEOUT,
             ) as resp:
                 try:
                     data: Any = await resp.json(content_type=None)

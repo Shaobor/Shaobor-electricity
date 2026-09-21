@@ -8,7 +8,7 @@ from typing import Any
 from datetime import datetime
 from urllib.parse import urlencode
 
-from .base import BaseStateGridApi
+from .base import BaseStateGridApi, REQUEST_TIMEOUT
 from .const import ENCRYPT_API_URL, SGCC_HOST, APP_KEY, VERSION
 from .exceptions import StateGridAuthError
 from .decorators import auto_relogin_on_auth_error, retry_on_network_error
@@ -92,6 +92,7 @@ class UsageMixin(BaseStateGridApi):
                 "https://www.95598.cn/api/osg-open-uc0001/member/c8/f11",
                 json=payload_sgcc,
                 headers=headers,
+                timeout=REQUEST_TIMEOUT,
             ) as resp:
                 resp.raise_for_status()
                 text = await resp.text()
@@ -194,6 +195,7 @@ class UsageMixin(BaseStateGridApi):
             "https://www.95598.cn/api/osg-open-uc0001/member/c9/f02",
             json=payload_sgcc_c9f02,
             headers=headers_c9f02,
+            timeout=REQUEST_TIMEOUT,
         ) as resp:
             resp.raise_for_status()
             text_c9f02 = await resp.text()
@@ -309,6 +311,7 @@ class UsageMixin(BaseStateGridApi):
                 "https://www.95598.cn/api/osg-web0004/member/c4/f08",
                 json=payload_sgcc,
                 headers=headers,
+                timeout=REQUEST_TIMEOUT,
             ) as response:
                 response.raise_for_status()
                 text = await response.text()
@@ -388,6 +391,7 @@ class UsageMixin(BaseStateGridApi):
             "https://www.95598.cn/api/osg-open-bc0001/member/c05/f01",
             json=payload_sgcc,
             headers=headers,
+            timeout=REQUEST_TIMEOUT,
         ) as resp:
             resp.raise_for_status()
             text = await resp.text()
@@ -548,6 +552,7 @@ class UsageMixin(BaseStateGridApi):
             "https://www.95598.cn/api/osg-web0004/member/c24/f01",
             json=payload_sgcc,
             headers=headers,
+            timeout=REQUEST_TIMEOUT,
         ) as resp:
             resp.raise_for_status()
             text = await resp.text()
@@ -621,6 +626,7 @@ class UsageMixin(BaseStateGridApi):
             "https://www.95598.cn/api/osg-open-bc0001/member/arg/020070054",
             json=payload_sgcc,
             headers=headers,
+            timeout=REQUEST_TIMEOUT,
         ) as resp:
             resp.raise_for_status()
             text = await resp.text()
@@ -864,6 +870,7 @@ class UsageMixin(BaseStateGridApi):
             "https://www.95598.cn/api/osg-web0004/member/c24/f01",
             json=payload_sgcc,
             headers=headers,
+            timeout=REQUEST_TIMEOUT,
         ) as resp:
             resp.raise_for_status()
             text = await resp.text()
