@@ -23,6 +23,7 @@ from typing import Any
 
 import voluptuous as vol  # type: ignore[import-untyped]
 
+from homeassistant.config_entries import SOURCE_REAUTH  # type: ignore[import-untyped]
 try:
     from homeassistant.config_entries import ConfigFlowResult as FlowResult  # type: ignore[import-untyped]
 except ImportError:
@@ -160,9 +161,16 @@ class MobileIosLoginMixin:
         account = profile.get("account") or {}
         users = [u for u in (account.get("powerUsers") or []) if isinstance(u, dict)]
         has_login_record = bool(account.get("mobile"))
+        is_reauth = self.context.get("source") == SOURCE_REAUTH
 
-        # 已有有效登录档案 → 免登录直接完成
-        if has_login_record and users:
+        # 重新认证模式：登录态已失效，严禁免登录跳过，必须引导重新登录
+        if is_reauth:
+            _LOGGER.info("[手机源登录] 检测到重新认证流程 (SOURCE_REAUTH)，引导用户重新验证登录")
+            self._mobile_password_allowed = has_login_record
+            return await self.async_step_mobile_login_method(errors)
+
+        # 已有有效登录档案且非重新认证、且持有非空会话 → 免登录直接完成
+        if has_login_record and users and profile.get("logged_in"):
             return await self._async_mobile_login_complete(account.get("mobile") or "")
 
         # 未登录：首次（无任何记录）仅短信；有记录才放开密码登录
@@ -185,13 +193,17 @@ class MobileIosLoginMixin:
                 return await self.async_step_mobile_password()
             return await self.async_step_mobile_sms()
 
+        is_reauth = self.context.get("source") == SOURCE_REAUTH
         # 首次登录必须短信验证（设备指纹进信任名单后密码登录才可用）
         if self._mobile_password_allowed:
             options = [
                 {"value": "sms", "label": "短信验证码登录"},
                 {"value": "password", "label": "账号密码登录"},
             ]
-            description = "手机App源登录。该设备已验证过，可直接使用账号密码或短信验证码登录。"
+            if is_reauth:
+                description = "手机App源重新认证。当前登录态已失效，请选择短信验证码或账号密码重新认证以恢复数据同步。"
+            else:
+                description = "手机App源登录。该设备已验证过，可直接使用账号密码或短信验证码登录。"
         else:
             options = [{"value": "sms", "label": "短信验证码登录"}]
             description = (

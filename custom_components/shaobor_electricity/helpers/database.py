@@ -392,33 +392,98 @@ class StateGridDatabase:
         return await self.hass.async_add_executor_job(_get)
 
     async def async_save_account_info(self, info: Dict):
-        """仅保存账户属性和实时状态 (不存密钥)."""
+        """仅保存账户属性和实时状态 (不存密钥). 防御式增量更新，新值为 None 时保留历史有效值."""
         import json
         def _save():
             conn = self._get_connection()
             try:
                 cursor = conn.cursor()
+                target_cons_no = info.get("cons_no") or info.get("selected_cons_no")
+                if not target_cons_no:
+                    return
+
+                # 读取历史已存记录，以实现增量合并保护
+                cursor.execute(
+                    "SELECT owner_name, elec_addr, balance, daily_avg, extra_status FROM shaobor_account_info WHERE cons_no = ?",
+                    (target_cons_no,)
+                )
+                old_row = cursor.fetchone()
+
+                old_owner_name = old_row[0] if old_row else None
+                old_elec_addr = old_row[1] if old_row else None
+                old_balance = old_row[2] if old_row else None
+                old_daily_avg = old_row[3] if old_row else None
+                old_extra = {}
+                if old_row and old_row[4]:
+                    try:
+                        old_extra = json.loads(old_row[4])
+                    except Exception:
+                        old_extra = {}
+
+                # 提取新值，若新值为 None 则回退使用历史值
+                new_owner_name = info.get("owner_name") or info.get("selected_owner_name") or old_owner_name
+                new_elec_addr = info.get("elec_addr") or info.get("selected_elec_addr") or old_elec_addr
+
+                raw_balance = info.get("balance")
+                if raw_balance is not None:
+                    final_balance = round(self._safe_float(raw_balance), 2)
+                else:
+                    final_balance = old_balance
+
+                raw_daily_avg = info.get("daily_avg")
+                if raw_daily_avg is not None:
+                    final_daily_avg = round(self._safe_float(raw_daily_avg), 2)
+                else:
+                    final_daily_avg = old_daily_avg
+
+                # 合并 extra_status (新值有值则覆盖，为 None 或缺失则保留旧值)
+                new_extra_fields = {
+                    k: v for k, v in info.items() if k not in [
+                        "cons_no", "selected_cons_no", "owner_name", "selected_owner_name",
+                        "elec_addr", "selected_elec_addr", "balance", "daily_avg",
+                        "daylist", "payment_records", "user_token", "access_token", "refresh_token"
+                    ]
+                }
+                merged_extra = {**old_extra}
+                for k, v in new_extra_fields.items():
+                    if v is not None or k not in merged_extra:
+                        merged_extra[k] = v
+
                 cursor.execute("""
                     INSERT OR REPLACE INTO shaobor_account_info 
                     (cons_no, owner_name, elec_addr, balance, daily_avg, last_update, extra_status)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    info.get("cons_no") or info.get("selected_cons_no"),
-                    info.get("owner_name") or info.get("selected_owner_name"),
-                    info.get("elec_addr") or info.get("selected_elec_addr"),
-                    round(self._safe_float(info.get("balance")), 2) if info.get("balance") is not None else None,
-                    round(self._safe_float(info.get("daily_avg")), 2) if info.get("daily_avg") is not None else None,
+                    target_cons_no,
+                    new_owner_name,
+                    new_elec_addr,
+                    final_balance,
+                    final_daily_avg,
                     datetime.now().isoformat(),
-                    json.dumps({k: v for k, v in info.items() if k not in [
-                        "cons_no", "selected_cons_no", "owner_name", "selected_owner_name",
-                        "elec_addr", "selected_elec_addr", "balance", "daily_avg",
-                        "daylist", "payment_records", "user_token", "access_token", "refresh_token"
-                    ]})
+                    json.dumps(merged_extra)
                 ))
                 conn.commit()
             finally:
                 conn.close()
         await self.hass.async_add_executor_job(_save)
+
+    async def async_clear_mobile_session(self, machine_id: str) -> None:
+        """清空手机源失效会话（保留手机号和户号档案，将 session_token 置空并标记 logged_in=0）."""
+        if not machine_id:
+            return
+        def _clear():
+            conn = self._get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE shaobor_mobile_auth_store
+                    SET session_token = '', logged_in = 0, last_update = ?
+                    WHERE machine_id = ?
+                """, (datetime.now().isoformat(timespec="seconds"), machine_id))
+                conn.commit()
+            finally:
+                conn.close()
+        await self.hass.async_add_executor_job(_clear)
 
     async def async_save_auth(self, account: str, auth_data: Dict):
         """保存登录密钥 (独立表)."""

@@ -198,10 +198,16 @@ class Shaobor95598Coordinator(DataUpdateCoordinator):
             # 抓取最新数据
             api_data = await self.api.get_electricity_data(cons_no=self.cons_no)
 
-            if api_data:
+            if api_data and (
+                api_data.get("balance") is not None
+                or api_data.get("esti_amt") is not None
+                or bool((api_data.get("daily_usage") or {}).get("sevenEleList"))
+            ):
                 self._data_mode = "network"
                 self._last_api_success = time.time()
                 self._last_error_reason = None
+            else:
+                self._data_mode = "local_cache"
             
             if api_data:
                 # 【自动补全户号】：如果初始化时没拿到户号（首次登录），则从 API 返回结果中提取
@@ -235,6 +241,7 @@ class Shaobor95598Coordinator(DataUpdateCoordinator):
                 if pay_list:
                     await self.db.async_save_payments(self.cons_no, pay_list)
                 
+                # 仅在非全空数据包时写入账户信息，配合 database 增量保护
                 await self.db.async_save_account_info({**api_data, "cons_no": self.cons_no})
                 
                 # 仅网页源持有本地 Token；手机源 Token 由后端持有（空值写入会
@@ -253,6 +260,12 @@ class Shaobor95598Coordinator(DataUpdateCoordinator):
             self._data_mode = "local_cache"
             self._last_error_reason = "auth_expired"
             _LOGGER.warning(f"[认证失效] 认证已过期，将使用本地数据库缓存展示: {err}")
+            # 清除本地过期的手机会话，防止残留死 token
+            if hasattr(self.api, "clear_session"):
+                try:
+                    await self.api.clear_session()
+                except Exception as clear_err:
+                    _LOGGER.debug(f"[认证失效] 清理本地会话异常: {clear_err}")
             # 1. 触发持久化通知
             self.hass.async_create_task(
                 self.hass.services.async_call(
@@ -341,12 +354,33 @@ class Shaobor95598Coordinator(DataUpdateCoordinator):
             try:
                 extra = json.loads(db_info.get("extra_status", "{}"))
                 for k, v in extra.items():
-                    if k not in final_data: final_data[k] = v
+                    if k not in final_data or final_data[k] is None:
+                        final_data[k] = v
             except Exception: pass
+
+            # 兼容恢复：若 balance 为 None，但 extra 存有 esti_amt 或 prepayBal/sumMoney
+            if final_data.get("balance") is None:
+                fee_detail = final_data.get("electricity_fee_detail") or {}
+                if fee_detail.get("prepayBal") is not None:
+                    final_data["balance"] = fee_detail.get("prepayBal")
+                elif fee_detail.get("sumMoney") is not None:
+                    final_data["balance"] = fee_detail.get("sumMoney")
+                elif final_data.get("esti_amt") is not None:
+                    final_data["balance"] = final_data.get("esti_amt")
+
+            # 兜底恢复 remaining_days
+            if final_data.get("remaining_days") is None:
+                cur_bal = final_data.get("balance")
+                cur_avg = final_data.get("daily_avg")
+                if cur_bal is not None and cur_avg and cur_avg > 0:
+                    try:
+                        final_data["remaining_days"] = int(float(cur_bal) / cur_avg)
+                    except Exception:
+                        pass
 
         if api_data:
              for k, v in api_data.items():
-                 if k not in final_data and k not in ["daily_usage", "payment_records"]:
+                 if (k not in final_data or final_data[k] is None) and k not in ["daily_usage", "payment_records"]:
                      final_data[k] = v
         
         return final_data

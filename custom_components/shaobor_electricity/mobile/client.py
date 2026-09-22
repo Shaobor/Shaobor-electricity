@@ -157,7 +157,14 @@ class MobileIosApiClient:
         if not data.get("success"):
             code = str(data.get("code") or "")
             msg = str(data.get("error") or "未知错误")
-            if code == "authentication_expired":
+            lower_msg = msg.lower()
+            if (
+                code in ("authentication_expired", "unauthorized", "session_expired", "token_invalid", "token_expired")
+                or "登录" in msg
+                or "失效" in msg
+                or "过期" in msg
+                or "auth" in lower_msg
+            ):
                 raise StateGridAuthError(f"手机App登录态已过期: {msg}")
             if code == "risk_control":
                 raise StateGridAuthError(f"上游风控拦截: {msg}")
@@ -217,6 +224,15 @@ class MobileIosApiClient:
         result = await self._post("/mobile/ios/call", body)
         data = result.get("data")
         return data if isinstance(data, dict) else {}
+
+    async def clear_session(self) -> None:
+        """清空当前会话（认证失效/被挤下线时调用）."""
+        self._ios_session = {}
+        if self._db and self._machine_id:
+            try:
+                await self._db.async_clear_mobile_session(self._machine_id)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("[API][mobile_ios] 清空本地会话失败: %s", err)
 
     async def async_get_profile(self) -> dict[str, Any]:
         """获取登录档案：优先本地库（session 真值），本地无会话才查后端。"""
@@ -574,6 +590,11 @@ class MobileIosApiClient:
         daily, balance_data, bills, payments, notices = await _gather_quiet(
             daily_task, balance_task, bills_task, payment_task, notice_task
         )
+
+        # 核心数据完整性防护：若余额、用电量、月账单全部为空（说明所有业务接口均失败/受阻），
+        # 抛出异常以触发 coordinator 降级使用本地数据库缓存，防止生成空数据冲刷覆盖数据库。
+        if not balance_data and not daily and not bills:
+            raise StateGridConnectionError("手机App源所有核心业务查询均失败，降级使用本地数据库缓存")
 
         # ---- 余额（c16/f01 → list[0]），判定逻辑与网页版 c05/f01 一致 ----
         found: dict[str, Any] = {}

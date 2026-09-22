@@ -351,6 +351,16 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
             entry_data.get(CONF_MACHINE_ID) or self.hass.data.get("core.uuid")
         )
         
+        # 数据源分流：手机源（mobile）直接进入手机源重新认证登录闸门，无需初始化网页版客户端
+        from .helpers.upstream import resolve_upstream_source_raw, SOURCE_MOBILE
+        auto_source = await resolve_upstream_source_raw(
+            self.hass,
+            self._auth_token,
+            self._reauth_machine_id or self.hass.data.get("core.uuid"),
+        )
+        if auto_source == SOURCE_MOBILE or entry_data.get(CONF_DATA_SOURCE) == DATA_SOURCE_MOBILE_IOS:
+            return await self.async_step_mobile_login_gate()
+
         # 【静默修复】首先检查是否有其他同账号条目已经更新了全局 AuthStore
         store = AuthStore(self.hass, STORAGE_VERSION, STORAGE_KEY)
         stored = await store.async_load()
