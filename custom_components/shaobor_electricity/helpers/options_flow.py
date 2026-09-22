@@ -40,6 +40,7 @@ from ..const import (
     CONF_PRICE_FLAT,
     CONF_PRICE_VALLEY,
     CONF_AVERAGE_PRICE,
+    CONF_MACHINE_ID,
 )
 
 from .schemas import (
@@ -59,6 +60,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
         self._config_entry = config_entry
+
+    @property
+    def config_entry(self) -> ConfigEntry:
+        """Return the config entry for backward compatibility."""
+        return getattr(self, "_config_entry", None)
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -626,16 +632,51 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
         if coordinator and hasattr(coordinator, "api"):
             api = coordinator.api
-            user_token = getattr(api, "_user_token", "") or ""
-            access_token = getattr(api, "_access_token", "")
-            key_code = getattr(api, "_key_code", "")
+            user_token = (
+                getattr(api, "user_token", None)
+                or getattr(api, "_user_token", None)
+                or (getattr(api, "_ios_session", {}) or {}).get("token")
+                or self.config_entry.data.get("user_token")
+                or self.config_entry.data.get("access_token")
+                or ""
+            )
+
+            # 若内存中尚未持有，尝试从本地数据库兜底读取
+            if not user_token and getattr(coordinator, "db", None):
+                machine_id = (
+                    self.config_entry.data.get(CONF_MACHINE_ID)
+                    or getattr(api, "_machine_id", None)
+                    or self.hass.data.get("core.uuid")
+                )
+                if machine_id:
+                    try:
+                        m_auth = await coordinator.db.async_get_mobile_auth(machine_id)
+                        if m_auth and m_auth.get("session_token"):
+                            user_token = m_auth.get("session_token")
+                    except Exception:
+                        pass
+                if not user_token:
+                    login_acc = self.config_entry.data.get("login_account") or getattr(api, "_login_account", None)
+                    if login_acc:
+                        try:
+                            w_auth = await coordinator.db.async_get_auth(login_acc)
+                            if w_auth and w_auth.get("user_token"):
+                                user_token = w_auth.get("user_token")
+                        except Exception:
+                            pass
 
             # 获取当前选中的户号信息
             idx = getattr(api, "_selected_account_index", 0)
             power_list = getattr(api, "_power_user_list", [])
             active_account = power_list[idx] if power_list and idx < len(power_list) else {}
             
-            cons_no = active_account.get("consNo_dst") or active_account.get("consNoDst") or active_account.get("consNo") or ""
+            cons_no = (
+                active_account.get("consNo_dst")
+                or active_account.get("consNoDst")
+                or active_account.get("consNo")
+                or self.config_entry.data.get("cons_no")
+                or ""
+            )
             
             token_info = (
                 f"📱 **小组件 Token 获取**\n"

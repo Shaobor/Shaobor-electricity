@@ -1286,9 +1286,17 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
 
         token_info = "⚠️ 未能获取到有效的认证信息，请确保已完成登录步骤。"
         
+        user_token = ""
         if self._api:
             api = self._api
-            user_token = getattr(api, "_user_token", "")
+            user_token = (
+                getattr(api, "user_token", None)
+                or getattr(api, "_user_token", None)
+                or (getattr(api, "_ios_session", {}) or {}).get("token")
+                or (self._pending_entry_data.get("user_token") if self._pending_entry_data else None)
+                or (self._pending_entry_data.get("access_token") if self._pending_entry_data else None)
+                or ""
+            )
             access_token = getattr(api, "_access_token", "")
             key_code = getattr(api, "_key_code", "")
             
@@ -1297,7 +1305,13 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
             power_list = getattr(api, "_power_user_list", [])
             active_account = power_list[idx] if power_list and idx < len(power_list) else {}
             
-            cons_no = active_account.get("consNo_dst") or active_account.get("consNoDst") or active_account.get("consNo") or ""
+            cons_no = (
+                active_account.get("consNo_dst")
+                or active_account.get("consNoDst")
+                or active_account.get("consNo")
+                or (self._pending_entry_data.get("cons_no") if self._pending_entry_data else None)
+                or ""
+            )
             
             token_info = (
                 f"📱 **小组件 Token 获取**\n"
@@ -1310,7 +1324,7 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="widget_token",
             data_schema=vol.Schema({
-                vol.Optional("user_token_copy", default=user_token if self._api else ""): TextSelector(
+                vol.Optional("user_token_copy", default=user_token): TextSelector(
                     TextSelectorConfig(multiline=False)
                 )
             }),

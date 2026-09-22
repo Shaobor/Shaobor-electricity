@@ -82,6 +82,16 @@ class MobileIosApiClient:
     # 兼容层：网页版客户端的公共接口（Coordinator / __init__ / 选项流调用）
     # ------------------------------------------------------------------
 
+    @property
+    def user_token(self) -> str:
+        """长期凭证/会话 Token."""
+        return self._user_token or (self._ios_session.get("token") if self._ios_session else "") or ""
+
+    @property
+    def user_id(self) -> str:
+        """用户 ID."""
+        return self._user_id or (self._ios_session.get("userId") if self._ios_session else "") or ""
+
     def set_db(self, db: Any) -> None:
         """兼容接口：移动源历史直接入数据库。"""
         self._db = db
@@ -228,6 +238,8 @@ class MobileIosApiClient:
     async def clear_session(self) -> None:
         """清空当前会话（认证失效/被挤下线时调用）."""
         self._ios_session = {}
+        self._user_token = ""
+        self._user_id = ""
         if self._db and self._machine_id:
             try:
                 await self._db.async_clear_mobile_session(self._machine_id)
@@ -325,11 +337,14 @@ class MobileIosApiClient:
         token = str(sess.get("token") or "")
         if not token:
             return
+        user_id = str(sess.get("userId") or "")
         self._ios_session = {
             "token": token,
-            "userId": sess.get("userId") or "",
+            "userId": user_id,
             "province": sess.get("province") or "",
         }
+        self._user_token = token
+        self._user_id = user_id
         if self._db and self._machine_id:
             try:
                 await self._db.async_save_mobile_auth(
@@ -369,6 +384,8 @@ class MobileIosApiClient:
             "userId": mirror.get("session_user_id") or "",
             "province": mirror.get("session_province") or "",
         }
+        self._user_token = self._ios_session["token"]
+        self._user_id = self._ios_session["userId"]
         return self._ios_session
 
     # ------------------------------------------------------------------

@@ -120,11 +120,15 @@ async def _async_setup_mobile_ios_entry(
             ]
             api._power_user_list = [api._map_power_user(u) for u in api._raw_power_users]
         if mirror.get("session_token"):
+            token_val = mirror.get("session_token") or ""
+            uid_val = mirror.get("session_user_id") or ""
             api._ios_session = {
-                "token": mirror.get("session_token") or "",
-                "userId": mirror.get("session_user_id") or "",
+                "token": token_val,
+                "userId": uid_val,
                 "province": mirror.get("session_province") or "",
             }
+            api._user_token = token_val
+            api._user_id = uid_val
         _LOGGER.info(
             "[mobile_ios] 已从本地库恢复登录态: %s（登录于 %s，户号 %d 个，会话 %s）",
             mirror.get("mobile") or "未知账号",
