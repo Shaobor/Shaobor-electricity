@@ -50,3 +50,5 @@ FIX_SUMMARY.md
 # Local development tools and downloaded source data
 scripts/
 docs/
+.codebuddy/
+frida_tools/
