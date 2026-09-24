@@ -439,48 +439,50 @@ class MobileIosApiClient:
         self._user_id = account.get("userId") or self._user_id
         return self._power_user_list
 
+    @staticmethod
+    def _extract_cons_notices(data: Any) -> list[dict[str, Any]]:
+        """从 c8/f04 (powerOutageByCons) 响应中提取户号停电明细."""
+        if not isinstance(data, dict):
+            return []
+        items = data.get("consNoListInput") or data.get("powerCutList") or []
+        if not isinstance(items, list):
+            return []
+        notices: list[dict[str, Any]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            nested = (
+                item.get("powerCutList")
+                or item.get("powerOffList")
+                or item.get("powerCutInfoList")
+                or item.get("list")
+            )
+            if isinstance(nested, list) and nested:
+                for sub in nested:
+                    if isinstance(sub, dict):
+                        notices.append(sub)
+            else:
+                notices.append(item)
+        return notices
+
     async def _fetch_maintenance_notices(
         self, active_account: dict[str, Any]
     ) -> dict[str, Any]:
-        """停电信息·按区域（后端 c8/f05），结果与网页版 c4/f08 同构。
+        """停电信息·按户号（后端 c8/f04 powerOutageByCons）。
 
-        areaNo/orgNo 推导复用网页版 division_mapping（orgNo→行政区划）；
-        查询顺序同网页版：区县供电单位 → 市级回退。c8/f05 响应字段
-        （powerRange/powerCause/powerCircuit/powerArea/powerType/startTime/
-        stopTime/takeType）与网页公告天然同名，直接透传给传感器/前端卡片。
+        国网在云端自动匹配户号绑定的变压器与输电线路：
+        本户无停电直接返回空列表 []；若有停电直接精准返回本户停电明细。
+        完全无需任何本地区县匹配或过滤。
         """
-        raw_org_no = str(active_account.get("orgNo") or active_account.get("org_no") or "")
-        mapping = None
-        if self._hass:
-            mapping = self._hass.data.get(DOMAIN, {}).get("division_mapping")
-        match = mapping.lookup_org_no(raw_org_no) if mapping and raw_org_no else None
+        cons_no = str(active_account.get("consNo") or "")
+        org_no = str(active_account.get("orgNo") or active_account.get("org_no") or "")
+        pro_code = str(active_account.get("proNo") or active_account.get("proCode") or "")
 
-        if not match or not match.district_code:
-            return {
-                "notices": [],
-                "error": "当前账户缺少可匹配的供电地区信息",
-                "org_no": raw_org_no,
-            }
-
-        async def _query_notices(query_org_no: str) -> list[dict[str, Any]]:
-            data = await self.ios_call(
-                "powerOutageByArea",
-                {
-                    "areaNo": match.district_code,
-                    "orgNo": query_org_no,
-                    "pageNo": 1,
-                    "pageSize": 100,
-                },
-            )
-            return [n for n in data.get("powerCutList") or [] if isinstance(n, dict)]
-
-        query_org_no = match.org_code
-        cache_key = f"{self._machine_id}:{match.district_code}"
+        cache_key = f"{self._machine_id}:{cons_no or 'default'}"
         cached = self._notices_cache.get(cache_key)
         now = datetime.now()
 
-        # 节流：该接口上游有频控（S1009"系统繁忙"），实际查询间隔限 1 小时；
-        # 窗口内直接复用缓存（允许过期值），无缓存时返回空结构且不打上游。
+        # 节流：1 小时节流窗口，保护上游接口频控
         last_attempt = self._notices_last_attempt.get(cache_key)
         if last_attempt and (now - last_attempt).total_seconds() < 3600:
             if cached:
@@ -488,32 +490,46 @@ class MobileIosApiClient:
             return {
                 "notices": [],
                 "error": "停电信息处于 1 小时节流窗口内，跳过本次查询",
-                "org_no": match.org_code,
+                "org_no": org_no,
             }
 
         self._notices_last_attempt[cache_key] = now
         try:
-            notices = await _query_notices(query_org_no)
-            if not notices and match.city_org_code and match.city_org_code != query_org_no:
-                query_org_no = match.city_org_code
-                notices = await _query_notices(query_org_no)
+            account_param = {
+                "consNo": cons_no,
+                "orgNo": org_no,
+                "proCode": pro_code,
+            }
+            data = await self.ios_call(
+                "powerOutageByCons",
+                {
+                    "consNoListInput": [account_param],
+                    "account": account_param,
+                },
+            )
+            notices = self._extract_cons_notices(data)
             result = {
                 "notices": notices,
-                "region": match.display_name,
-                "area_no": match.district_code,
-                "org_no": match.org_code,
-                "query_org_no": query_org_no,
+                "region": (
+                    active_account.get("elecAddr_dst")
+                    or active_account.get("elecAddr")
+                    or active_account.get("address")
+                    or "本户"
+                ),
+                "area_no": org_no,
+                "org_no": org_no,
+                "query_cons_no": active_account.get("consNo_dst") or cons_no,
                 "updated_at": datetime.now().isoformat(timespec="seconds"),
             }
-            # 成功结果写入缓存（1 小时内直接复用，避开上游频控）
+            # 写入缓存
             self._notices_cache[cache_key] = {"ts": datetime.now(), "data": result}
             return result
         except StateGridAuthError:
-            raise  # 登录态过期需要上抛触发重登流程
-        except Exception as err:  # noqa: BLE001 上游频控（S1009 等）：回退最近一次成功结果
+            raise  # 登录态过期上抛触发重登
+        except Exception as err:
             if cached:
                 _LOGGER.info(
-                    "[API][mobile_ios] 停电信息查询失败，回退 %d 分钟前缓存: %s",
+                    "[API][mobile_ios] 按户号查询停电失败，回退 %d 分钟前缓存: %s",
                     int((datetime.now() - cached["ts"]).total_seconds() / 60),
                     err,
                 )
@@ -592,15 +608,14 @@ class MobileIosApiClient:
             },
         )
 
-        # 停电信息（c8/f05 按区域）：与网页版同策略——公告查询失败不影响核心实体，
-        # 降级为带 error 的空结构。
+        # 停电信息（c8/f04 按户号）：精准查询当前户号是否有停电计划
         async def _notices_task() -> dict[str, Any]:
             try:
                 return await self._fetch_maintenance_notices(active)
             except StateGridAuthError:
                 raise  # 登录态过期需要上抛触发重登流程
             except Exception as err:  # noqa: BLE001
-                _LOGGER.warning("[API][mobile_ios] 停电信息查询失败 (c8/f05): %s", err)
+                _LOGGER.warning("[API][mobile_ios] 停电信息查询失败 (c8/f04): %s", err)
                 return {"notices": [], "error": str(err)}
 
         notice_task = _notices_task()
