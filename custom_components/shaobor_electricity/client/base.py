@@ -178,6 +178,8 @@ class BaseStateGridApi:
         """Generate common headers for SGCC requests."""
         headers = {
             "Host": "www.95598.cn",
+            "Origin": "https://www.95598.cn",
+            "Referer": "https://www.95598.cn/osgweb/login?status=0",
             "keyCode": self._key_code,
             "timestamp": timestamp,
             "wsgwType": "web",
@@ -187,6 +189,7 @@ class BaseStateGridApi:
             "appKey": APP_KEY,
             "version": VERSION,
             "Content-Type": "application/json; charset=UTF-8",
+            "retryCount": "1",
         }
         if token:
             headers["token"] = token

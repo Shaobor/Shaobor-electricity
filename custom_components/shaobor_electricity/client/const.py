@@ -6,7 +6,7 @@ SLIDER_API_URL = "https://cv2.hrbzlyy.com"
 SGCC_HOST = "https://www.95598.cn"
 
 # API Identity
-APP_KEY = "7e5b5e84ddad4994b0ebc68dedca4962"
+APP_KEY = "0329843199564c55809c77959792b558"
 VERSION = "1.0"
 DEFAULT_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 

@@ -291,6 +291,7 @@ class LoginMixin(BaseStateGridApi):
             "Accept": "application/json;charset=UTF-8",
             "appKey": APP_KEY,
             "version": VERSION,
+            "retryCount": "1",
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         }
         form_payload = urlencode(
@@ -588,21 +589,42 @@ class LoginMixin(BaseStateGridApi):
                     return {"status": "WAITING"}
                 
                 decrypted = await self._decrypt_to_data(res_data_to_decrypt or text)
+                _LOGGER.debug("[扫码登录] c50/f02 解密结果: %s (类型: %s)", decrypted, type(decrypted).__name__)
 
-                # 只要解密出来的是有效字符串且不是 "null"，就认为扫码成功拿到 Token 了
-                if isinstance(decrypted, str) and decrypted.strip() and decrypted.lower() != "null":
-                    return {"status": "SUCCESS", "user_token": decrypted}
+                # 1. 字符串响应处理
+                if isinstance(decrypted, str):
+                    val = decrypted.strip()
+                    if val.lower() in ("null", "none", ""):
+                        return {"status": "WAITING", "message": "Waiting for scan"}
+                    if val == "01":
+                        _LOGGER.info("[扫码登录] 状态: 用户已扫码，等待在手机上点击确认登录...")
+                        return {"status": "WAITING", "message": "Scanned, waiting confirmation"}
+                    # 真正的有效 Token 字符串 (排除 01、null)
+                    _LOGGER.info("[扫码登录] 扫码确认成功，获取到 Token (字符串)")
+                    return {"status": "SUCCESS", "user_token": val}
 
+                # 2. 字典响应处理
                 if isinstance(decrypted, dict):
-                    srvrt = decrypted.get("srvrt", {}) if isinstance(decrypted.get("srvrt"), dict) else {}
+                    inner_data = decrypted.get("data")
+                    if isinstance(inner_data, str):
+                        inner_str = inner_data.strip()
+                        if inner_str.lower() in ("null", "none", ""):
+                            return {"status": "WAITING", "message": "Waiting for scan"}
+                        if inner_str == "01":
+                            _LOGGER.info("[扫码登录] 状态: 用户已扫码，等待在手机上点击确认登录...")
+                            return {"status": "WAITING", "message": "Scanned, waiting confirmation"}
+                        if len(inner_str) > 5:
+                            _LOGGER.info("[扫码登录] 扫码确认成功，获取到 Token (data 字段)")
+                            return {"status": "SUCCESS", "user_token": inner_str, "bizrt": decrypted}
+
                     bizrt = decrypted.get("bizrt", {}) if isinstance(decrypted.get("bizrt"), dict) else {}
-                    if srvrt.get("resultCode") == "0000" and (bizrt or decrypted):
-                        token = None
-                        if isinstance(bizrt, dict):
-                            token = bizrt.get("token") or bizrt.get("rsi")
-                        token = token or decrypted.get("token") or decrypted.get("rsi")
-                        if token:
-                            return {"status": "SUCCESS", "user_token": str(token), "bizrt": bizrt}
+                    token = None
+                    if isinstance(bizrt, dict):
+                        token = bizrt.get("token") or bizrt.get("rsi")
+                    token = token or decrypted.get("token") or decrypted.get("rsi")
+                    if token and str(token).strip() not in ("01", "null", "None", ""):
+                        _LOGGER.info("[扫码登录] 扫码确认成功，获取到 Token (bizrt.token)")
+                        return {"status": "SUCCESS", "user_token": str(token).strip(), "bizrt": bizrt or decrypted}
                 
                 return {
                     "status": "WAITING",
@@ -659,7 +681,7 @@ class LoginMixin(BaseStateGridApi):
             }
             
             async with self._session.post(
-                "https://www.95598.cn/api/osg-open-uc0001/member/c8/f04",
+                "https://www.95598.cn/api/osg-open-uc0001/member/arg/010360007",
                 json=payload,
                 headers=headers,
                 timeout=REQUEST_TIMEOUT,
