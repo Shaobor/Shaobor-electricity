@@ -358,7 +358,8 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
             self._auth_token,
             self._reauth_machine_id or self.hass.data.get("core.uuid"),
         )
-        if auto_source == SOURCE_MOBILE or entry_data.get(CONF_DATA_SOURCE) == DATA_SOURCE_MOBILE_IOS:
+        # 数据源分流：后台配置优先；若后台指定为 web，必须走 web 重新登录
+        if auto_source == SOURCE_MOBILE or (auto_source is None and entry_data.get(CONF_DATA_SOURCE) == DATA_SOURCE_MOBILE_IOS):
             return await self.async_step_mobile_login_gate()
 
         # 【静默修复】首先检查是否有其他同账号条目已经更新了全局 AuthStore
