@@ -52,3 +52,5 @@ scripts/
 docs/
 .codebuddy/
 frida_tools/
+ha_run/
+js/

@@ -880,13 +880,9 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
                         errors["error"] = f"Unexpected result type: {type(result).__name__}"
                     elif result.get("success"):
                         data = result.get("data", {})
-                        # 验证能否成功获取电费数据，成功才创建配置
-                        try:
-                            await self._api.get_electricity_data()
-                        except StateGridAuthError:
-                            errors["base"] = "login_verify_failed"
-                        except Exception:
-                            errors["base"] = "login_verify_failed"
+                        power_list = data.get("power_user_list") or []
+                        if not power_list:
+                            errors["base"] = "no_power_account"
                         else:
                             # 登录成功(bizrt.token已获取)，保存所有关键值到 Store(全局变量方式)
                             await self._save_auth_store(
@@ -895,7 +891,7 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
                                 user_id=data.get("user_id"),
                                 access_token=data.get("access_token"),
                                 refresh_token=data.get("refresh_token"),
-                                power_user_list=data.get("power_user_list"),
+                                power_user_list=power_list,
                                 login_account=data.get("login_account"),
                                 user_info=data.get("user_info"),
                                 username=username if auto_relogin else "",
@@ -912,10 +908,9 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
                                 CONF_USER_ID: data.get("user_id"),
                                 CONF_ACCESS_TOKEN: data.get("access_token"),
                                 CONF_REFRESH_TOKEN: data.get("refresh_token"),
-                                CONF_POWER_USER_LIST: data.get("power_user_list"),
+                                CONF_POWER_USER_LIST: power_list,
                                 CONF_LOGIN_ACCOUNT: data.get("login_account"),
                             }
-                            power_list = data.get("power_user_list") or []
                             
                             # 如果是 reauth 流程,使用原有的户号选择
                             if self.context.get("source") == SOURCE_REAUTH:
@@ -1422,61 +1417,62 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
                                 _LOGGER.error("[扫码登录] 获取户号列表失败: %s", ex, exc_info=True)
                                 errors["base"] = "power_user_list_failed"
                             else:
-                                # 扫码登录:获取到户号列表就算成功,不需要验证 get_electricity_data
-                                # 因为在选择户号之前,无法调用需要户号信息的接口
-                                _LOGGER.warning("[扫码登录] 成功获取 %d 个户号,跳过电费数据验证", len(power_user_list or []))
-                                
-                                # 登录成功(bizrt.token已获取)，保存所有关键值到 Store(全局变量方式)
-                                await self._save_auth_store(
-                                    token=self._auth_token,
-                                    user_token=str(user_token),
-                                    user_id=self._api.user_id,
-                                    access_token=tokens.get("access_token"),
-                                    refresh_token=tokens.get("refresh_token"),
-                                    power_user_list=power_user_list,
-                                    login_account=getattr(self._api, "_login_account", None),
-                                    user_info=getattr(self._api, "_user_info", None),
-                                )
-                                entry_data = {
-                                    CONF_AUTH_TOKEN: self._auth_token,
-                                    CONF_LOGIN_METHOD: self._login_method,
-                                    CONF_USER_TOKEN: str(user_token),
-                                    CONF_USER_ID: self._api.user_id,
-                                    CONF_ACCESS_TOKEN: tokens.get("access_token"),
-                                    CONF_REFRESH_TOKEN: tokens.get("refresh_token"),
-                                    CONF_POWER_USER_LIST: power_user_list,
-                                    CONF_LOGIN_ACCOUNT: getattr(self._api, "_login_account", None),
-                                }
-                                
-                                # 如果是 reauth 流程,使用原有的户号选择
-                                if self.context.get("source") == SOURCE_REAUTH:
-                                    entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
-                                    if entry:
-                                        selected_index = entry.data.get(CONF_SELECTED_ACCOUNT_INDEX, 0)
-                                        entry_data[CONF_SELECTED_ACCOUNT_INDEX] = selected_index
-                                        
-                                        # 保留原有的计费配置
-                                        for key in [CONF_BILLING_MODE, CONF_LADDER_LEVEL_1, CONF_LADDER_LEVEL_2,
-                                                   CONF_LADDER_PRICE_1, CONF_LADDER_PRICE_2, CONF_LADDER_PRICE_3,
-                                                   CONF_PRICE_TIP, CONF_PRICE_PEAK, CONF_PRICE_FLAT, CONF_PRICE_VALLEY,
-                                                   CONF_AVERAGE_PRICE, CONF_YEAR_LADDER_START]:
-                                            if key in entry.data:
-                                                entry_data[key] = entry.data[key]
-                                        
-                                        self.hass.config_entries.async_update_entry(entry, data=entry_data)
-                                        
-                                        # 重新加载集成以应用新的认证信息
-                                        await self.hass.config_entries.async_reload(entry.entry_id)
-                                        
-                                        return self.async_abort(reason="reauth_successful")
-                                
-                                # 新配置流程:进入户号选择或计费模式配置
-                                if len(power_user_list or []) > 1:
+                                if not power_user_list:
+                                    errors["base"] = "no_power_account"
+                                else:
+                                    _LOGGER.warning("[扫码登录] 成功获取 %d 个户号,跳过电费数据验证", len(power_user_list))
+                                    
+                                    # 登录成功(bizrt.token已获取)，保存所有关键值到 Store(全局变量方式)
+                                    await self._save_auth_store(
+                                        token=self._auth_token,
+                                        user_token=str(user_token),
+                                        user_id=self._api.user_id,
+                                        access_token=tokens.get("access_token"),
+                                        refresh_token=tokens.get("refresh_token"),
+                                        power_user_list=power_user_list,
+                                        login_account=getattr(self._api, "_login_account", None),
+                                        user_info=getattr(self._api, "_user_info", None),
+                                    )
+                                    entry_data = {
+                                        CONF_AUTH_TOKEN: self._auth_token,
+                                        CONF_LOGIN_METHOD: self._login_method,
+                                        CONF_USER_TOKEN: str(user_token),
+                                        CONF_USER_ID: self._api.user_id,
+                                        CONF_ACCESS_TOKEN: tokens.get("access_token"),
+                                        CONF_REFRESH_TOKEN: tokens.get("refresh_token"),
+                                        CONF_POWER_USER_LIST: power_user_list,
+                                        CONF_LOGIN_ACCOUNT: getattr(self._api, "_login_account", None),
+                                    }
+                                    
+                                    # 如果是 reauth 流程,使用原有的户号选择
+                                    if self.context.get("source") == SOURCE_REAUTH:
+                                        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+                                        if entry:
+                                            selected_index = entry.data.get(CONF_SELECTED_ACCOUNT_INDEX, 0)
+                                            entry_data[CONF_SELECTED_ACCOUNT_INDEX] = selected_index
+                                            
+                                            # 保留原有的计费配置
+                                            for key in [CONF_BILLING_MODE, CONF_LADDER_LEVEL_1, CONF_LADDER_LEVEL_2,
+                                                       CONF_LADDER_PRICE_1, CONF_LADDER_PRICE_2, CONF_LADDER_PRICE_3,
+                                                       CONF_PRICE_TIP, CONF_PRICE_PEAK, CONF_PRICE_FLAT, CONF_PRICE_VALLEY,
+                                                       CONF_AVERAGE_PRICE, CONF_YEAR_LADDER_START]:
+                                                if key in entry.data:
+                                                    entry_data[key] = entry.data[key]
+                                            
+                                            self.hass.config_entries.async_update_entry(entry, data=entry_data)
+                                            
+                                            # 重新加载集成以应用新的认证信息
+                                            await self.hass.config_entries.async_reload(entry.entry_id)
+                                            
+                                            return self.async_abort(reason="reauth_successful")
+                                    
+                                    # 新配置流程:进入户号选择或计费模式配置
+                                    if len(power_user_list) > 1:
+                                        self._pending_entry_data = {**entry_data, "_title": "Shaobor_95598 (QR)"}
+                                        return await self.async_step_select_account()
+                                    entry_data[CONF_SELECTED_ACCOUNT_INDEX] = 0
                                     self._pending_entry_data = {**entry_data, "_title": "Shaobor_95598 (QR)"}
-                                    return await self.async_step_select_account()
-                                entry_data[CONF_SELECTED_ACCOUNT_INDEX] = 0
-                                self._pending_entry_data = {**entry_data, "_title": "Shaobor_95598 (QR)"}
-                                return await self.async_step_billing_mode()
+                                    return await self.async_step_billing_mode()
                     elif res.get("status") == "WAITING":
                         errors["base"] = "qr_not_scanned"
                     else:
@@ -1580,12 +1576,8 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
                         except Exception:
                             errors["base"] = "power_user_list_failed"
                         else:
-                            try:
-                                await self._api.get_electricity_data()
-                            except StateGridAuthError:
-                                errors["base"] = "login_verify_failed"
-                            except Exception:
-                                errors["base"] = "login_verify_failed"
+                            if not power_user_list:
+                                errors["base"] = "no_power_account"
                             else:
                                 # 登录成功(bizrt.token已获取)，保存所有关键值到 Store(全局变量方式)
                                 await self._save_auth_store(
@@ -1632,7 +1624,7 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
                                         return self.async_abort(reason="reauth_successful")
                                 
                                 # 新配置流程:进入户号选择或计费模式配置
-                                if len(power_user_list or []) > 1:
+                                if len(power_user_list) > 1:
                                     self._pending_entry_data = {**entry_data, "_title": f"Shaobor_95598 ({self._phone_number})"}
                                     return await self.async_step_select_account()
                                 entry_data[CONF_SELECTED_ACCOUNT_INDEX] = 0

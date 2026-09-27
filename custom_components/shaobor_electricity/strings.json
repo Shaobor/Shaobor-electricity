@@ -106,6 +106,7 @@
             "slider_failed": "滑块识别失败，请重试或使用扫码登录。",
             "captcha_parse_failed": "验证码数据解析失败，请重试。",
             "login_verify_failed": "登录验证失败，无法获取电费数据。请重试或重新扫码。",
+            "no_power_account": "登录成功，但未检测到绑定的用电户号。请先在网上国网 App 中绑定户号后再进行配置。",
             "power_user_list_failed": "获取户号列表失败，请重试。",
             "login_error": "登录失败（详细原因见下方说明）",
             "invalid_code": "短信验证码无效。",

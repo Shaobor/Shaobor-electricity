@@ -25,80 +25,6 @@ class LoginMixin(BaseStateGridApi):
         # 密码需 MD5 加密（与 Node-RED 流程一致，见 flows.json 提示）
         password_md5 = hashlib.md5(password.encode("utf-8")).hexdigest().upper()
 
-        # 注释掉滑块相关接口请求
-        # # Step 1: encrypt lf05 (account+password)
-        # encrypt_lf05 = await self._secure_post_encrypt(
-        #     f"{ENCRYPT_API_URL}/encrypt/lf05",
-        #     {
-        #         "token": self._encrypt_token,
-        #         "keyCode": self._key_code,
-        #         "uuid": self._uuid,
-        #         "publicKey": self._public_key,
-        #         "account": username,
-        #         "password": password_md5,
-        #     },
-        # )
-
-        # # Step 2: call 95598 c44/f05 to get captcha
-        # for attempt in range(2):
-        #     headers_f05 = self._get_sgcc_headers(str(encrypt_lf05.get("timestamp", "")))
-        #     payload_f05 = {
-        #         "data": encrypt_lf05.get("data"),
-        #         "skey": encrypt_lf05.get("skey"),
-        #         "client_id": encrypt_lf05.get("client_id"),
-        #         "timestamp": encrypt_lf05.get("timestamp"),
-        #     }
-        #     async with self._session.post(
-        #         "https://www.95598.cn/api/osg-web0004/open/c44/f05",
-        #         json=payload_f05,
-        #         headers=headers_f05,
-        #         timeout=REQUEST_TIMEOUT,
-        #     ) as resp:
-        #         resp.raise_for_status()
-        #         text_f05 = await resp.text()
-
-        #     raw_f05 = self._parse_sgcc_response(text_f05)
-        #     _LOGGER.debug("[登录] c44/f05 第%d次响应: %s", attempt + 1, raw_f05)
-            
-        #     # 检查是否有业务错误码且需要重试
-        #     if isinstance(raw_f05, dict):
-        #         code_f05 = raw_f05.get("code")
-        #         if code_f05 == "GB010" and attempt == 0:
-        #             _LOGGER.warning("[登录] 检测到 GB010 错误，可能是加密会话失效，尝试强制重置 UUID 并初始化...")
-        #             self._key_code = "" # 清除旧的 keyCode 触发重新初始化
-        #             await self.initialize(force_new_uuid=True)
-                    
-        #             # 重新加密 lf05
-        #             encrypt_lf05 = await self._secure_post_encrypt(
-        #                 f"{ENCRYPT_API_URL}/encrypt/lf05",
-        #                 {
-        #                     "token": self._encrypt_token,
-        #                     "keyCode": self._key_code,
-        #                     "uuid": self._uuid,
-        #                     "publicKey": self._public_key,
-        #                     "account": username,
-        #                     "password": password_md5,
-        #                 },
-        #             )
-        #             continue # 进行第二次尝试
-                
-        #         # 如果不是 GB010 或者已经是第二次尝试，则按常规处理业务错误
-        #         self._check_and_raise_business_error(raw_f05, "c44/f05")
-
-        #     encrypted_f05 = self._get_encrypted_data(raw_f05) or (
-        #         text_f05.strip() if self._is_likely_encrypted(text_f05) else ""
-        #     )
-        #     if encrypted_f05:
-        #         # 提取到加密数据，不再重试
-        #         break
-            
-        #     if attempt == 1:
-        #         # 如果第二次尝试仍然没有加密数据，则抛出异常
-        #         raise StateGridAuthError(f"c44/f05 响应无法解析，结构: {type(raw_f05).__name__}")
-
-        # decrypted_captcha = await self._decrypt_to_data(encrypted_f05)
-        # ... (此处省略大量的验证码识别逻辑) ...
-        
         # === 两步走登录流程 ===
         
         # 1. 第一步：预校验 (Pre-validation)
@@ -171,8 +97,6 @@ class LoginMixin(BaseStateGridApi):
             headers_f06_final["Cookie"] = cookie_main
             _LOGGER.debug("[登录] 发送 Cookie: %s", cookie_main)
 
-        # 增加 deviceTokenTX 字段 (参考 demo 脚本)
-        headers_f06_final["deviceTokenTX"] = "v2:P5eYxFNxHFaOie1b8MaqwOeoTAoUA+Dj5D5sJP4DcqhS1PZGW5AP4Mm76j1QBCXvBu6JzB5QWkT564fZUDHO+6lOvYiHkF1MwU4DD6WPyPfcBKxwLUNLJkoF+93PNbpDnyl16hZ54bWcSLIHwIvo/99Y/ch0kbH310Zm/u3yre5bbozKW8PABmoHiUqSkhTxIuXc65rcQ4Mxn9VsSkaRhSjD3XibgN4psb4NBmmvo9mF+tLvzRnOBSAZ3SmhJcoZ95erwIdv6v25P2SoTxJXpEEk8w=="
         
         payload_f06_final = {
             "data": encrypt_lf06_final.get("data"),
@@ -643,22 +567,14 @@ class LoginMixin(BaseStateGridApi):
         return {"status": "WAITING"}
 
     async def login_with_sms_step1(self, phone: str) -> dict[str, Any]:
-        """发送短信验证码.
-        
-        Args:
-            phone: 手机号码
-            
-        Returns:
-            {"success": True}
-        """
+        """发送短信验证码 (两步走：预校验 -> 模拟滑块延迟 -> 正式发送)."""
         # 强制重置会话，防止验证失败的状态带入新验证周期
         self._key_code = ""
         await self.initialize(force_new_uuid=True)
         
-        _LOGGER.info("[短信登录] 步骤1: 发送验证码到 %s", phone)
-        
-        # Step 1: 加密手机号 (使用 c8f04 加密接口)
-        encrypt_data = await self._secure_post_encrypt(
+        # 1. 第一步：预校验 (Pre-validation, isInit=True)
+        _LOGGER.warning("[短信登录] 步骤 1/2: 发送短信预校验请求 (isInit=True)")
+        encrypt_init = await self._secure_post_encrypt(
             f"{ENCRYPT_API_URL}/encrypt/c8f04",
             {
                 "token": self._encrypt_token,
@@ -668,65 +584,88 @@ class LoginMixin(BaseStateGridApi):
                 "account": phone,
                 "sendType": "0",
                 "businessType": "login",
+                "isInit": True,
             },
         )
         
-        # Step 2: 调用 95598 API 发送短信 (osg-open-uc0001/member/c8/f04 端点)
-        for attempt in range(2):
-            headers = self._get_sgcc_headers(str(encrypt_data.get("timestamp", "")))
-            payload = {
-                "data": encrypt_data.get("data"),
-                "skey": encrypt_data.get("skey"),
-                "timestamp": encrypt_data.get("timestamp"),
-            }
-            
-            async with self._session.post(
-                "https://www.95598.cn/api/osg-open-uc0001/member/arg/010360007",
-                json=payload,
-                headers=headers,
-                timeout=REQUEST_TIMEOUT,
-            ) as resp:
-                resp.raise_for_status()
-                text = await resp.text()
-            
-            raw_response = self._parse_sgcc_response(text)
-            _LOGGER.debug("[短信登录] c8/f04 第%d次响应: %s", attempt + 1, raw_response)
-            
-            if isinstance(raw_response, dict):
-                code = raw_response.get("code")
-                if code == "GB010" and attempt == 0:
-                    _LOGGER.warning("[短信登录] 检测到 GB010 错误，自动尝试强制重置 UUID 并初始化...")
-                    self._key_code = ""
-                    await self.initialize(force_new_uuid=True)
-                    
-                    # 重新加密 c8f04
-                    encrypt_data = await self._secure_post_encrypt(
-                        f"{ENCRYPT_API_URL}/encrypt/c8f04",
-                        {
-                            "token": self._encrypt_token,
-                            "keyCode": self._key_code,
-                            "uuid": self._uuid,
-                            "publicKey": self._public_key,
-                            "account": phone,
-                            "sendType": "0",
-                            "businessType": "login",
-                        },
-                    )
-                    continue
-                
-                self._check_and_raise_business_error(raw_response, "c8/f04")
-
-            encrypted_response = self._get_encrypted_data(raw_response) or (
-                text.strip() if self._is_likely_encrypted(text) else ""
-            )
-            if encrypted_response:
-                break
-            
-            if attempt == 1:
-                raise StateGridAuthError(f"发送短信验证码请求异常，未返回加密数据 (c8/f04)。响应: {str(raw_response)[:200]}")
+        headers_init = self._get_sgcc_headers(
+            str(encrypt_init.get("timestamp", "")), 
+            include_device_token=True
+        )
+        payload_init = {
+            "data": encrypt_init.get("data"),
+            "skey": encrypt_init.get("skey"),
+            "timestamp": encrypt_init.get("timestamp"),
+        }
         
+        current_cookies = ""
+        async with self._session.post(
+            "https://www.95598.cn/api/osg-open-uc0001/member/arg/010360007",
+            json=payload_init,
+            headers=headers_init,
+            timeout=REQUEST_TIMEOUT,
+        ) as resp:
+            resp.raise_for_status()
+            text_init = await resp.text()
+            if "Set-Cookie" in resp.headers:
+                current_cookies = resp.headers["Set-Cookie"]
+                _LOGGER.debug("[短信登录] 捕获到 Cookie: %s", current_cookies)
+                
+        _LOGGER.debug("[短信登录] 预校验响应: %s", text_init)
+        
+        # 2. 中间等待 2 秒 (模拟滑块风控延迟)
+        _LOGGER.warning("[短信登录] 正在等待 2 秒 (模拟滑块风控延迟)...")
+        await asyncio.sleep(2.0)
+        
+        # 3. 第二步：正式发送短信 (Final Send, isInit=False)
+        _LOGGER.warning("[短信登录] 步骤 2/2: 发送正式短信请求 (isInit=False)")
+        encrypt_final = await self._secure_post_encrypt(
+            f"{ENCRYPT_API_URL}/encrypt/c8f04",
+            {
+                "token": self._encrypt_token,
+                "keyCode": self._key_code,
+                "uuid": self._uuid,
+                "publicKey": self._public_key,
+                "account": phone,
+                "sendType": "0",
+                "businessType": "login",
+                "isInit": False,
+            },
+        )
+        
+        headers_final = self._get_sgcc_headers(
+            str(encrypt_final.get("timestamp", "")), 
+            include_device_token=True
+        )
+        if current_cookies:
+            headers_final["Cookie"] = current_cookies.split(';', 1)[0]
+            
+        payload_final = {
+            "data": encrypt_final.get("data"),
+            "skey": encrypt_final.get("skey"),
+            "timestamp": encrypt_final.get("timestamp"),
+        }
+        
+        async with self._session.post(
+            "https://www.95598.cn/api/osg-open-uc0001/member/arg/010360007",
+            json=payload_final,
+            headers=headers_final,
+            timeout=REQUEST_TIMEOUT,
+        ) as resp:
+            resp.raise_for_status()
+            text_final = await resp.text()
+            
+        raw_response = self._parse_sgcc_response(text_final)
+        _LOGGER.debug("[短信登录] 正式发送短信响应: %s", raw_response)
+        
+        if isinstance(raw_response, dict):
+            self._check_and_raise_business_error(raw_response, "010360007")
+            
+        encrypted_response = self._get_encrypted_data(raw_response) or (
+            text_final.strip() if self._is_likely_encrypted(text_final) else ""
+        )
         if not encrypted_response:
-            raise StateGridAuthError("发送短信验证码失败：未返回加密数据")
+            raise StateGridAuthError(f"发送短信验证码请求异常，未返回加密数据 (010360007)。响应: {str(raw_response)[:200]}")
         
         # 解密响应
         decrypted = await self._decrypt_to_data(encrypted_response)
@@ -795,7 +734,11 @@ class LoginMixin(BaseStateGridApi):
         
         # Step 2: 调用 95598 API 验证短信 (osg-uc0013/member/c4/f02 端点)
         for attempt in range(2):
-            headers = self._get_sgcc_headers(str(encrypt_data.get("timestamp", "")))
+            headers = self._get_sgcc_headers(
+                str(encrypt_data.get("timestamp", "")), 
+                include_device_token=True
+            )
+            headers["sessionId"] = f"web{encrypt_data.get('timestamp')}"
             payload = {
                 "data": encrypt_data.get("data"),
                 "skey": encrypt_data.get("skey"),

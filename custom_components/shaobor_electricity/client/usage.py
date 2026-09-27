@@ -325,13 +325,21 @@ class UsageMixin(BaseStateGridApi):
             decrypted = await self._decrypt_to_data(encrypted_data)
             return self._extract_maintenance_notices(decrypted)
 
-        # 区县供电单位为空时回退市级编号：95598 网页公告查询采用市级
-        # 供电公司编号与区县 areaNo 的组合。
+        # 严格使用户号匹配的供电单位编号与区县代码查询，不回退到市级
         query_org_no = match.org_code
         notices = await _query_notices(query_org_no)
-        if not notices and match.city_org_code and match.city_org_code != query_org_no:
-            query_org_no = match.city_org_code
-            notices = await _query_notices(query_org_no)
+
+        # 严格按照户号所属区县筛选，排除其他区县公告
+        district = match.district_name
+        if notices and district:
+            district_key = district.rstrip("区").rstrip("县").rstrip("市")
+            filtered_notices = []
+            for n in notices:
+                p_range = str(n.get("powerRange") or n.get("powerArea") or n.get("poweroffAddr") or "")
+                n_org = str(n.get("orgNo") or "")
+                if (n_org and n_org.startswith(match.org_code)) or (district in p_range) or (district_key and district_key in p_range):
+                    filtered_notices.append(n)
+            notices = filtered_notices
 
         return {
             "notices": notices,
