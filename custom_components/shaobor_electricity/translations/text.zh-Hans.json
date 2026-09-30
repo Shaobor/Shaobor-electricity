@@ -1,0 +1,12 @@
+{
+    "entity": {
+        "text": {
+            "shaobor_electricity__sms_code": {
+                "name": "短信验证码"
+            },
+            "shaobor_electricity__sms_phone": {
+                "name": "短信接收手机号"
+            }
+        }
+    }
+}

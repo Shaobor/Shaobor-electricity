@@ -163,6 +163,24 @@
             "shaobor_electricity__data_mode": {
                 "name": "电费数据模式"
             }
+        },
+        "switch": {
+            "shaobor_electricity__auto_login": {
+                "name": "掉线自动登录"
+            }
+        },
+        "text": {
+            "shaobor_electricity__sms_code": {
+                "name": "短信验证码"
+            },
+            "shaobor_electricity__sms_phone": {
+                "name": "短信接收手机号"
+            }
+        },
+        "button": {
+            "shaobor_electricity__sms_login": {
+                "name": "短信登录"
+            }
         }
     }
 }

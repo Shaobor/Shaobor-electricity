@@ -1,0 +1,9 @@
+{
+    "entity": {
+        "button": {
+            "shaobor_electricity__sms_login": {
+                "name": "SMS login"
+            }
+        }
+    }
+}

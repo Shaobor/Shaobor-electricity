@@ -1,0 +1,12 @@
+{
+    "entity": {
+        "text": {
+            "shaobor_electricity__sms_code": {
+                "name": "SMS verification code"
+            },
+            "shaobor_electricity__sms_phone": {
+                "name": "SMS phone number"
+            }
+        }
+    }
+}
