@@ -13,6 +13,7 @@ except ImportError:
     from homeassistant.data_entry_flow import FlowResult  # type: ignore[import-untyped]
 from homeassistant.helpers.selector import SelectSelector, SelectSelectorConfig, SelectSelectorMode  # type: ignore[import-untyped]
 from .data_importer import validate_import_json
+from ..auto_login.const import CONF_AUTO_LOGIN
 
 from ..const import (
     DOMAIN,
@@ -72,6 +73,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         """Manage the options."""
         if user_input is not None:
             billing_mode = user_input[CONF_BILLING_MODE]
+            # 掉线短信自动登录开关：本步输入不会传递到后续计费配置步骤，就地落库
+            await self._async_save_auto_login(user_input.get(CONF_AUTO_LOGIN))
             # 根据计费模式跳转到对应的价格配置页面
             if billing_mode == BILLING_STANDARD_YEAR_LADDER_TOU:
                 return await self.async_step_year_ladder_tou_config()
@@ -113,6 +116,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             {"value": BILLING_WIDGET_TOKEN, "label": "📱 小组件 Token 获取"},
         ]
         
+        current_auto_login = bool(self.config_entry.data.get(CONF_AUTO_LOGIN, False))
+
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
@@ -122,10 +127,28 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             options=billing_options,
                             mode=SelectSelectorMode.LIST,
                         )
-                    )
+                    ),
+                    vol.Optional(CONF_AUTO_LOGIN, default=current_auto_login): bool,
                 }
             ),
         )
+
+    async def _async_save_auto_login(self, value: Any) -> None:
+        """保存「掉线短信自动登录」开关状态。
+
+        存 ConfigEntry.data 而非 options：现有选项流每一步收尾都是
+        async_create_entry(title="", data={})，会把 options 整体清空。
+        """
+        if value is None:
+            return
+        enabled = bool(value)
+        if enabled == bool(self.config_entry.data.get(CONF_AUTO_LOGIN, False)):
+            return
+        self.hass.config_entries.async_update_entry(
+            self.config_entry,
+            data={**self.config_entry.data, CONF_AUTO_LOGIN: enabled},
+        )
+        _LOGGER.info("[选项流程] 掉线短信自动登录已%s", "开启" if enabled else "关闭")
 
     async def _async_save_price_to_db(self, config: dict[str, Any]):
         """将电价配置保存到数据库."""

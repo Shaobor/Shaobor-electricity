@@ -33,11 +33,12 @@ from .const import (
 )
 from .client import Shaobor95598ApiClient, StateGridAuthError, STORAGE_KEY, STORAGE_VERSION
 from .helpers.division_mapping import async_load_division_mapping
+from .auto_login import async_setup_auto_login
 from .storage import AuthStore
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[str] = ["sensor"]
+PLATFORMS: list[str] = ["sensor", "switch", "text", "button"]
 CARD_URL = f"/{DOMAIN}/electricity-info-card.js"
 CARD_PATH = Path(__file__).parent / "www" / "electricity-info-card.js"
 
@@ -183,6 +184,9 @@ async def _async_setup_mobile_ios_entry(
         "api": api,
         "coordinator": coordinator,
     }
+
+    # 掉线短信自动登录：switch/text 实体在平台转发时要能取到管理器，须先装配
+    await async_setup_auto_login(hass, entry, coordinator)
 
     # 挂载数据库日志处理器（与网页版一致，防重复添加）
     from .helpers.database import DBLogHandler
@@ -401,6 +405,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "api": api,
         "coordinator": coordinator,
     }
+
+    # 掉线短信自动登录：switch/text 实体在平台转发时要能取到管理器，须先装配
+    await async_setup_auto_login(hass, entry, coordinator)
 
     # 挂载数据库日志处理器
     from .helpers.database import DBLogHandler

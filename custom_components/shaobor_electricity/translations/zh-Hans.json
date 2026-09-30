@@ -396,7 +396,8 @@
                 "title": "配置计费模式",
                 "description": "请选择您所在地区的电费计费模式。",
                 "data": {
-                    "billing_mode": "计费模式"
+                    "billing_mode": "计费模式",
+                    "auto_login": "掉线短信自动登录（离线时自动下发短信验证码）"
                 }
             },
             "charging_pile_config": {
@@ -733,6 +734,24 @@
             },
             "shaobor_electricity__payment_records": {
                 "name": "缴费记录"
+            }
+        },
+        "switch": {
+            "shaobor_electricity__auto_login": {
+                "name": "掉线自动登录"
+            }
+        },
+        "text": {
+            "shaobor_electricity__sms_code": {
+                "name": "短信验证码"
+            },
+            "shaobor_electricity__sms_phone": {
+                "name": "短信接收手机号"
+            }
+        },
+        "button": {
+            "shaobor_electricity__sms_login": {
+                "name": "短信登录"
             }
         }
     }

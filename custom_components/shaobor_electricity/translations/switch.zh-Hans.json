@@ -1,0 +1,9 @@
+{
+    "entity": {
+        "switch": {
+            "shaobor_electricity__auto_login": {
+                "name": "掉线自动登录"
+            }
+        }
+    }
+}
