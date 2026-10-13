@@ -4537,14 +4537,14 @@ class ElectricityInfoCard extends HTMLElement {
 
         // 显示卡片信息（字体已调小）
         console.log(
-          '%c⚡electricity-info-card\n%cVersion 4.1.3 ｜  ECharts: ' + echartsSource,
+          '%c⚡electricity-info-card\n%cVersion 4.1.4 ｜  ECharts: ' + echartsSource,
           `background: #ff5722; color: white; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 12px; font-family: monospace; line-height: 1.3; border-radius: 3px 3px 0 0;`,
           `background: white; color: #ff5722; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 11px; font-family: monospace; line-height: 1.3; border-radius: 0 0 3px 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);`
         );
       }).catch(err => {
         // 如果ECharts加载失败，仍然显示调试信息
         console.log(
-          '%c⚡electricity-info-card\n%cVersion 4.1.3 ｜  ECharts: 加载失败',
+          '%c⚡electricity-info-card\n%cVersion 4.1.4 ｜  ECharts: 加载失败',
           `background: #ff5722; color: white; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 12px; font-family: monospace; line-height: 1.3; border-radius: 3px 3px 0 0;`,
           `background: white; color: #ff5722; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 11px; font-family: monospace; line-height: 1.3; border-radius: 0 0 3px 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);`
         );
@@ -16774,6 +16774,16 @@ class ElectricityInfoCard extends HTMLElement {
                                /_(standard_entity|dian_wang_biao_zhun_shi_ti)$/i.test(eid);
         if (!isGridStandard) continue;
 
+        // 排除非主实体的子传感器
+        if (friendlyName.includes('实时电费') || friendlyName.includes('预计可用') ||
+            friendlyName.includes('最后更新') || friendlyName.includes('缴费记录') ||
+            friendlyName.includes('用户信息') || friendlyName.includes('每日电量') ||
+            friendlyName.includes('每月电量') || friendlyName.includes('每年电量') ||
+            friendlyName.includes('电费单价') || friendlyName.includes('检修公告') ||
+            friendlyName.includes('数据模式')) {
+          continue;
+        }
+
         defaultEntity = eid;
         const m = eid.match(/\d{10,16}/) || friendlyName.match(/\d{10,16}/);
         const consNo = m ? m[0] : '';
@@ -16817,6 +16827,7 @@ class ElectricityInfoCardEditor extends HTMLElement {
     this._expandedAdv = {}; // 记录每个卡槽高级映射展开状态
     this._showThemeAdv = false;
     this._rendered = false;
+    this._isEditing = false;
   }
 
   _reindexMulticlass(mc) {
@@ -16855,9 +16866,16 @@ class ElectricityInfoCardEditor extends HTMLElement {
   }
 
   setConfig(config) {
+    const prevCount = Object.keys(this._config.multiclass || {}).length;
     this._config = config ? JSON.parse(JSON.stringify(config)) : {};
     this._config.multiclass = this._reindexMulticlass(this._config.multiclass);
-    if (!this._rendered) {
+    const newCount = Object.keys(this._config.multiclass || {}).length;
+
+    const active = this.shadowRoot && this.shadowRoot.activeElement;
+    const isUserTyping = this._isEditing && active && (active.tagName === 'INPUT' || active.tagName === 'SELECT' || active.tagName === 'TEXTAREA');
+
+    // 打开编辑面板或外部配置更新时，一律完整执行 render 立即加载所有配置与绑定信息；仅在用户正于表单输入时走 updateInputs 保持光标
+    if (!this._rendered || !isUserTyping || prevCount !== newCount) {
       this.render();
     } else {
       this._updateInputs();
@@ -16865,8 +16883,10 @@ class ElectricityInfoCardEditor extends HTMLElement {
   }
 
   set hass(hass) {
+    const hadHass = !!this._hass;
     this._hass = hass;
-    if (!this._rendered) {
+    // 首次获得 hass 实例时必须触发 render，确保能够立即根据 hass.states 识别户号与关联实体
+    if (!this._rendered || !hadHass) {
       this.render();
     } else {
       this._updateDatalists();
@@ -16955,17 +16975,48 @@ class ElectricityInfoCardEditor extends HTMLElement {
     } else {
       keys.forEach((k) => {
         const item = mc[k] || {};
-        const entity = typeof item.entity === 'string' ? item.entity : (item.entity && item.entity.entity || '');
+        let entity = typeof item.entity === 'string' ? item.entity : (item.entity && item.entity.entity || '');
         let jiaofei = typeof item.jiaofei_entity === 'string' ? item.jiaofei_entity : (item.pay_entity && item.pay_entity.entity || '');
         let notice = item.notice || '';
         let online = item.online || '';
 
-        // 如果用户尚未显式配置派生实体，自动在前端为其关联匹配
+        // 如果当前唯一账户未配置实体，但系统扫描到了标准实体，首次加载自动为用户预填第1个标准户号及派生实体
+        if (!entity && list.length === 0 && keys.length === 1 && this._hass) {
+          const disc = this._discoveredAccounts();
+          if (disc.length > 0) {
+            entity = disc[0].entity;
+            item.entity = disc[0].entity;
+            item.info = disc[0].consNo ? `户号 ${disc[0].consNo}` : '我的用电';
+            item.jiaofei_entity = disc[0].jiaofei_entity || '';
+            item.notice = disc[0].notice_entity || '';
+            item.online = disc[0].online_entity || '';
+            jiaofei = item.jiaofei_entity;
+            notice = item.notice;
+            online = item.online;
+          }
+        }
+
+        // 如果配置了主实体，自动关联派生实体（缴费记录、停电公告、在线状态）并写入当前内存配置
         if (entity && (!jiaofei || !notice || !online) && this._hass) {
           const derived = ElectricityInfoCard.findDerivedEntities(this._hass, entity);
-          if (!jiaofei && derived.jiaofei_entity) jiaofei = derived.jiaofei_entity;
-          if (!notice && derived.notice) notice = derived.notice;
-          if (!online && derived.online) online = derived.online;
+          if (!jiaofei && derived.jiaofei_entity) {
+            jiaofei = derived.jiaofei_entity;
+            item.jiaofei_entity = derived.jiaofei_entity;
+          }
+          if (!notice && derived.notice) {
+            notice = derived.notice;
+            item.notice = derived.notice;
+          }
+          if (!online && derived.online) {
+            online = derived.online;
+            item.online = derived.online;
+          }
+        }
+
+        // 如果 info 仍为默认名称且能识别到户号，自动友好同步显示户号
+        if (entity && (!item.info || item.info === '我的用电' || /^账户\s*\d+$/.test(String(item.info).trim()))) {
+          const m = entity.match(/\d{10,16}/);
+          if (m) item.info = `户号 ${m[0]}`;
         }
 
         list.push({
@@ -17048,10 +17099,12 @@ class ElectricityInfoCardEditor extends HTMLElement {
     const mc = { ...(newConfig.multiclass || {}) };
     const list = this._getAccountList();
 
-    // 严格检查是否已经添加过此实体，避免任何重复添加
+    // 严格检查是否已经添加过此实体，避免任何重复添加（支持实体ID和户号双重判定）
     const alreadyExists = Object.values(mc).some(item => {
       const e = typeof item.entity === 'string' ? item.entity : (item.entity && item.entity.entity);
-      return e === disc.entity;
+      if (e === disc.entity) return true;
+      if (disc.consNo && e && e.includes(disc.consNo)) return true;
+      return false;
     });
     if (alreadyExists) return;
 
@@ -17161,6 +17214,10 @@ class ElectricityInfoCardEditor extends HTMLElement {
     if (titleInp && titleInp !== active) {
       titleInp.value = this._title;
     }
+    const themeSelect = this.shadowRoot.querySelector('select[data-target="theme-select"]');
+    if (themeSelect && themeSelect !== active) {
+      themeSelect.value = ['light', 'time', 'phone', 'darkgray', 'black', 'transparent', 'power'].includes(this._theme) ? this._theme : 'custom';
+    }
     const themeInp = this.shadowRoot.querySelector('input[data-target="theme"]');
     if (themeInp && themeInp !== active) {
       themeInp.value = this._theme;
@@ -17169,6 +17226,33 @@ class ElectricityInfoCardEditor extends HTMLElement {
     if (darkThemeInp && darkThemeInp !== active) {
       darkThemeInp.value = this._darkLightTheme;
     }
+
+    const accounts = this._getAccountList();
+    accounts.forEach(acc => {
+      const card = this.shadowRoot.querySelector(`.account-card-item[data-key="${acc.key}"]`);
+      if (!card) return;
+      ['info', 'utility_type', 'entity', 'jiaofei_entity', 'notice', 'notice_attention', 'online'].forEach(field => {
+        const inp = card.querySelector(`[data-field="${field}"]`);
+        if (inp && inp !== active) {
+          inp.value = acc[field] || '';
+        }
+      });
+      // 同步更新就绪/待配置状态徽标
+      const statusBadge = card.querySelector('.badge-status-ready, .badge-status-empty');
+      if (statusBadge) {
+        statusBadge.className = acc.entity ? 'badge-status-ready' : 'badge-status-empty';
+        statusBadge.textContent = acc.entity ? '✓ 已就绪' : '待配置';
+      }
+      // 同步更新高级映射状态指示栏
+      const advSummary = card.querySelector('.adv-status-summary');
+      if (advSummary && acc.entity) {
+        advSummary.innerHTML = `
+          <span class="status-item ${acc.jiaofei_entity ? 'ok' : 'pending'}">${acc.jiaofei_entity ? '✓ 缴费已绑定' : '缴费未绑定'}</span>
+          <span class="status-item ${acc.notice ? 'ok' : 'pending'}">${acc.notice ? '✓ 公告已绑定' : '公告未绑定'}</span>
+          <span class="status-item ${acc.online ? 'ok' : 'pending'}">${acc.online ? '✓ 在线已绑定' : '在线未绑定'}</span>
+        `;
+      }
+    });
   }
 
   render() {
@@ -17179,12 +17263,24 @@ class ElectricityInfoCardEditor extends HTMLElement {
     const themeList = this._getAllEntities('input_select');
 
     const accounts = this._getAccountList();
-    const existingEntities = new Set(accounts.map(a => a.entity).filter(Boolean));
+    const existingEntities = new Set();
+    const existingConsNos = new Set();
+    accounts.forEach(a => {
+      if (a.entity) {
+        existingEntities.add(a.entity);
+        const m = a.entity.match(/\d{10,16}/);
+        if (m) existingConsNos.add(m[0]);
+      }
+      if (a.info) {
+        const m = a.info.match(/\d{10,16}/);
+        if (m) existingConsNos.add(m[0]);
+      }
+    });
 
     let quickFillHtml = '';
     if (discovered.length > 0) {
       const btns = discovered.map(d => {
-        const isAdded = existingEntities.has(d.entity);
+        const isAdded = existingEntities.has(d.entity) || (d.consNo && existingConsNos.has(d.consNo));
         return `<button type="button" class="btn-quick-fill ${isAdded ? 'btn-added' : ''}" data-entity="${d.entity}" ${isAdded ? 'disabled' : ''}>
           ${isAdded ? `✓ ${d.label} (已添加)` : `⚡ 快速填入: ${d.label} (电网标准实体)`}
         </button>`;
@@ -17205,6 +17301,7 @@ class ElectricityInfoCardEditor extends HTMLElement {
             <div class="account-card-title">
               <span>⚡ 账户 ${acc.key}</span>
               ${acc.info ? `<span class="badge-info">${acc.info}</span>` : ''}
+              ${acc.entity ? '<span class="badge-status-ready">✓ 已就绪</span>' : '<span class="badge-status-empty">待配置</span>'}
             </div>
             ${accounts.length > 1 ? `<button type="button" class="btn-del" data-key="${acc.key}" title="删除该账户">✕ 删除</button>` : ''}
           </div>
@@ -17231,8 +17328,15 @@ class ElectricityInfoCardEditor extends HTMLElement {
 
           <div class="adv-toggle-bar">
             <button type="button" class="btn-adv-toggle" data-key="${acc.key}">
-              ${isAdvExpanded ? '▾ 收起高级实体映射' : '▸ 展开高级实体映射 (自动绑定缴费 / 停电公告 / 在线状态)'}
+              ${isAdvExpanded ? '▾ 收起高级实体映射' : '▸ 展开高级实体映射 (缴费 / 停电公告 / 在线状态)'}
             </button>
+            ${acc.entity ? `
+              <div class="adv-status-summary">
+                <span class="status-item ${acc.jiaofei_entity ? 'ok' : 'pending'}">${acc.jiaofei_entity ? '✓ 缴费已绑定' : '缴费未绑定'}</span>
+                <span class="status-item ${acc.notice ? 'ok' : 'pending'}">${acc.notice ? '✓ 公告已绑定' : '公告未绑定'}</span>
+                <span class="status-item ${acc.online ? 'ok' : 'pending'}">${acc.online ? '✓ 在线已绑定' : '在线未绑定'}</span>
+              </div>
+            ` : ''}
           </div>
 
           ${isAdvExpanded ? `
@@ -17285,11 +17389,17 @@ class ElectricityInfoCardEditor extends HTMLElement {
         .account-card-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--divider-color, #f1f5f9); padding-bottom: 8px; }
         .account-card-title { font-size: 13px; font-weight: 600; color: var(--primary-text-color, #1e293b); display: flex; align-items: center; gap: 6px; }
         .badge-info { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: #fff7ed; color: #ea580c; border: 1px solid #ffedd5; font-weight: normal; }
+        .badge-status-ready { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; font-weight: normal; }
+        .badge-status-empty { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; font-weight: normal; }
         .account-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
         .form-item { display: flex; flex-direction: column; gap: 4px; }
         .item-label { font-size: 12px; color: var(--secondary-text-color, #64748b); font-weight: 500; }
         .required { color: #ef4444; font-size: 11px; }
-        .adv-toggle-bar { display: flex; }
+        .adv-toggle-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px; }
+        .adv-status-summary { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; }
+        .status-item { padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+        .status-item.ok { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+        .status-item.pending { background: #f1f5f9; color: #94a3b8; border: 1px solid #e2e8f0; }
         .btn-adv-toggle { background: transparent; border: none; color: var(--primary-color, #ff5722); font-size: 12px; font-weight: 500; cursor: pointer; padding: 2px 0; text-align: left; }
         .btn-adv-toggle:hover { text-decoration: underline; }
         .adv-fields-box { background: var(--secondary-background-color, #f8fafc); border: 1px dashed var(--divider-color, #cbd5e1); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
@@ -17510,6 +17620,11 @@ class ElectricityInfoCardEditor extends HTMLElement {
         const field = e.target.dataset.field;
         this._accountChanged(key, field, e.target.value);
       });
+    });
+
+    this.shadowRoot.querySelectorAll('input, select, textarea').forEach(el => {
+      el.addEventListener('focus', () => { this._isEditing = true; });
+      el.addEventListener('blur', () => { setTimeout(() => { this._isEditing = false; }, 200); });
     });
 
     this._rendered = true;
