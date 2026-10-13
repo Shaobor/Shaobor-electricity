@@ -4534,14 +4534,14 @@ class ElectricityInfoCard extends HTMLElement {
 
         // 显示卡片信息（字体已调小）
         console.log(
-          '%c⚡electricity-info-card\n%cVersion 4.0.7 ｜  ECharts: ' + echartsSource,
+          '%c⚡electricity-info-card\n%cVersion 4.1.0 ｜  ECharts: ' + echartsSource,
           `background: #ff5722; color: white; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 12px; font-family: monospace; line-height: 1.3; border-radius: 3px 3px 0 0;`,
           `background: white; color: #ff5722; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 11px; font-family: monospace; line-height: 1.3; border-radius: 0 0 3px 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);`
         );
       }).catch(err => {
         // 如果ECharts加载失败，仍然显示调试信息
         console.log(
-          '%c⚡electricity-info-card\n%cVersion 4.0.7 ｜  ECharts: 加载失败',
+          '%c⚡electricity-info-card\n%cVersion 4.1.0 ｜  ECharts: 加载失败',
           `background: #ff5722; color: white; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 12px; font-family: monospace; line-height: 1.3; border-radius: 3px 3px 0 0;`,
           `background: white; color: #ff5722; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 11px; font-family: monospace; line-height: 1.3; border-radius: 0 0 3px 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);`
         );
@@ -16623,32 +16623,612 @@ class ElectricityInfoCard extends HTMLElement {
       .replace(/"/g, '&quot;');
   }
 
-  // 定义卡片配置架构
-  static getStubConfig() {
+  static async getConfigElement() {
+    return document.createElement('electricity-info-card-editor');
+  }
+
+  static getConfigElement() {
+    return document.createElement('electricity-info-card-editor');
+  }
+
+  // 定义卡片配置架构与默认预填充
+  static getStubConfig(hass, entities, entitiesFallback) {
+    let defaultEntity = '';
+    let jiaofei = '';
+    let notice = '';
+    let online = '';
+    let info = '我的用电';
+    if (hass && hass.states) {
+      for (const [eid, stateObj] of Object.entries(hass.states)) {
+        if (!eid.startsWith('sensor.')) continue;
+        if (/_(jiaofei|notice|online|daily|monthly|yearly|balance|price|last_update|remaining_days)$/.test(eid)) continue;
+        const attrs = stateObj.attributes || {};
+        if (attrs.daylist !== undefined || attrs.monthlist !== undefined || (attrs.friendly_name && attrs.friendly_name.includes('电网标准实体')) || eid.includes('dian_fei_zhang_hu')) {
+          defaultEntity = eid;
+          const baseName = eid.replace(/_standard$/, '');
+          if (hass.states[`${baseName}_jiaofei`]) jiaofei = `${baseName}_jiaofei`;
+          if (hass.states[`${baseName}_notice`]) notice = `${baseName}_notice`;
+          if (hass.states[`${baseName}_online`]) online = `${baseName}_online`;
+          const m = eid.match(/\d{10,16}/);
+          if (m) info = `户号 ${m[0]}`;
+          break;
+        }
+      }
+    }
     return {
-      entity: 'sensor.electricity_info',
-      name: '用电信息',
-      // 主题配置 (不配置时自动根据时间切换: 白天light, 晚上dark)
-      theme: undefined
+      type: 'custom:electricity-info-card',
+      name: '国网电费',
+      multiclass: {
+        '1': {
+          utility_type: 'ele',
+          info: info,
+          entity: defaultEntity,
+          jiaofei_entity: jiaofei,
+          notice: notice,
+          notice_attention: '',
+          online: online
+        }
+      }
     };
   }
 }
 
-// 注册自定义元素 - 使用更安全的注册方式
+/**
+ * ElectricityInfoCardEditor —— 国网用电信息卡片的可视化配置编辑器
+ */
+class ElectricityInfoCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: 'open' });
+    this._config = {};
+    this._hass = null;
+    this._expandedAdv = {}; // 记录每个卡槽高级映射展开状态
+    this._showThemeAdv = false;
+    this._rendered = false;
+  }
+
+  setConfig(config) {
+    this._config = config ? JSON.parse(JSON.stringify(config)) : {};
+    if (!this._config.multiclass || typeof this._config.multiclass !== 'object') {
+      this._config.multiclass = {
+        '1': {
+          utility_type: 'ele',
+          info: '我的用电',
+          entity: ''
+        }
+      };
+    }
+    if (!this._rendered) {
+      this.render();
+    } else {
+      this._updateInputs();
+    }
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (!this._rendered) {
+      this.render();
+    } else {
+      this._updateDatalists();
+    }
+  }
+
+  get _title() {
+    return this._config.name || '';
+  }
+
+  get _theme() {
+    return this._config.theme || '';
+  }
+
+  get _darkLightTheme() {
+    return this._config.dark_light_theme || '';
+  }
+
+  _discoveredAccounts() {
+    if (!this._hass || !this._hass.states) return [];
+    const accounts = new Map();
+    for (const [eid, stateObj] of Object.entries(this._hass.states)) {
+      if (!eid.startsWith('sensor.')) continue;
+      if (/_(jiaofei|notice|online|daily|monthly|yearly|balance|price|last_update|remaining_days)$/.test(eid)) {
+        continue;
+      }
+      const attrs = stateObj.attributes || {};
+      const isGridStandard = attrs.daylist !== undefined ||
+                             attrs.monthlist !== undefined ||
+                             (attrs.friendly_name && attrs.friendly_name.includes('电网标准实体')) ||
+                             eid.includes('dian_fei_zhang_hu');
+      if (isGridStandard) {
+        const m = eid.match(/\d{10,16}/);
+        const consNo = m ? m[0] : eid.replace('sensor.', '');
+        const friendlyName = attrs.friendly_name || '';
+        const label = consNo ? `${consNo}${friendlyName ? ` · ${friendlyName}` : ''}` : eid;
+
+        const baseName = eid.replace(/_standard$/, '');
+        const jiaofei = `${baseName}_jiaofei`;
+        const notice = `${baseName}_notice`;
+        const online = `${baseName}_online`;
+
+        accounts.set(eid, {
+          entity: eid,
+          consNo: consNo,
+          label: label,
+          jiaofei_entity: this._hass.states[jiaofei] ? jiaofei : '',
+          notice_entity: this._hass.states[notice] ? notice : '',
+          online_entity: this._hass.states[online] ? online : ''
+        });
+      }
+    }
+    return Array.from(accounts.values());
+  }
+
+  _getAllEntities(domain) {
+    if (!this._hass || !this._hass.states) return [];
+    return Object.keys(this._hass.states)
+      .filter(eid => !domain || eid.startsWith(domain + '.'))
+      .sort();
+  }
+
+  _getAccountList() {
+    const mc = this._config.multiclass || {};
+    const list = [];
+    const keys = Object.keys(mc);
+    if (keys.length === 0) {
+      list.push({
+        key: '1',
+        utility_type: 'ele',
+        info: '我的用电',
+        entity: '',
+        jiaofei_entity: '',
+        notice: '',
+        notice_attention: '',
+        online: ''
+      });
+    } else {
+      keys.forEach((k) => {
+        const item = mc[k] || {};
+        list.push({
+          key: String(k),
+          utility_type: item.utility_type || 'ele',
+          info: item.info !== undefined ? String(item.info) : '',
+          entity: typeof item.entity === 'string' ? item.entity : (item.entity && item.entity.entity || ''),
+          jiaofei_entity: typeof item.jiaofei_entity === 'string' ? item.jiaofei_entity : (item.pay_entity && item.pay_entity.entity || ''),
+          notice: item.notice || '',
+          notice_attention: item.notice_attention || '',
+          online: item.online || ''
+        });
+      });
+    }
+    return list;
+  }
+
+  _fireConfigChanged() {
+    const event = new CustomEvent('config-changed', {
+      detail: { config: this._config },
+      bubbles: true,
+      composed: true,
+    });
+    this.dispatchEvent(event);
+  }
+
+  _accountChanged(key, field, value) {
+    const newConfig = { ...this._config };
+    const mc = { ...(newConfig.multiclass || {}) };
+    const cur = { ...(mc[key] || { utility_type: 'ele' }) };
+
+    const val = String(value || '').trim();
+    if (field === 'info') {
+      if (!val) delete cur.info;
+      else cur.info = String(value || '');
+    } else if (field === 'utility_type') {
+      cur.utility_type = val || 'ele';
+    } else if (field === 'entity') {
+      if (!val) delete cur.entity;
+      else cur.entity = val;
+    } else if (field === 'jiaofei_entity') {
+      if (!val) delete cur.jiaofei_entity;
+      else cur.jiaofei_entity = val;
+    } else if (field === 'notice') {
+      if (!val) delete cur.notice;
+      else cur.notice = val;
+    } else if (field === 'notice_attention') {
+      if (!val) delete cur.notice_attention;
+      else cur.notice_attention = val;
+    } else if (field === 'online') {
+      if (!val) delete cur.online;
+      else cur.online = val;
+    }
+
+    mc[key] = cur;
+    newConfig.multiclass = mc;
+    this._config = newConfig;
+    this._fireConfigChanged();
+  }
+
+  _addAccount(prefill) {
+    const list = this._getAccountList();
+    let maxIdx = 0;
+    list.forEach(item => {
+      const num = parseInt(item.key, 10);
+      if (!isNaN(num) && num > maxIdx) maxIdx = num;
+    });
+    const nextKey = String(maxIdx + 1);
+
+    const newConfig = { ...this._config };
+    const mc = { ...(newConfig.multiclass || {}) };
+
+    mc[nextKey] = {
+      utility_type: 'ele',
+      info: prefill && prefill.consNo ? `户号 ${prefill.consNo}` : `账户 ${nextKey}`,
+      entity: prefill && prefill.entity ? prefill.entity : '',
+      jiaofei_entity: prefill && prefill.jiaofei_entity ? prefill.jiaofei_entity : '',
+      notice: prefill && prefill.notice_entity ? prefill.notice_entity : '',
+      notice_attention: '',
+      online: prefill && prefill.online_entity ? prefill.online_entity : ''
+    };
+
+    newConfig.multiclass = mc;
+    this._config = newConfig;
+    this._fireConfigChanged();
+    this.render();
+  }
+
+  _removeAccount(key) {
+    const newConfig = { ...this._config };
+    const mc = { ...(newConfig.multiclass || {}) };
+    delete mc[key];
+
+    if (Object.keys(mc).length === 0) {
+      mc['1'] = { utility_type: 'ele', info: '我的用电', entity: '' };
+    }
+
+    newConfig.multiclass = mc;
+    this._config = newConfig;
+    this._fireConfigChanged();
+    this.render();
+  }
+
+  _toggleAdv(key) {
+    this._expandedAdv[key] = !this._expandedAdv[key];
+    this.render();
+  }
+
+  _toggleThemeAdv() {
+    this._showThemeAdv = !this._showThemeAdv;
+    this.render();
+  }
+
+  _updateDatalists() {
+    if (!this.shadowRoot || !this._rendered) return;
+    const sensors = this._getAllEntities('sensor');
+    const dlSensors = this.shadowRoot.querySelector('#dl-sensors');
+    if (dlSensors) {
+      dlSensors.innerHTML = sensors.map(e => `<option value="${e}"></option>`).join('');
+    }
+    const themes = this._getAllEntities('input_select');
+    const dlThemes = this.shadowRoot.querySelector('#dl-themes');
+    if (dlThemes) {
+      dlThemes.innerHTML = themes.map(e => `<option value="${e}"></option>`).join('');
+    }
+  }
+
+  _updateInputs() {
+    if (!this.shadowRoot || !this._rendered) return;
+    const active = this.shadowRoot.activeElement;
+
+    const titleInp = this.shadowRoot.querySelector('input[data-target="name"]');
+    if (titleInp && titleInp !== active) {
+      titleInp.value = this._title;
+    }
+    const themeInp = this.shadowRoot.querySelector('input[data-target="theme"]');
+    if (themeInp && themeInp !== active) {
+      themeInp.value = this._theme;
+    }
+    const darkThemeInp = this.shadowRoot.querySelector('input[data-target="dark_light_theme"]');
+    if (darkThemeInp && darkThemeInp !== active) {
+      darkThemeInp.value = this._darkLightTheme;
+    }
+  }
+
+  render() {
+    if (!this.shadowRoot) return;
+
+    const discovered = this._discoveredAccounts();
+    const sensorList = this._getAllEntities('sensor');
+    const themeList = this._getAllEntities('input_select');
+
+    let quickFillHtml = '';
+    if (discovered.length > 0) {
+      const btns = discovered.map(d =>
+        `<button type="button" class="btn-quick-fill" data-entity="${d.entity}">⚡ 快速填入: ${d.label}</button>`
+      ).join('');
+      quickFillHtml = `
+        <div class="quick-fill-box">
+          <div class="quick-fill-title">💡 检测到当前 Home Assistant 已有国网账户，可点击一键填入：</div>
+          <div class="quick-fill-bar">${btns}</div>
+        </div>
+      `;
+    }
+
+    const accounts = this._getAccountList();
+    const accountCardsHtml = accounts.map(acc => {
+      const isAdvExpanded = !!this._expandedAdv[acc.key];
+      return `
+        <div class="account-card-item" data-key="${acc.key}">
+          <div class="account-card-header">
+            <div class="account-card-title">
+              <span>⚡ 账户 ${acc.key}</span>
+              ${acc.info ? `<span class="badge-info">${acc.info}</span>` : ''}
+            </div>
+            ${accounts.length > 1 ? `<button type="button" class="btn-del" data-key="${acc.key}" title="删除该账户">✕ 删除</button>` : ''}
+          </div>
+
+          <div class="account-grid">
+            <div class="form-item">
+              <label class="item-label">账户备注名称 (info)</label>
+              <input type="text" class="form-input" data-key="${acc.key}" data-field="info" value="${acc.info}" placeholder="例如: 我的用电 / 家里 / 店铺" />
+            </div>
+            <div class="form-item">
+              <label class="item-label">类型 (utility_type)</label>
+              <select class="form-input" data-key="${acc.key}" data-field="utility_type">
+                <option value="ele"${acc.utility_type === 'ele' ? ' selected' : ''}>⚡ 电力 (ele)</option>
+                <option value="water"${acc.utility_type === 'water' ? ' selected' : ''}>💧 水费 (water)</option>
+                <option value="gas"${acc.utility_type === 'gas' ? ' selected' : ''}>🔥 燃气 (gas)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-item">
+            <label class="item-label">核心标准实体 (entity) <span class="required">*必填</span></label>
+            <input type="text" class="form-input" list="dl-sensors" data-key="${acc.key}" data-field="entity" value="${acc.entity}" placeholder="sensor.dian_fei_zhang_hu_..." />
+          </div>
+
+          <div class="adv-toggle-bar">
+            <button type="button" class="btn-adv-toggle" data-key="${acc.key}">
+              ${isAdvExpanded ? '▾ 收起高级实体映射' : '▸ 展开高级实体映射 (缴费 / 停电公告 / 在线状态)'}
+            </button>
+          </div>
+
+          ${isAdvExpanded ? `
+            <div class="adv-fields-box">
+              <div class="adv-tip">💡 提示：国网集成会自动派生缴费、公告和在线实体，填入对应 sensor 即可激活深度卡片功能：</div>
+              <div class="adv-item">
+                <label class="adv-label">缴费记录实体 (jiaofei_entity)</label>
+                <input type="text" class="form-input adv-input" list="dl-sensors" data-key="${acc.key}" data-field="jiaofei_entity" value="${acc.jiaofei_entity}" placeholder="sensor.dian_fei_zhang_hu_..._jiaofei" />
+              </div>
+              <div class="adv-item">
+                <label class="adv-label">停电检修公告实体 (notice)</label>
+                <input type="text" class="form-input adv-input" list="dl-sensors" data-key="${acc.key}" data-field="notice" value="${acc.notice}" placeholder="sensor.dian_fei_zhang_hu_..._notice" />
+              </div>
+              <div class="adv-item">
+                <label class="adv-label">关注区域关键字 (notice_attention)</label>
+                <input type="text" class="form-input adv-input" data-key="${acc.key}" data-field="notice_attention" value="${acc.notice_attention}" placeholder="如：XX大道 / XX小区 (匹配时高亮闪烁提醒)" />
+              </div>
+              <div class="adv-item">
+                <label class="adv-label">在线状态实体 (online)</label>
+                <input type="text" class="form-input adv-input" list="dl-sensors" data-key="${acc.key}" data-field="online" value="${acc.online}" placeholder="sensor.dian_fei_zhang_hu_..._online" />
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host { display: block; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        .editor-container { display: flex; flex-direction: column; gap: 14px; padding: 4px 0; color: var(--primary-text-color, #212121); }
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-label { font-size: 13px; font-weight: 600; color: var(--primary-text-color, #1e293b); display: flex; align-items: center; justify-content: space-between; }
+        .form-input { padding: 8px 12px; border: 1px solid var(--divider-color, #cbd5e1); border-radius: 8px; font-size: 13px; background: var(--card-background-color, #ffffff); color: var(--primary-text-color, #1e293b); box-sizing: border-box; width: 100%; outline: none; transition: all 0.2s; }
+        .form-input:focus { border-color: var(--primary-color, #ff5722); box-shadow: 0 0 0 2px rgba(255, 87, 34, 0.15); }
+        .account-card-box { display: flex; flex-direction: column; gap: 12px; }
+        .account-card-item { border: 1px solid var(--divider-color, #e2e8f0); border-radius: 10px; padding: 12px; background: var(--card-background-color, #ffffff); display: flex; flex-direction: column; gap: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+        .account-card-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--divider-color, #f1f5f9); padding-bottom: 8px; }
+        .account-card-title { font-size: 13px; font-weight: 600; color: var(--primary-text-color, #1e293b); display: flex; align-items: center; gap: 6px; }
+        .badge-info { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: #fff7ed; color: #ea580c; border: 1px solid #ffedd5; font-weight: normal; }
+        .account-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+        .form-item { display: flex; flex-direction: column; gap: 4px; }
+        .item-label { font-size: 12px; color: var(--secondary-text-color, #64748b); font-weight: 500; }
+        .required { color: #ef4444; font-size: 11px; }
+        .adv-toggle-bar { display: flex; }
+        .btn-adv-toggle { background: transparent; border: none; color: var(--primary-color, #ff5722); font-size: 12px; font-weight: 500; cursor: pointer; padding: 2px 0; text-align: left; }
+        .btn-adv-toggle:hover { text-decoration: underline; }
+        .adv-fields-box { background: var(--secondary-background-color, #f8fafc); border: 1px dashed var(--divider-color, #cbd5e1); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+        .adv-tip { font-size: 11px; color: var(--secondary-text-color, #64748b); line-height: 1.4; }
+        .adv-item { display: flex; flex-direction: column; gap: 3px; }
+        .adv-label { font-size: 11px; color: var(--secondary-text-color, #64748b); }
+        .adv-input { font-size: 12px; padding: 6px 10px; }
+        .btn-del { background: transparent; border: 1px solid #fecaca; color: #ef4444; font-size: 12px; cursor: pointer; padding: 3px 8px; border-radius: 6px; }
+        .btn-del:hover { background: #fee2e2; }
+        .btn-add { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; background: var(--primary-color, #ff5722); color: #ffffff; border: none; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; transition: opacity 0.2s; }
+        .btn-add:hover { opacity: 0.9; }
+        .quick-fill-box { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+        .quick-fill-title { font-size: 12px; color: #c2410c; font-weight: 500; }
+        .quick-fill-bar { display: flex; flex-wrap: wrap; gap: 6px; }
+        .btn-quick-fill { font-size: 11px; padding: 4px 8px; border-radius: 6px; background: #ffffff; color: #ea580c; border: 1px solid #fdba74; cursor: pointer; transition: all 0.15s; font-weight: 500; }
+        .btn-quick-fill:hover { background: #ffedd5; }
+        .theme-box { border: 1px solid var(--divider-color, #e2e8f0); border-radius: 8px; padding: 10px; background: var(--secondary-background-color, #f8fafc); }
+      </style>
+
+      <datalist id="dl-sensors">${sensorList.map(e => `<option value="${e}"></option>`).join('')}</datalist>
+      <datalist id="dl-themes">${themeList.map(e => `<option value="${e}"></option>`).join('')}</datalist>
+
+      <div class="editor-container">
+        <!-- 基础配置 -->
+        <div class="form-group">
+          <label class="form-label">卡片主标题 (name)</label>
+          <input type="text" class="form-input" data-target="name" value="${this._title}" placeholder="例如: 国网电费 / 我的电费" />
+        </div>
+
+        <!-- 主题设置折叠栏 -->
+        <div class="form-group">
+          <div class="adv-toggle-bar">
+            <button type="button" class="btn-adv-toggle" id="btn-toggle-theme">
+              ${this._showThemeAdv ? '▾ 收起主题外观设置' : '▸ 展开主题外观高级设置 (昼夜切换 / 联动实体)'}
+            </button>
+          </div>
+          ${this._showThemeAdv ? `
+            <div class="theme-box">
+              <div class="form-item" style="margin-bottom: 8px;">
+                <label class="item-label">主题联动实体或模式 (theme)</label>
+                <input type="text" class="form-input adv-input" list="dl-themes" data-target="theme" value="${this._theme}" placeholder="可选: time / phone 或 input_select.theme / switch.xxx" />
+                <div class="adv-tip" style="margin-top: 3px;">留空为默认；可填 input_select 下拉实体，或填 "time" 按时间切换，"phone" 跟随手机系统。</div>
+              </div>
+              <div class="form-item">
+                <label class="item-label">亮暗配色组合 (dark_light_theme)</label>
+                <input type="text" class="form-input adv-input" data-target="dark_light_theme" value="${this._darkLightTheme}" placeholder="例如: darkgray,light (格式: 暗色主题,亮色主题)" />
+              </div>
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- 账户列表 -->
+        <div class="form-group">
+          <label class="form-label">
+            <span>用电户号列表 (multiclass)</span>
+            ${discovered.length > 0 ? `<span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: #fff7ed; color: #ea580c; font-weight: normal;">已扫描到 ${discovered.length} 个账户</span>` : ''}
+          </label>
+
+          ${quickFillHtml}
+
+          <div class="account-card-box">
+            ${accountCardsHtml}
+            <button type="button" class="btn-add" id="btn-add-account">
+              <span>+ 添加更多户号账户</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // 绑定事件
+    const nameInp = this.shadowRoot.querySelector('input[data-target="name"]');
+    if (nameInp) {
+      nameInp.addEventListener('input', (e) => {
+        const val = e.target.value;
+        const newCfg = { ...this._config };
+        if (val.trim()) newCfg.name = val;
+        else delete newCfg.name;
+        this._config = newCfg;
+        this._fireConfigChanged();
+      });
+    }
+
+    const themeToggleBtn = this.shadowRoot.querySelector('#btn-toggle-theme');
+    if (themeToggleBtn) {
+      themeToggleBtn.addEventListener('click', () => this._toggleThemeAdv());
+    }
+
+    const themeInp = this.shadowRoot.querySelector('input[data-target="theme"]');
+    if (themeInp) {
+      themeInp.addEventListener('input', (e) => {
+        const val = e.target.value.trim();
+        const newCfg = { ...this._config };
+        if (val) newCfg.theme = val;
+        else delete newCfg.theme;
+        this._config = newCfg;
+        this._fireConfigChanged();
+      });
+    }
+
+    const darkThemeInp = this.shadowRoot.querySelector('input[data-target="dark_light_theme"]');
+    if (darkThemeInp) {
+      darkThemeInp.addEventListener('input', (e) => {
+        const val = e.target.value.trim();
+        const newCfg = { ...this._config };
+        if (val) newCfg.dark_light_theme = val;
+        else delete newCfg.dark_light_theme;
+        this._config = newCfg;
+        this._fireConfigChanged();
+      });
+    }
+
+    // 快捷填充按钮
+    this.shadowRoot.querySelectorAll('.btn-quick-fill').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const targetEid = e.currentTarget.dataset.entity;
+        const disc = discovered.find(d => d.entity === targetEid);
+        if (!disc) return;
+
+        const list = this._getAccountList();
+        if (list.length === 1 && !list[0].entity) {
+          this._accountChanged(list[0].key, 'entity', disc.entity);
+          this._accountChanged(list[0].key, 'info', disc.consNo ? `户号 ${disc.consNo}` : '我的用电');
+          if (disc.jiaofei_entity) this._accountChanged(list[0].key, 'jiaofei_entity', disc.jiaofei_entity);
+          if (disc.notice_entity) this._accountChanged(list[0].key, 'notice', disc.notice_entity);
+          if (disc.online_entity) this._accountChanged(list[0].key, 'online', disc.online_entity);
+          this.render();
+        } else {
+          this._addAccount(disc);
+        }
+      });
+    });
+
+    const addAccBtn = this.shadowRoot.querySelector('#btn-add-account');
+    if (addAccBtn) {
+      addAccBtn.addEventListener('click', () => this._addAccount());
+    }
+
+    this.shadowRoot.querySelectorAll('.btn-del').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const key = e.currentTarget.dataset.key;
+        this._removeAccount(key);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll('.btn-adv-toggle[data-key]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const key = e.currentTarget.dataset.key;
+        this._toggleAdv(key);
+      });
+    });
+
+    this.shadowRoot.querySelectorAll('.account-card-item input[data-field], .account-card-item select[data-field]').forEach(inp => {
+      const handler = (e) => {
+        const key = e.target.dataset.key;
+        const field = e.target.dataset.field;
+        this._accountChanged(key, field, e.target.value);
+      };
+      inp.addEventListener('input', handler);
+      inp.addEventListener('change', handler);
+    });
+
+    this._rendered = true;
+  }
+}
+
+// 注册卡片与编辑器自定义元素
 try {
   if (!customElements.get('electricity-info-card')) {
     customElements.define('electricity-info-card', ElectricityInfoCard);
   }
 } catch (error) {
-  // 如果注册失败（例如已经注册过），忽略错误
   console.warn('Custom element registration warning:', error.message);
 }
 
-// 告诉Home Assistant这个卡片类型
+try {
+  if (!customElements.get('electricity-info-card-editor')) {
+    customElements.define('electricity-info-card-editor', ElectricityInfoCardEditor);
+  }
+} catch (error) {
+  console.warn('Editor element registration warning:', error.message);
+}
+
+// 告诉 Home Assistant 这个卡片类型与可视化支持
 window.customCards = window.customCards || [];
-window.customCards.push({
+const existingCardIdx = window.customCards.findIndex(
+  c => c && (c.type === 'electricity-info-card' || c.type === 'custom:electricity-info-card')
+);
+const cardMeta = {
   type: 'electricity-info-card',
-  name: '用电信息卡片',
-  description: '展示水电气使用量、缴费的卡片，显示各类图表信息，支持自定义阶梯、计费周期、设备运行统计（时长、电费）、主题切换和控制各项显示',
+  name: '国网用电信息卡片',
+  description: '展示水电气使用量、电费、阶梯电价及检修公告卡片，支持多户号与可视化编辑',
   preview: true
-});
+};
+if (existingCardIdx >= 0) {
+  window.customCards[existingCardIdx] = cardMeta;
+} else {
+  window.customCards.push(cardMeta);
+}
