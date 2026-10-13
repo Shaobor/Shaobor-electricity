@@ -4537,14 +4537,14 @@ class ElectricityInfoCard extends HTMLElement {
 
         // 显示卡片信息（字体已调小）
         console.log(
-          '%c⚡electricity-info-card\n%cVersion 4.1.2 ｜  ECharts: ' + echartsSource,
+          '%c⚡electricity-info-card\n%cVersion 4.1.3 ｜  ECharts: ' + echartsSource,
           `background: #ff5722; color: white; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 12px; font-family: monospace; line-height: 1.3; border-radius: 3px 3px 0 0;`,
           `background: white; color: #ff5722; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 11px; font-family: monospace; line-height: 1.3; border-radius: 0 0 3px 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);`
         );
       }).catch(err => {
         // 如果ECharts加载失败，仍然显示调试信息
         console.log(
-          '%c⚡electricity-info-card\n%cVersion 4.1.2 ｜  ECharts: 加载失败',
+          '%c⚡electricity-info-card\n%cVersion 4.1.3 ｜  ECharts: 加载失败',
           `background: #ff5722; color: white; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 12px; font-family: monospace; line-height: 1.3; border-radius: 3px 3px 0 0;`,
           `background: white; color: #ff5722; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 11px; font-family: monospace; line-height: 1.3; border-radius: 0 0 3px 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);`
         );
@@ -5722,6 +5722,14 @@ class ElectricityInfoCard extends HTMLElement {
     this.noticeEntityId = currentConfig.notice || null;
     this.noticeAttention = currentConfig.notice_attention || '';
 
+    // 如果未显式配置 notice，尝试自动根据当前户号/主实体关联
+    if (!this.noticeEntityId && this._hass && this.entityId) {
+      const derived = ElectricityInfoCard.findDerivedEntities(this._hass, this.entityId);
+      if (derived && derived.notice) {
+        this.noticeEntityId = derived.notice;
+      }
+    }
+
     // 清除公告缓存签名（切换用户时强制重建）
     this._noticeDataSig = null;
 
@@ -5734,6 +5742,14 @@ class ElectricityInfoCard extends HTMLElement {
     // 读取 online 在线状态实体配置（区分在线/离线）。
     // 网络模式显示在线，本地缓存模式显示离线，其他状态显示未知。
     this.onlineEntityId = currentConfig.online || null;
+
+    // 如果未显式配置 online，尝试自动根据当前户号/主实体关联
+    if (!this.onlineEntityId && this._hass && this.entityId) {
+      const derived = ElectricityInfoCard.findDerivedEntities(this._hass, this.entityId);
+      if (derived && derived.online) {
+        this.onlineEntityId = derived.online;
+      }
+    }
 
     // 切换到未配置 online 的用户时，清理上一个用户的状态标签。
     if (!this.onlineEntityId && this.onlineTagEl) {
@@ -5920,6 +5936,20 @@ class ElectricityInfoCard extends HTMLElement {
 
     // 兼容旧格式 jiaofei_entity（字符串格式）
     this.parseJiaofeiConfig(config);
+
+    // 如果未显式配置缴费实体，自动根据主实体或户号关联
+    if (!this.jiaofeiEntityId && this._hass && this.entityId) {
+      const derived = ElectricityInfoCard.findDerivedEntities(this._hass, this.entityId);
+      if (derived && derived.jiaofei_entity) {
+        this.jiaofeiEntityId = derived.jiaofei_entity;
+        this.jiaofeiFieldMapping = {
+          node: 'payList',
+          date: 'payDate',
+          pay_amount: 'rcvAmt',
+          pay_mode: 'payModeName'
+        };
+      }
+    }
   }
 
   // 解析缴费实体配置（旧格式，字符串方式）
@@ -11604,43 +11634,44 @@ class ElectricityInfoCard extends HTMLElement {
 
         const attributes = entityState.attributes;
 
-        // 必须配置 node 参数
-        if (!this.jiaofeiFieldMapping || !this.jiaofeiFieldMapping.node) {
-          throw new Error('缴费实体未配置 node 参数');
-        }
-
-        const nodePath = this.jiaofeiFieldMapping.node;
         let dataArray;
+        const nodePath = (this.jiaofeiFieldMapping && this.jiaofeiFieldMapping.node) || '';
 
-        if (nodePath.includes('.')) {
-          // 多层路径：从 entityState 开始逐级遍历，如 attributes.payList
-          const parts = nodePath.split('.');
-          dataArray = entityState;
-          for (const part of parts) {
-            if (dataArray == null) {
-              dataArray = undefined;
-              break;
+        if (nodePath) {
+          if (nodePath.includes('.')) {
+            // 多层路径：从 entityState 开始逐级遍历，如 attributes.payList
+            const parts = nodePath.split('.');
+            dataArray = entityState;
+            for (const part of parts) {
+              if (dataArray == null) {
+                dataArray = undefined;
+                break;
+              }
+              dataArray = dataArray[part];
             }
-            dataArray = dataArray[part];
+          } else {
+            // 单层路径：向后兼容，从 attributes 下取值
+            dataArray = attributes[nodePath];
           }
-        } else {
-          // 单层路径：向后兼容，从 attributes 下取值
-          dataArray = attributes[nodePath];
         }
 
+        // 如果未指定 node 或未获取到数组，智能尝试常用缴费节点
         if (!dataArray || !Array.isArray(dataArray)) {
-          throw new Error(`缴费实体的 ${nodePath} 节点不存在或不是数组`);
+          dataArray = attributes.payList || attributes.paylist || attributes.payment_records || attributes['缴费记录'] || attributes.records || [];
         }
 
-        // 使用配置的字段映射读取数据
-        const dateField = this.jiaofeiFieldMapping.date || 'time';
-        const amountField = this.jiaofeiFieldMapping.pay_amount || 'cost';
-        const modeField = this.jiaofeiFieldMapping.pay_mode || 'source';
+        if (!Array.isArray(dataArray)) {
+          dataArray = [];
+        }
+
+        const dateField = (this.jiaofeiFieldMapping && this.jiaofeiFieldMapping.date) || null;
+        const amountField = (this.jiaofeiFieldMapping && this.jiaofeiFieldMapping.pay_amount) || null;
+        const modeField = (this.jiaofeiFieldMapping && this.jiaofeiFieldMapping.pay_mode) || null;
 
         const payHistory = dataArray.map(item => ({
-          time: item[dateField],
-          cost: parseFloat(item[amountField]) || 0,
-          source: item[modeField] || '其他'
+          time: (dateField && item[dateField]) || item.payDate || item.ymd || item.time || item.date || '',
+          cost: parseFloat((amountField && item[amountField]) || item.rcvAmt || item.amt || item.cost || item.amount) || 0,
+          source: (modeField && item[modeField]) || item.payModeName || item.typeName || item.chanName || item.source || item.mode || '电费交费'
         }));
 
         return payHistory;
@@ -14812,6 +14843,18 @@ class ElectricityInfoCard extends HTMLElement {
 
     this.updateCardWithThrottle();
 
+    // 自动补齐公告和在线状态实体引用
+    if (this.entityId && hass && hass.states) {
+      if (!this.noticeEntityId) {
+        const derived = ElectricityInfoCard.findDerivedEntities(hass, this.entityId);
+        if (derived && derived.notice) this.noticeEntityId = derived.notice;
+      }
+      if (!this.onlineEntityId) {
+        const derived = ElectricityInfoCard.findDerivedEntities(hass, this.entityId);
+        if (derived && derived.online) this.onlineEntityId = derived.online;
+      }
+    }
+
     // 公告数据实时更新（不受10分钟节流限制）
     const noticeEntity = this.noticeEntityId ? hass.states[this.noticeEntityId] : null;
     this._updateNoticeDisplay(noticeEntity);
@@ -16630,8 +16673,87 @@ class ElectricityInfoCard extends HTMLElement {
     return document.createElement('electricity-info-card-editor');
   }
 
-  static getConfigElement() {
-    return document.createElement('electricity-info-card-editor');
+  // 根据主实体或户号，从 hass.states 中智能匹配派生实体 (jiaofei / notice / online)
+  static findDerivedEntities(hass, mainEntityId, consNo) {
+    const result = {
+      jiaofei_entity: '',
+      notice: '',
+      online: ''
+    };
+    if (!hass || !hass.states) return result;
+
+    // 1. 提取户号 (数字)
+    let accountNo = consNo ? String(consNo).trim() : '';
+    if (!accountNo && mainEntityId) {
+      const m = mainEntityId.match(/\d{10,16}/);
+      if (m) accountNo = m[0];
+    }
+    if (!accountNo && mainEntityId && hass.states[mainEntityId]) {
+      const mainAttrs = hass.states[mainEntityId].attributes || {};
+      accountNo = mainAttrs.consNo || mainAttrs.cons_no || mainAttrs.selected_cons_no || '';
+      if (!accountNo && mainAttrs.friendly_name) {
+        const m = mainAttrs.friendly_name.match(/\d{10,16}/);
+        if (m) accountNo = m[0];
+      }
+    }
+
+    // 2. 提取实体前缀 (例如 sensor.dian_fei_zhang_hu_2350000018443)
+    let prefix = '';
+    if (mainEntityId && mainEntityId.startsWith('sensor.')) {
+      prefix = mainEntityId.replace(/_(standard_entity|dian_wang_biao_zhun_shi_ti|dian_fei|standard|balance|ele)$/i, '');
+    }
+
+    const isMatchAccount = (eid, stateObj) => {
+      if (eid === mainEntityId) return false;
+      const attrs = stateObj.attributes || {};
+      const friendlyName = attrs.friendly_name || '';
+
+      if (accountNo) {
+        if (eid.includes(accountNo)) return true;
+        if (friendlyName.includes(accountNo)) return true;
+        if (attrs.consNo && String(attrs.consNo).includes(accountNo)) return true;
+        if (attrs.cons_no && String(attrs.cons_no).includes(accountNo)) return true;
+      }
+      if (prefix && eid.startsWith(prefix)) return true;
+      return false;
+    };
+
+    for (const [eid, stateObj] of Object.entries(hass.states)) {
+      if (!eid.startsWith('sensor.')) continue;
+      if (!isMatchAccount(eid, stateObj)) continue;
+
+      const attrs = stateObj.attributes || {};
+      const friendlyName = attrs.friendly_name || '';
+
+      // 1) 缴费记录实体
+      if (!result.jiaofei_entity) {
+        const hasPayList = attrs.payList !== undefined || attrs.paylist !== undefined || attrs.payment_records !== undefined || attrs['缴费记录'] !== undefined;
+        const isPayName = /_(jiaofei|jiao_fei|payment_records|pay_records)$/i.test(eid) || friendlyName.includes('缴费');
+        if (hasPayList || isPayName) {
+          result.jiaofei_entity = eid;
+        }
+      }
+
+      // 2) 停电检修公告实体
+      if (!result.notice) {
+        const hasNoticeList = attrs['公告列表'] !== undefined || attrs.notices !== undefined || attrs.notice_list !== undefined;
+        const isNoticeName = /_(notice|gong_gao|jian_xiu|maintenance|power_grid_maintenance)$/i.test(eid) || friendlyName.includes('公告') || friendlyName.includes('检修');
+        if (hasNoticeList || isNoticeName) {
+          result.notice = eid;
+        }
+      }
+
+      // 3) 在线状态实体
+      if (!result.online) {
+        const hasDataMode = attrs.data_mode !== undefined;
+        const isOnlineName = /_(online|data_mode|shu_ju_mo_shi)$/i.test(eid) || friendlyName.includes('数据模式') || friendlyName.includes('在线状态');
+        if (hasDataMode || isOnlineName) {
+          result.online = eid;
+        }
+      }
+    }
+
+    return result;
   }
 
   // 定义卡片配置架构与默认预填充
@@ -16644,18 +16766,24 @@ class ElectricityInfoCard extends HTMLElement {
     if (hass && hass.states) {
       for (const [eid, stateObj] of Object.entries(hass.states)) {
         if (!eid.startsWith('sensor.')) continue;
-        if (/_(jiaofei|notice|online|daily|monthly|yearly|balance|price|last_update|remaining_days)$/.test(eid)) continue;
         const attrs = stateObj.attributes || {};
-        if (attrs.daylist !== undefined || attrs.monthlist !== undefined || (attrs.friendly_name && attrs.friendly_name.includes('电网标准实体')) || eid.includes('dian_fei_zhang_hu')) {
-          defaultEntity = eid;
-          const baseName = eid.replace(/_standard$/, '');
-          if (hass.states[`${baseName}_jiaofei`]) jiaofei = `${baseName}_jiaofei`;
-          if (hass.states[`${baseName}_notice`]) notice = `${baseName}_notice`;
-          if (hass.states[`${baseName}_online`]) online = `${baseName}_online`;
-          const m = eid.match(/\d{10,16}/);
-          if (m) info = `户号 ${m[0]}`;
-          break;
-        }
+        const friendlyName = attrs.friendly_name || '';
+        const isGridStandard = attrs.daylist !== undefined ||
+                               attrs.monthlist !== undefined ||
+                               friendlyName.includes('电网标准实体') ||
+                               /_(standard_entity|dian_wang_biao_zhun_shi_ti)$/i.test(eid);
+        if (!isGridStandard) continue;
+
+        defaultEntity = eid;
+        const m = eid.match(/\d{10,16}/) || friendlyName.match(/\d{10,16}/);
+        const consNo = m ? m[0] : '';
+        if (consNo) info = `户号 ${consNo}`;
+
+        const derived = ElectricityInfoCard.findDerivedEntities(hass, eid, consNo);
+        jiaofei = derived.jiaofei_entity;
+        notice = derived.notice;
+        online = derived.online;
+        break;
       }
     }
     return {
@@ -16757,39 +16885,47 @@ class ElectricityInfoCardEditor extends HTMLElement {
     return this._config.dark_light_theme || '';
   }
 
+  // 精准发现系统中的电网标准实体（按户号去重，每个户号严格只保留 1 个标准实体）
   _discoveredAccounts() {
     if (!this._hass || !this._hass.states) return [];
-    const accounts = new Map();
+    const accounts = new Map(); // key 使用 consNo，确保每个户号绝对唯一
+
     for (const [eid, stateObj] of Object.entries(this._hass.states)) {
       if (!eid.startsWith('sensor.')) continue;
-      if (/_(jiaofei|notice|online|daily|monthly|yearly|balance|price|last_update|remaining_days)$/.test(eid)) {
-        continue;
-      }
       const attrs = stateObj.attributes || {};
+      const friendlyName = attrs.friendly_name || '';
+
+      // 严格判定是否为真正的“电网标准实体”
       const isGridStandard = attrs.daylist !== undefined ||
                              attrs.monthlist !== undefined ||
-                             (attrs.friendly_name && attrs.friendly_name.includes('电网标准实体')) ||
-                             eid.includes('dian_fei_zhang_hu');
-      if (isGridStandard) {
-        const m = eid.match(/\d{10,16}/);
-        const consNo = m ? m[0] : eid.replace('sensor.', '');
-        const friendlyName = attrs.friendly_name || '';
-        const label = consNo ? `${consNo}${friendlyName ? ` · ${friendlyName}` : ''}` : eid;
+                             friendlyName.includes('电网标准实体') ||
+                             /_(standard_entity|dian_wang_biao_zhun_shi_ti)$/i.test(eid);
+      if (!isGridStandard) continue;
 
-        const baseName = eid.replace(/_standard$/, '');
-        const jiaofei = `${baseName}_jiaofei`;
-        const notice = `${baseName}_notice`;
-        const online = `${baseName}_online`;
-
-        accounts.set(eid, {
-          entity: eid,
-          consNo: consNo,
-          label: label,
-          jiaofei_entity: this._hass.states[jiaofei] ? jiaofei : '',
-          notice_entity: this._hass.states[notice] ? notice : '',
-          online_entity: this._hass.states[online] ? online : ''
-        });
+      // 排除非主实体的子传感器
+      if (friendlyName.includes('实时电费') || friendlyName.includes('预计可用') ||
+          friendlyName.includes('最后更新') || friendlyName.includes('缴费记录') ||
+          friendlyName.includes('用户信息') || friendlyName.includes('每日电量') ||
+          friendlyName.includes('每月电量') || friendlyName.includes('每年电量') ||
+          friendlyName.includes('电费单价') || friendlyName.includes('检修公告') ||
+          friendlyName.includes('数据模式')) {
+        continue;
       }
+
+      const m = eid.match(/\d{10,16}/) || friendlyName.match(/\d{10,16}/);
+      const consNo = m ? m[0] : eid.replace('sensor.', '');
+
+      // 自动查找该户号关联绑定的派生实体 (缴费、公告、在线状态)
+      const derived = ElectricityInfoCard.findDerivedEntities(this._hass, eid, consNo);
+
+      accounts.set(consNo, {
+        entity: eid,
+        consNo: consNo,
+        label: `户号 ${consNo}`,
+        jiaofei_entity: derived.jiaofei_entity,
+        notice_entity: derived.notice,
+        online_entity: derived.online
+      });
     }
     return Array.from(accounts.values());
   }
@@ -16819,15 +16955,28 @@ class ElectricityInfoCardEditor extends HTMLElement {
     } else {
       keys.forEach((k) => {
         const item = mc[k] || {};
+        const entity = typeof item.entity === 'string' ? item.entity : (item.entity && item.entity.entity || '');
+        let jiaofei = typeof item.jiaofei_entity === 'string' ? item.jiaofei_entity : (item.pay_entity && item.pay_entity.entity || '');
+        let notice = item.notice || '';
+        let online = item.online || '';
+
+        // 如果用户尚未显式配置派生实体，自动在前端为其关联匹配
+        if (entity && (!jiaofei || !notice || !online) && this._hass) {
+          const derived = ElectricityInfoCard.findDerivedEntities(this._hass, entity);
+          if (!jiaofei && derived.jiaofei_entity) jiaofei = derived.jiaofei_entity;
+          if (!notice && derived.notice) notice = derived.notice;
+          if (!online && derived.online) online = derived.online;
+        }
+
         list.push({
           key: String(k),
           utility_type: item.utility_type || 'ele',
           info: item.info !== undefined ? String(item.info) : '',
-          entity: typeof item.entity === 'string' ? item.entity : (item.entity && item.entity.entity || ''),
-          jiaofei_entity: typeof item.jiaofei_entity === 'string' ? item.jiaofei_entity : (item.pay_entity && item.pay_entity.entity || ''),
-          notice: item.notice || '',
+          entity: entity,
+          jiaofei_entity: jiaofei,
+          notice: notice,
           notice_attention: item.notice_attention || '',
-          online: item.online || ''
+          online: online
         });
       });
     }
@@ -16855,8 +17004,22 @@ class ElectricityInfoCardEditor extends HTMLElement {
     } else if (field === 'utility_type') {
       cur.utility_type = val || 'ele';
     } else if (field === 'entity') {
-      if (!val) delete cur.entity;
-      else cur.entity = val;
+      if (!val) {
+        delete cur.entity;
+      } else {
+        cur.entity = val;
+        // 选择主实体后，全自动匹配绑定关联的派生实体（缴费记录、停电公告、在线状态）
+        if (this._hass) {
+          const derived = ElectricityInfoCard.findDerivedEntities(this._hass, val);
+          if (derived.jiaofei_entity && !cur.jiaofei_entity) cur.jiaofei_entity = derived.jiaofei_entity;
+          if (derived.notice && !cur.notice) cur.notice = derived.notice;
+          if (derived.online && !cur.online) cur.online = derived.online;
+        }
+        if (!cur.info || cur.info.startsWith('账户 ') || cur.info === '我的用电') {
+          const m = val.match(/\d{10,16}/);
+          if (m) cur.info = `户号 ${m[0]}`;
+        }
+      }
     } else if (field === 'jiaofei_entity') {
       if (!val) delete cur.jiaofei_entity;
       else cur.jiaofei_entity = val;
@@ -16877,19 +17040,74 @@ class ElectricityInfoCardEditor extends HTMLElement {
     this._fireConfigChanged();
   }
 
+  // 一键快捷填入户号（原子操作，防重入与去重）
+  _applyQuickFill(disc) {
+    if (!disc || !disc.entity) return;
+
+    const newConfig = { ...this._config };
+    const mc = { ...(newConfig.multiclass || {}) };
+    const list = this._getAccountList();
+
+    // 严格检查是否已经添加过此实体，避免任何重复添加
+    const alreadyExists = Object.values(mc).some(item => {
+      const e = typeof item.entity === 'string' ? item.entity : (item.entity && item.entity.entity);
+      return e === disc.entity;
+    });
+    if (alreadyExists) return;
+
+    const accountData = {
+      utility_type: 'ele',
+      info: disc.consNo ? `户号 ${disc.consNo}` : '我的用电',
+      entity: disc.entity,
+      jiaofei_entity: disc.jiaofei_entity || '',
+      notice: disc.notice_entity || '',
+      notice_attention: '',
+      online: disc.online_entity || ''
+    };
+
+    if (list.length === 1 && !list[0].entity) {
+      // 当前只有1个未配置的空账户时，直接原地填充
+      mc[list[0].key] = accountData;
+    } else {
+      // 否则在末尾追加新账户
+      const reindexed = this._reindexMulticlass(mc);
+      const nextKey = String(Object.keys(reindexed).length + 1);
+      accountData.info = disc.consNo ? `户号 ${disc.consNo}` : `账户 ${nextKey}`;
+      reindexed[nextKey] = accountData;
+      Object.assign(mc, reindexed);
+    }
+
+    newConfig.multiclass = this._reindexMulticlass(mc);
+    this._config = newConfig;
+    this._fireConfigChanged();
+    this.render();
+  }
+
   _addAccount(prefill) {
     const newConfig = { ...this._config };
     const mc = this._reindexMulticlass(newConfig.multiclass || {});
     const nextKey = String(Object.keys(mc).length + 1);
 
+    let entity = prefill && prefill.entity ? prefill.entity : '';
+    let jiaofei = prefill && prefill.jiaofei_entity ? prefill.jiaofei_entity : '';
+    let notice = prefill && prefill.notice_entity ? prefill.notice_entity : '';
+    let online = prefill && prefill.online_entity ? prefill.online_entity : '';
+
+    if (entity && (!jiaofei || !notice || !online) && this._hass) {
+      const derived = ElectricityInfoCard.findDerivedEntities(this._hass, entity, prefill.consNo);
+      if (!jiaofei) jiaofei = derived.jiaofei_entity;
+      if (!notice) notice = derived.notice;
+      if (!online) online = derived.online;
+    }
+
     mc[nextKey] = {
       utility_type: 'ele',
       info: prefill && prefill.consNo ? `户号 ${prefill.consNo}` : `账户 ${nextKey}`,
-      entity: prefill && prefill.entity ? prefill.entity : '',
-      jiaofei_entity: prefill && prefill.jiaofei_entity ? prefill.jiaofei_entity : '',
-      notice: prefill && prefill.notice_entity ? prefill.notice_entity : '',
+      entity: entity,
+      jiaofei_entity: jiaofei,
+      notice: notice,
       notice_attention: '',
-      online: prefill && prefill.online_entity ? prefill.online_entity : ''
+      online: online
     };
 
     newConfig.multiclass = mc;
@@ -16960,20 +17178,25 @@ class ElectricityInfoCardEditor extends HTMLElement {
     const sensorList = this._getAllEntities('sensor');
     const themeList = this._getAllEntities('input_select');
 
+    const accounts = this._getAccountList();
+    const existingEntities = new Set(accounts.map(a => a.entity).filter(Boolean));
+
     let quickFillHtml = '';
     if (discovered.length > 0) {
-      const btns = discovered.map(d =>
-        `<button type="button" class="btn-quick-fill" data-entity="${d.entity}">⚡ 快速填入: ${d.label}</button>`
-      ).join('');
+      const btns = discovered.map(d => {
+        const isAdded = existingEntities.has(d.entity);
+        return `<button type="button" class="btn-quick-fill ${isAdded ? 'btn-added' : ''}" data-entity="${d.entity}" ${isAdded ? 'disabled' : ''}>
+          ${isAdded ? `✓ ${d.label} (已添加)` : `⚡ 快速填入: ${d.label} (电网标准实体)`}
+        </button>`;
+      }).join('');
       quickFillHtml = `
         <div class="quick-fill-box">
-          <div class="quick-fill-title">💡 检测到当前 Home Assistant 已有国网账户，可点击一键填入：</div>
+          <div class="quick-fill-title">💡 检测到当前系统中有 ${discovered.length} 个国网标准实体户号，点击即可一键填入（自动绑定缴费、公告和在线状态）：</div>
           <div class="quick-fill-bar">${btns}</div>
         </div>
       `;
     }
 
-    const accounts = this._getAccountList();
     const accountCardsHtml = accounts.map(acc => {
       const isAdvExpanded = !!this._expandedAdv[acc.key];
       return `
@@ -17008,29 +17231,41 @@ class ElectricityInfoCardEditor extends HTMLElement {
 
           <div class="adv-toggle-bar">
             <button type="button" class="btn-adv-toggle" data-key="${acc.key}">
-              ${isAdvExpanded ? '▾ 收起高级实体映射' : '▸ 展开高级实体映射 (缴费 / 停电公告 / 在线状态)'}
+              ${isAdvExpanded ? '▾ 收起高级实体映射' : '▸ 展开高级实体映射 (自动绑定缴费 / 停电公告 / 在线状态)'}
             </button>
           </div>
 
           ${isAdvExpanded ? `
             <div class="adv-fields-box">
-              <div class="adv-tip">💡 提示：国网集成会自动派生缴费、公告和在线实体，填入对应 sensor 即可激活深度卡片功能：</div>
+              <div class="adv-tip">💡 提示：国网集成已支持根据户号【全自动关联绑定】！缴费记录、停电公告、在线状态实体已自动匹配填充，无需手动修改；只需在下方选填“关注区域关键字”即可：</div>
               <div class="adv-item">
-                <label class="adv-label">缴费记录实体 (jiaofei_entity)</label>
-                <input type="text" class="form-input adv-input" list="dl-sensors" data-key="${acc.key}" data-field="jiaofei_entity" value="${acc.jiaofei_entity}" placeholder="sensor.dian_fei_zhang_hu_..._jiaofei" />
+                <div class="adv-label-row">
+                  <label class="adv-label">缴费记录实体 (jiaofei_entity)</label>
+                  ${acc.jiaofei_entity ? '<span class="badge-auto-bind">✓ 已自动绑定</span>' : ''}
+                </div>
+                <input type="text" class="form-input adv-input" list="dl-sensors" data-key="${acc.key}" data-field="jiaofei_entity" value="${acc.jiaofei_entity}" placeholder="已根据户号自动绑定，支持手动修改" />
               </div>
               <div class="adv-item">
-                <label class="adv-label">停电检修公告实体 (notice)</label>
-                <input type="text" class="form-input adv-input" list="dl-sensors" data-key="${acc.key}" data-field="notice" value="${acc.notice}" placeholder="sensor.dian_fei_zhang_hu_..._notice" />
+                <div class="adv-label-row">
+                  <label class="adv-label">停电检修公告实体 (notice)</label>
+                  ${acc.notice ? '<span class="badge-auto-bind">✓ 已自动绑定</span>' : ''}
+                </div>
+                <input type="text" class="form-input adv-input" list="dl-sensors" data-key="${acc.key}" data-field="notice" value="${acc.notice}" placeholder="已根据户号自动绑定，支持手动修改" />
               </div>
               <div class="adv-item">
-                <label class="adv-label">关注区域关键字 (notice_attention)</label>
+                <div class="adv-label-row">
+                  <label class="adv-label">关注区域关键字 (notice_attention) <span class="tip-optional">(选填)</span></label>
+                </div>
                 <input type="text" class="form-input adv-input" data-key="${acc.key}" data-field="notice_attention" value="${acc.notice_attention}" placeholder="如：XX大道 / XX小区 (匹配时高亮闪烁提醒)" />
               </div>
               <div class="adv-item">
-                <label class="adv-label">在线状态实体 (online)</label>
-                <input type="text" class="form-input adv-input" list="dl-sensors" data-key="${acc.key}" data-field="online" value="${acc.online}" placeholder="sensor.dian_fei_zhang_hu_..._online" />
+                <div class="adv-label-row">
+                  <label class="adv-label">在线状态实体 (online)</label>
+                  ${acc.online ? '<span class="badge-auto-bind">✓ 已自动绑定</span>' : ''}
+                </div>
+                <input type="text" class="form-input adv-input" list="dl-sensors" data-key="${acc.key}" data-field="online" value="${acc.online}" placeholder="已根据户号自动绑定，支持手动修改" />
               </div>
+              <button type="button" class="btn-auto-sync" data-key="${acc.key}">🔄 重新根据户号自动关联派生实体</button>
             </div>
           ` : ''}
         </div>
@@ -17060,17 +17295,23 @@ class ElectricityInfoCardEditor extends HTMLElement {
         .adv-fields-box { background: var(--secondary-background-color, #f8fafc); border: 1px dashed var(--divider-color, #cbd5e1); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
         .adv-tip { font-size: 11px; color: var(--secondary-text-color, #64748b); line-height: 1.4; }
         .adv-item { display: flex; flex-direction: column; gap: 3px; }
+        .adv-label-row { display: flex; align-items: center; justify-content: space-between; }
         .adv-label { font-size: 11px; color: var(--secondary-text-color, #64748b); }
         .adv-input { font-size: 12px; padding: 6px 10px; }
+        .badge-auto-bind { font-size: 11px; color: #16a34a; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 1px 6px; border-radius: 4px; font-weight: 500; }
+        .tip-optional { font-size: 11px; color: #ea580c; font-weight: normal; }
+        .btn-auto-sync { background: #ffffff; border: 1px solid #cbd5e1; color: #475569; font-size: 11px; padding: 4px 8px; border-radius: 6px; cursor: pointer; align-self: flex-start; margin-top: 2px; transition: all 0.2s; }
+        .btn-auto-sync:hover { background: #f8fafc; color: #1e293b; border-color: #94a3b8; }
         .btn-del { background: transparent; border: 1px solid #fecaca; color: #ef4444; font-size: 12px; cursor: pointer; padding: 3px 8px; border-radius: 6px; }
         .btn-del:hover { background: #fee2e2; }
         .btn-add { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; background: var(--primary-color, #ff5722); color: #ffffff; border: none; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; transition: opacity 0.2s; }
         .btn-add:hover { opacity: 0.9; }
         .quick-fill-box { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
-        .quick-fill-title { font-size: 12px; color: #c2410c; font-weight: 500; }
+        .quick-fill-title { font-size: 12px; color: #c2410c; font-weight: 500; line-height: 1.4; }
         .quick-fill-bar { display: flex; flex-wrap: wrap; gap: 6px; }
-        .btn-quick-fill { font-size: 11px; padding: 4px 8px; border-radius: 6px; background: #ffffff; color: #ea580c; border: 1px solid #fdba74; cursor: pointer; transition: all 0.15s; font-weight: 500; }
-        .btn-quick-fill:hover { background: #ffedd5; }
+        .btn-quick-fill { font-size: 11px; padding: 5px 10px; border-radius: 6px; background: #ffffff; color: #c2410c; border: 1px solid #fed7aa; cursor: pointer; transition: all 0.15s; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; }
+        .btn-quick-fill:hover:not(:disabled) { background: #ffedd5; border-color: #f97316; }
+        .btn-quick-fill:disabled, .btn-quick-fill.btn-added { background: #f1f5f9; border-color: #e2e8f0; color: #94a3b8; cursor: default; }
         .theme-box { border: 1px solid var(--divider-color, #e2e8f0); border-radius: 8px; padding: 10px; background: var(--secondary-background-color, #f8fafc); }
       </style>
 
@@ -17122,7 +17363,7 @@ class ElectricityInfoCardEditor extends HTMLElement {
         <div class="form-group">
           <label class="form-label">
             <span>用电户号列表 (multiclass)</span>
-            ${discovered.length > 0 ? `<span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: #fff7ed; color: #ea580c; font-weight: normal;">已扫描到 ${discovered.length} 个账户</span>` : ''}
+            ${discovered.length > 0 ? `<span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: #fff7ed; color: #ea580c; font-weight: normal;">已扫描到 ${discovered.length} 个标准户号</span>` : ''}
           </label>
 
           ${quickFillHtml}
@@ -17200,24 +17441,13 @@ class ElectricityInfoCardEditor extends HTMLElement {
       });
     }
 
-    // 快捷填充按钮
-    this.shadowRoot.querySelectorAll('.btn-quick-fill').forEach(btn => {
+    // 快捷填充按钮（支持严格去重和原子填充）
+    this.shadowRoot.querySelectorAll('.btn-quick-fill:not(:disabled)').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const targetEid = e.currentTarget.dataset.entity;
         const disc = discovered.find(d => d.entity === targetEid);
         if (!disc) return;
-
-        const list = this._getAccountList();
-        if (list.length === 1 && !list[0].entity) {
-          this._accountChanged(list[0].key, 'entity', disc.entity);
-          this._accountChanged(list[0].key, 'info', disc.consNo ? `户号 ${disc.consNo}` : '我的用电');
-          if (disc.jiaofei_entity) this._accountChanged(list[0].key, 'jiaofei_entity', disc.jiaofei_entity);
-          if (disc.notice_entity) this._accountChanged(list[0].key, 'notice', disc.notice_entity);
-          if (disc.online_entity) this._accountChanged(list[0].key, 'online', disc.online_entity);
-          this.render();
-        } else {
-          this._addAccount(disc);
-        }
+        this._applyQuickFill(disc);
       });
     });
 
@@ -17240,14 +17470,46 @@ class ElectricityInfoCardEditor extends HTMLElement {
       });
     });
 
-    this.shadowRoot.querySelectorAll('.account-card-item input[data-field], .account-card-item select[data-field]').forEach(inp => {
-      const handler = (e) => {
+    // 重新根据户号自动拉取派生实体按钮
+    this.shadowRoot.querySelectorAll('.btn-auto-sync').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const key = e.currentTarget.dataset.key;
+        const list = this._getAccountList();
+        const acc = list.find(a => a.key === key);
+        if (acc && acc.entity && this._hass) {
+          const derived = ElectricityInfoCard.findDerivedEntities(this._hass, acc.entity);
+          const newConfig = { ...this._config };
+          const mc = { ...(newConfig.multiclass || {}) };
+          const cur = { ...(mc[key] || { utility_type: 'ele' }) };
+          if (derived.jiaofei_entity) cur.jiaofei_entity = derived.jiaofei_entity;
+          if (derived.notice) cur.notice = derived.notice;
+          if (derived.online) cur.online = derived.online;
+          mc[key] = cur;
+          newConfig.multiclass = mc;
+          this._config = newConfig;
+          this._fireConfigChanged();
+          this.render();
+        }
+      });
+    });
+
+    this.shadowRoot.querySelectorAll('.account-card-item input[data-field]').forEach(inp => {
+      inp.addEventListener('input', (e) => {
         const key = e.target.dataset.key;
         const field = e.target.dataset.field;
         this._accountChanged(key, field, e.target.value);
-      };
-      inp.addEventListener('input', handler);
-      inp.addEventListener('change', handler);
+      });
+      if (inp.dataset.field === 'entity') {
+        inp.addEventListener('change', () => this.render());
+      }
+    });
+
+    this.shadowRoot.querySelectorAll('.account-card-item select[data-field]').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const key = e.target.dataset.key;
+        const field = e.target.dataset.field;
+        this._accountChanged(key, field, e.target.value);
+      });
     });
 
     this._rendered = true;
