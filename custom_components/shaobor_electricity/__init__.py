@@ -5,7 +5,6 @@ import logging
 
 from datetime import timedelta
 from pathlib import Path
-from homeassistant.components import frontend  # type: ignore
 from homeassistant.components.http import StaticPathConfig  # type: ignore
 from homeassistant.config_entries import ConfigEntry  # type: ignore
 from homeassistant.core import HomeAssistant  # type: ignore
@@ -40,15 +39,80 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[str] = ["sensor", "switch", "text", "button"]
 CARD_URL = f"/{DOMAIN}/electricity-info-card.js"
-CARD_PATH = Path(__file__).parent / "www" / "electricity-info-card.js"
+CARD_VERSION = "4.0.7"
+LEGACY_CARD_URLS: list[str] = []
+
+
+async def _async_register_lovelace_resource(hass: HomeAssistant, url: str) -> None:
+    """把前端卡片登记到 Lovelace Resources: 同一卡片只保留一条，版本号变了就更新.
+
+    同一卡片登记了多个地址时 (如 ?v=1.0.0 与 ?v=1.0.1)，浏览器会当成不同模块各加载一次，
+    白白多下载一遍；旧版卡片地址 (LEGACY_CARD_URLS) 也在这里删除。
+    """
+    try:
+        lovelace = hass.data.get("lovelace")
+        resources = getattr(lovelace, "resources", None) if lovelace else None
+        if not resources or not hasattr(resources, "async_create_item"):
+            return  # YAML 模式的资源只能手动维护
+        # 资源集合是懒加载的: 不先加载，async_items() 返回空列表，
+        # 每次启动都会被误判为"未登记"而重复新建一条
+        await resources.async_get_info()
+
+        base_url = url.split("?")[0]
+        matched = []
+        legacy = []
+        for item in resources.async_items():
+            item_url = item.get("url", "") if isinstance(item, dict) else getattr(item, "url", "")
+            item_id = item.get("id") if isinstance(item, dict) else getattr(item, "id", None)
+            if not item_id:
+                continue
+            if item_url.split("?")[0] == base_url:
+                matched.append((item_id, item_url))
+            elif item_url.split("?")[0] in LEGACY_CARD_URLS:
+                legacy.append((item_id, item_url))
+
+        for item_id, item_url in legacy:
+            await resources.async_delete_item(item_id)
+            _LOGGER.info("已移除旧版卡片资源: %s", item_url)
+
+        if not matched:
+            await resources.async_create_item({"res_type": "module", "url": url})
+            _LOGGER.info("已自动将卡片注册到 Lovelace Resources: %s", url)
+            return
+
+        # 优先保留已经是当前版本的那条，其余重复登记全部删除
+        matched.sort(key=lambda item: item[1] != url)
+        keep_id, keep_url = matched[0]
+        for item_id, item_url in matched[1:]:
+            await resources.async_delete_item(item_id)
+            _LOGGER.info("已移除重复登记的卡片资源: %s", item_url)
+        if keep_url != url:
+            await resources.async_update_item(keep_id, {"res_type": "module", "url": url})
+            _LOGGER.info("已更新 Lovelace Resource 卡片版本: %s", url)
+    except Exception as err:
+        _LOGGER.debug("自动注册 Lovelace Resource 失败(可忽略): %s", err)
 
 
 async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
-    """Register and load the bundled Lovelace electricity card."""
-    await hass.http.async_register_static_paths(
-        [StaticPathConfig(CARD_URL, str(CARD_PATH), cache_headers=False)]
-    )
-    frontend.add_extra_js_url(hass, CARD_URL)
+    """初始化全局组件环境，注册前端卡片静态资源与 Lovelace Resource."""
+    domain_data = hass.data.setdefault(DOMAIN, {})
+
+    # 注册前端静态卡片资源映射: /shaobor_electricity -> <集成目录>/www
+    www_dir = Path(__file__).parent / "www"
+    if www_dir.is_dir() and not domain_data.get("static_paths_registered"):
+        try:
+            await hass.http.async_register_static_paths([
+                StaticPathConfig(f"/{DOMAIN}", str(www_dir), cache_headers=False)
+            ])
+            domain_data["static_paths_registered"] = True
+            _LOGGER.info("已注册国网前端静态资源路径: /%s -> %s", DOMAIN, www_dir)
+        except Exception as err:
+            _LOGGER.warning("注册前端静态资源路径失败: %s", err)
+
+    # 自动向 Lovelace 注册卡片引用并处理版本控制
+    card_url = f"{CARD_URL}?v={CARD_VERSION}"
+    await _async_register_lovelace_resource(hass, card_url)
+
     return True
 
 async def _async_migrate_stores(hass: HomeAssistant) -> None:
