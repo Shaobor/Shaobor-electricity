@@ -4534,14 +4534,14 @@ class ElectricityInfoCard extends HTMLElement {
 
         // 显示卡片信息（字体已调小）
         console.log(
-          '%c⚡electricity-info-card\n%cVersion 4.1.0 ｜  ECharts: ' + echartsSource,
+          '%c⚡electricity-info-card\n%cVersion 4.1.1 ｜  ECharts: ' + echartsSource,
           `background: #ff5722; color: white; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 12px; font-family: monospace; line-height: 1.3; border-radius: 3px 3px 0 0;`,
           `background: white; color: #ff5722; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 11px; font-family: monospace; line-height: 1.3; border-radius: 0 0 3px 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);`
         );
       }).catch(err => {
         // 如果ECharts加载失败，仍然显示调试信息
         console.log(
-          '%c⚡electricity-info-card\n%cVersion 4.1.0 ｜  ECharts: 加载失败',
+          '%c⚡electricity-info-card\n%cVersion 4.1.1 ｜  ECharts: 加载失败',
           `background: #ff5722; color: white; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 12px; font-family: monospace; line-height: 1.3; border-radius: 3px 3px 0 0;`,
           `background: white; color: #ff5722; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 11px; font-family: monospace; line-height: 1.3; border-radius: 0 0 3px 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);`
         );
@@ -16687,17 +16687,44 @@ class ElectricityInfoCardEditor extends HTMLElement {
     this._rendered = false;
   }
 
+  _reindexMulticlass(mc) {
+    const newMc = {};
+    if (!mc || typeof mc !== 'object') {
+      newMc['1'] = { utility_type: 'ele', info: '我的用电', entity: '' };
+      return newMc;
+    }
+
+    const keys = Object.keys(mc).sort((a, b) => {
+      const numA = parseInt(a, 10);
+      const numB = parseInt(b, 10);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return a.localeCompare(b);
+    });
+
+    if (keys.length === 0) {
+      newMc['1'] = { utility_type: 'ele', info: '我的用电', entity: '' };
+      return newMc;
+    }
+
+    keys.forEach((oldKey, idx) => {
+      const newKey = String(idx + 1);
+      const item = { ...mc[oldKey] };
+
+      // 如果 info 是默认生成的 "账户 X"，则自动同步为新的连续编号 "账户 Y"
+      const defaultNameRegex = /^账户\s*\d+$/;
+      if (!item.info || defaultNameRegex.test(String(item.info).trim())) {
+        item.info = `账户 ${newKey}`;
+      }
+
+      newMc[newKey] = item;
+    });
+
+    return newMc;
+  }
+
   setConfig(config) {
     this._config = config ? JSON.parse(JSON.stringify(config)) : {};
-    if (!this._config.multiclass || typeof this._config.multiclass !== 'object') {
-      this._config.multiclass = {
-        '1': {
-          utility_type: 'ele',
-          info: '我的用电',
-          entity: ''
-        }
-      };
-    }
+    this._config.multiclass = this._reindexMulticlass(this._config.multiclass);
     if (!this._rendered) {
       this.render();
     } else {
@@ -16773,7 +16800,7 @@ class ElectricityInfoCardEditor extends HTMLElement {
   _getAccountList() {
     const mc = this._config.multiclass || {};
     const list = [];
-    const keys = Object.keys(mc);
+    const keys = Object.keys(mc).sort((a, b) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0));
     if (keys.length === 0) {
       list.push({
         key: '1',
@@ -16847,16 +16874,9 @@ class ElectricityInfoCardEditor extends HTMLElement {
   }
 
   _addAccount(prefill) {
-    const list = this._getAccountList();
-    let maxIdx = 0;
-    list.forEach(item => {
-      const num = parseInt(item.key, 10);
-      if (!isNaN(num) && num > maxIdx) maxIdx = num;
-    });
-    const nextKey = String(maxIdx + 1);
-
     const newConfig = { ...this._config };
-    const mc = { ...(newConfig.multiclass || {}) };
+    const mc = this._reindexMulticlass(newConfig.multiclass || {});
+    const nextKey = String(Object.keys(mc).length + 1);
 
     mc[nextKey] = {
       utility_type: 'ele',
@@ -16879,12 +16899,10 @@ class ElectricityInfoCardEditor extends HTMLElement {
     const mc = { ...(newConfig.multiclass || {}) };
     delete mc[key];
 
-    if (Object.keys(mc).length === 0) {
-      mc['1'] = { utility_type: 'ele', info: '我的用电', entity: '' };
-    }
-
-    newConfig.multiclass = mc;
+    // 重新排序并按 1, 2, 3... 严格连续重排
+    newConfig.multiclass = this._reindexMulticlass(mc);
     this._config = newConfig;
+    this._expandedAdv = {}; // 重置展开状态
     this._fireConfigChanged();
     this.render();
   }

@@ -39,7 +39,7 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[str] = ["sensor", "switch", "text", "button"]
 CARD_URL = f"/{DOMAIN}/electricity-info-card.js"
-CARD_VERSION = "4.1.0"
+CARD_VERSION = "4.1.1"
 LEGACY_CARD_URLS: list[str] = []
 
 
