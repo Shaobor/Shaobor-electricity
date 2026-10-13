@@ -4425,18 +4425,18 @@ class ElectricityInfoCard extends HTMLElement {
 
   // 更新主题配置（优化后的主入口）
   updateTheme(config) {
-    const theme = config.theme;
+    const theme = config ? config.theme : undefined;
 
-    // 没有配置且已有主题时保持当前主题（避免闪烁）
-    if (theme === undefined && this.lastThemeName) return;
+    // 没有配置且已有主题时保持当前主题（避免闪烁，但若之前是误判的 power 则强制纠正为 light）
+    if ((theme === undefined || theme === '' || theme === null) && this.lastThemeName && this.lastThemeName !== 'power') return;
 
     // 停止所有监听器
     this.toggleThemeListener(false);
 
-    let themeName = 'power'; // 默认主题
+    let themeName = 'light'; // 默认主题：经典纯白 (light)
     let needsListener = false;
 
-    if (theme !== undefined) {
+    if (theme !== undefined && theme !== '' && theme !== null && theme !== 'default') {
       // 处理特殊模式
       const specialMode = this.handleSpecialThemeMode(theme);
       if (specialMode) {
@@ -4447,6 +4447,9 @@ class ElectricityInfoCard extends HTMLElement {
       }
 
       this.lastThemeName = themeName;
+    } else {
+      themeName = 'light';
+      this.lastThemeName = 'light';
     }
 
     // 启用监听器（如果需要）
@@ -4534,14 +4537,14 @@ class ElectricityInfoCard extends HTMLElement {
 
         // 显示卡片信息（字体已调小）
         console.log(
-          '%c⚡electricity-info-card\n%cVersion 4.1.1 ｜  ECharts: ' + echartsSource,
+          '%c⚡electricity-info-card\n%cVersion 4.1.2 ｜  ECharts: ' + echartsSource,
           `background: #ff5722; color: white; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 12px; font-family: monospace; line-height: 1.3; border-radius: 3px 3px 0 0;`,
           `background: white; color: #ff5722; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 11px; font-family: monospace; line-height: 1.3; border-radius: 0 0 3px 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);`
         );
       }).catch(err => {
         // 如果ECharts加载失败，仍然显示调试信息
         console.log(
-          '%c⚡electricity-info-card\n%cVersion 4.1.1 ｜  ECharts: 加载失败',
+          '%c⚡electricity-info-card\n%cVersion 4.1.2 ｜  ECharts: 加载失败',
           `background: #ff5722; color: white; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 12px; font-family: monospace; line-height: 1.3; border-radius: 3px 3px 0 0;`,
           `background: white; color: #ff5722; padding: 3px 8px; margin: 0; display: inline-block; text-align: center; font-weight: bold; font-size: 11px; font-family: monospace; line-height: 1.3; border-radius: 0 0 3px 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);`
         );
@@ -16658,6 +16661,7 @@ class ElectricityInfoCard extends HTMLElement {
     return {
       type: 'custom:electricity-info-card',
       name: '国网电费',
+      theme: 'light',
       multiclass: {
         '1': {
           utility_type: 'ele',
@@ -16746,7 +16750,7 @@ class ElectricityInfoCardEditor extends HTMLElement {
   }
 
   get _theme() {
-    return this._config.theme || '';
+    return this._config.theme || 'light';
   }
 
   get _darkLightTheme() {
@@ -17084,18 +17088,30 @@ class ElectricityInfoCardEditor extends HTMLElement {
         <div class="form-group">
           <div class="adv-toggle-bar">
             <button type="button" class="btn-adv-toggle" id="btn-toggle-theme">
-              ${this._showThemeAdv ? '▾ 收起主题外观设置' : '▸ 展开主题外观高级设置 (昼夜切换 / 联动实体)'}
+              ${this._showThemeAdv ? '▾ 收起主题外观设置' : '▸ 展开主题外观高级设置 (背景颜色 / 昼夜模式)'}
             </button>
           </div>
           ${this._showThemeAdv ? `
             <div class="theme-box">
               <div class="form-item" style="margin-bottom: 8px;">
-                <label class="item-label">主题联动实体或模式 (theme)</label>
-                <input type="text" class="form-input adv-input" list="dl-themes" data-target="theme" value="${this._theme}" placeholder="可选: time / phone 或 input_select.theme / switch.xxx" />
-                <div class="adv-tip" style="margin-top: 3px;">留空为默认；可填 input_select 下拉实体，或填 "time" 按时间切换，"phone" 跟随手机系统。</div>
+                <label class="item-label">卡片背景与主题风格 (theme)</label>
+                <select class="form-input adv-input" data-target="theme-select">
+                  <option value="light"${(!this._theme || this._theme === 'light') ? ' selected' : ''}>⚪ 经典纯白背景 (light) - 默认</option>
+                  <option value="time"${this._theme === 'time' ? ' selected' : ''}>🌗 昼夜自动切换 (白天纯白 / 夜间深灰)</option>
+                  <option value="phone"${this._theme === 'phone' ? ' selected' : ''}>📱 跟随手机系统主题</option>
+                  <option value="darkgray"${this._theme === 'darkgray' ? ' selected' : ''}>🌑 高级深灰色背景</option>
+                  <option value="black"${this._theme === 'black' ? ' selected' : ''}>⬛ 纯黑极夜背景</option>
+                  <option value="transparent"${this._theme === 'transparent' ? ' selected' : ''}>🌫️ 半透明磨砂暗色</option>
+                  <option value="power"${this._theme === 'power' ? ' selected' : ''}>⚡ 国网蓝绿渐变</option>
+                  <option value="custom"${(this._theme && !['light', 'time', 'phone', 'darkgray', 'black', 'transparent', 'power'].includes(this._theme)) ? ' selected' : ''}>⚙️ 自定义实体联动 (输入实体ID)...</option>
+                </select>
+              </div>
+              <div class="form-item" id="theme-custom-wrap" style="margin-bottom: 8px; ${(this._theme && !['light', 'time', 'phone', 'darkgray', 'black', 'transparent', 'power'].includes(this._theme)) ? '' : 'display: none;'}">
+                <label class="item-label">自定义联动实体名</label>
+                <input type="text" class="form-input adv-input" list="dl-themes" data-target="theme" value="${this._theme}" placeholder="例如: input_select.theme 或 switch.xxx" />
               </div>
               <div class="form-item">
-                <label class="item-label">亮暗配色组合 (dark_light_theme)</label>
+                <label class="item-label">昼夜模式配色组合 (dark_light_theme)</label>
                 <input type="text" class="form-input adv-input" data-target="dark_light_theme" value="${this._darkLightTheme}" placeholder="例如: darkgray,light (格式: 暗色主题,亮色主题)" />
               </div>
             </div>
@@ -17139,13 +17155,34 @@ class ElectricityInfoCardEditor extends HTMLElement {
       themeToggleBtn.addEventListener('click', () => this._toggleThemeAdv());
     }
 
+    const themeSelect = this.shadowRoot.querySelector('select[data-target="theme-select"]');
+    const customWrap = this.shadowRoot.querySelector('#theme-custom-wrap');
     const themeInp = this.shadowRoot.querySelector('input[data-target="theme"]');
+
+    if (themeSelect) {
+      themeSelect.addEventListener('change', (e) => {
+        const val = e.target.value;
+        const newCfg = { ...this._config };
+        if (val === 'custom') {
+          if (customWrap) customWrap.style.display = 'block';
+          if (themeInp && themeInp.value.trim()) {
+            newCfg.theme = themeInp.value.trim();
+          }
+        } else {
+          if (customWrap) customWrap.style.display = 'none';
+          newCfg.theme = val;
+        }
+        this._config = newCfg;
+        this._fireConfigChanged();
+      });
+    }
+
     if (themeInp) {
       themeInp.addEventListener('input', (e) => {
         const val = e.target.value.trim();
         const newCfg = { ...this._config };
         if (val) newCfg.theme = val;
-        else delete newCfg.theme;
+        else newCfg.theme = 'light';
         this._config = newCfg;
         this._fireConfigChanged();
       });
