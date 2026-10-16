@@ -545,10 +545,12 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 _LOGGER.error("清除数据库敏感信息失败: %s", e)
 
         await hass.async_add_executor_job(_clear_sensitive_data)
-        # Store 与数据库共同保存过授权信息。删除最后一个实例时必须一并
-        # 清理，避免重新添加时又加载到已过期的授权码或登录会话。
-        await AuthStore(hass, STORAGE_VERSION, STORAGE_KEY).async_remove()
-        await Store(hass, STORAGE_VERSION, "shaobor_electricity_auth").async_remove()
-        _LOGGER.info("已清除共享授权缓存，重新添加将使用当前设备 UUID 建立新会话")
+        # 删除最后一个实例时彻底清理授权码缓存，不保留授权码
+        try:
+            await AuthStore(hass, STORAGE_VERSION, STORAGE_KEY).async_remove()
+            await Store(hass, STORAGE_VERSION, "shaobor_electricity_auth").async_remove()
+            _LOGGER.info("最后一个实例已删除，已彻底清除授权码缓存（保留历史电量数据）")
+        except Exception as e:
+            _LOGGER.debug("清理缓存异常: %s", e)
     else:
         _LOGGER.info("仍有其他实例存在，保留授权 Token。")

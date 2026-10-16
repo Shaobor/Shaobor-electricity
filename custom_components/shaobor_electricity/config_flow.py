@@ -208,15 +208,15 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
         return None
 
     async def _save_token(self, token: str) -> None:
-        """不再持久化到 .storage（授权码真值在 ConfigEntry.data 与 SQLite）。"""
-        # 顺带清掉历史遗留的 auth JSON 文件，避免 .storage 里再出现
+        """持久化保存授权码草稿，即使未完成后续登录也能记住。"""
         try:
-            await self._get_store().async_remove()
-            await AuthStore(
-                self.hass, STORAGE_VERSION, "shaobor_electricity_auth"
-            ).async_remove()
-        except Exception:  # noqa: BLE001 文件不存在等
-            pass
+            store = self._get_store()
+            data = await store.async_load() or {}
+            data["token"] = token
+            await store.async_save(data)
+            _LOGGER.info("[配置流程] 授权码已成功持久化保存到 .storage/%s", STORAGE_KEY)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("[配置流程] 持久化保存授权码失败: %s", err)
 
     async def _save_auth_store(
         self,
@@ -467,10 +467,12 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
         try:
             return await self._async_step_user_impl(user_input, errors)
         except Exception as err:  # pylint: disable=broad-except
+            _LOGGER.exception("[配置流程] 初始用户认证步骤发生异常: %s", err)
             errors["base"] = "unknown"
+            stored_token = await self._get_stored_token()
             return self.async_show_form(
                 step_id="user",
-                data_schema=vol.Schema({vol.Required(CONF_AUTH_TOKEN): str}),
+                data_schema=vol.Schema({vol.Required(CONF_AUTH_TOKEN, default=stored_token or ""): str}),
                 errors=errors,
             )
 
@@ -481,10 +483,7 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
         # 尝试从 Store 读取已保存的 token 用于预填充
         stored_token = await self._get_stored_token()
         # 预填逻辑：优先使用用户刚才输入的值，其次使用存储的值
-        is_reauth = self.context.get("source") == SOURCE_REAUTH
-        default_token = (user_input or {}).get(CONF_AUTH_TOKEN) or (
-            "" if is_reauth else stored_token or ""
-        )
+        default_token = (user_input or {}).get(CONF_AUTH_TOKEN) or stored_token or ""
 
         # Try to auto-load token if user hasn't input anything yet
         if user_input is None:

@@ -465,6 +465,7 @@ class LoginMixin(BaseStateGridApi):
             encrypt_url = f"{ENCRYPT_API_URL}/encrypt/c50f02"
             payload = {
                 "token": self._encrypt_token,
+                "machineId": self._machine_id,
                 "uuid": self._uuid,
                 "publicKey": self._public_key,
                 "qrCodeSerial": serial_no
@@ -578,6 +579,7 @@ class LoginMixin(BaseStateGridApi):
             f"{ENCRYPT_API_URL}/encrypt/c8f04",
             {
                 "token": self._encrypt_token,
+                "machineId": self._machine_id,
                 "keyCode": self._key_code,
                 "uuid": self._uuid,
                 "publicKey": self._public_key,
@@ -623,6 +625,7 @@ class LoginMixin(BaseStateGridApi):
             f"{ENCRYPT_API_URL}/encrypt/c8f04",
             {
                 "token": self._encrypt_token,
+                "machineId": self._machine_id,
                 "keyCode": self._key_code,
                 "uuid": self._uuid,
                 "publicKey": self._public_key,
@@ -769,6 +772,7 @@ class LoginMixin(BaseStateGridApi):
                         f"{ENCRYPT_API_URL}/encrypt/c4f02",
                         {
                             "token": self._encrypt_token,
+                            "machineId": self._machine_id,
                             "keyCode": self._key_code,
                             "uuid": self._uuid,
                             "publicKey": self._public_key,
