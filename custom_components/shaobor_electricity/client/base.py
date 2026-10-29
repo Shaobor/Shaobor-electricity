@@ -84,13 +84,39 @@ class BaseStateGridApi:
 
     async def _secure_post_encrypt(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Send encrypted POST request to bridge server."""
-        headers = {"Authorization": f"Bearer {self._encrypt_token}"}
+        # Keep the same browser-like headers used by /initialize.  The bridge
+        # is protected by a WAF and requests that only carry Authorization can
+        # be rejected with HTTP 403 (especially after the aiohttp/Python 3.14
+        # upgrade in HA 2026.10.x).
+        headers = {
+            **self._headers,
+            "Authorization": f"Bearer {self._encrypt_token}",
+        }
         try:
             async with self._session.post(url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT) as response:
-                if response.status == 401:
-                    raise StateGridAuthError("Encryption server: Unauthorized (check token)")
+                # Read the response body before raising for status so the
+                # actual bridge reason (token, machineId, upstream source,
+                # or WAF) is not hidden behind a generic "403 Forbidden".
+                response_text = await response.text()
+                try:
+                    res = json.loads(response_text) if response_text else {}
+                except json.JSONDecodeError:
+                    # A WAF may return an HTML/plain-text error page instead
+                    # of the bridge's normal JSON envelope.
+                    res = {"error": response_text[:500]}
+
+                if response.status in (401, 403):
+                    detail = (
+                        (res.get("error") or res.get("message"))
+                        if isinstance(res, dict)
+                        else None
+                    )
+                    detail = detail or f"HTTP {response.status}"
+                    raise StateGridAuthError(
+                        f"Encryption server authorization failed ({response.status}): {detail}"
+                    )
+
                 response.raise_for_status()
-                res = await response.json()
                 
                 if not res.get("success"):
                     raise StateGridAuthError(f"Helper API error: {res.get('message')}")

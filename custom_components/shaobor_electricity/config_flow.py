@@ -17,6 +17,7 @@ from homeassistant.helpers.selector import SelectSelector, SelectSelectorConfig,
 
 from .client import Shaobor95598ApiClient, StateGridAuthError, STORAGE_KEY, STORAGE_VERSION
 from .storage import AuthStore
+from .helpers.machine_id import async_get_machine_id, get_machine_id
 from .login_methods import QRCodeLoginHandler, PasswordLoginHandler, SMSLoginHandler
 from .mobile import MobileIosLoginMixin
 from .helpers.schemas import (
@@ -106,7 +107,7 @@ async def validate_token(
 ) -> None:
     """Validate the user input token."""
     session = async_get_clientsession(hass)
-    machine_id = machine_id or hass.data.get("core.uuid")
+    machine_id = machine_id or await async_get_machine_id(hass)
     # 授权密钥校验必须与数据源无关：mobile 模式下没有网页链路，
     # 先走 /mobile/ios/capabilities（后端纯库校验 token↔machineId 绑定，
     # 不请求 95598），失败再回退网页 initialize（f02 会话握手）。
@@ -148,6 +149,12 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
         self._password_handler: PasswordLoginHandler | None = None
         self._sms_handler: SMSLoginHandler | None = None
         # 手机App（iOS 链路）登录流程状态由 MobileIosLoginMixin 持有
+
+    async def _async_get_effective_machine_id(self) -> str:
+        """获取当前配置流有效的 Machine ID (兼容 HA 2026.10+)."""
+        if self._reauth_machine_id:
+            return self._reauth_machine_id
+        return await async_get_machine_id(self.hass)
 
     @staticmethod
     def async_get_options_flow(config_entry):
@@ -247,7 +254,7 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
             "username": username or "",
             "password": password or "",
             "auto_relogin": auto_relogin,
-            "machine_id": machine_id or self.hass.data.get("core.uuid"),
+            "machine_id": machine_id or await self._async_get_effective_machine_id(),
         }
         # 1. 【核心变更】：直接保存到数据库 (2.0.0 单点真值)
         try:
@@ -283,7 +290,7 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
                     **data,
                     CONF_MACHINE_ID: data.get(CONF_MACHINE_ID)
                     or entry.data.get(CONF_MACHINE_ID)
-                    or self.hass.data.get("core.uuid"),
+                    or await self._async_get_effective_machine_id(),
                 }
                 self.hass.config_entries.async_update_entry(entry, data=data)
                 
@@ -340,23 +347,23 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
             machine_id=data.get(CONF_MACHINE_ID),
         )
         
-        data[CONF_MACHINE_ID] = data.get(CONF_MACHINE_ID) or self.hass.data.get("core.uuid")
+        data[CONF_MACHINE_ID] = data.get(CONF_MACHINE_ID) or await self._async_get_effective_machine_id()
         await self.async_set_unique_id(cons_no or entry_title)
         return self.async_create_entry(title=entry_title, data=data)
 
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> FlowResult:
         """Reauth 时先执行刷新 token：优先尝试从共享 Store 静默修复，失败才要求重新登录."""
-        self._auth_token = entry_data.get(CONF_AUTH_TOKEN) or ""
-        self._reauth_machine_id = (
-            entry_data.get(CONF_MACHINE_ID) or self.hass.data.get("core.uuid")
+        effective_mid = (
+            entry_data.get(CONF_MACHINE_ID) or await self._async_get_effective_machine_id()
         )
+        self._reauth_machine_id = effective_mid
         
         # 数据源分流：手机源（mobile）直接进入手机源重新认证登录闸门，无需初始化网页版客户端
         from .helpers.upstream import resolve_upstream_source_raw, SOURCE_MOBILE
         auto_source = await resolve_upstream_source_raw(
             self.hass,
             self._auth_token,
-            self._reauth_machine_id or self.hass.data.get("core.uuid"),
+            effective_mid,
         )
         # 数据源分流：后台配置优先；若后台指定为 web，必须走 web 重新登录
         if auto_source == SOURCE_MOBILE or (auto_source is None and entry_data.get(CONF_DATA_SOURCE) == DATA_SOURCE_MOBILE_IOS):
@@ -510,19 +517,20 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
                     # 闸门——本地已有有效会话时免登录直达户号选择。
                     from .helpers.upstream import resolve_upstream_source_raw, SOURCE_MOBILE
 
+                    effective_mid = await self._async_get_effective_machine_id()
                     auto_source = await resolve_upstream_source_raw(
                         self.hass,
                         stored_token,
                         # resolve 走绑定码校验，首次安装 _reauth_machine_id 为 None，
-                        # 必须兜底 core.uuid，否则后端 403 误判 web 源
-                        self._reauth_machine_id or self.hass.data.get("core.uuid"),
+                        # 必须兜底 instance_id，否则后端 403 误判 web 源
+                        effective_mid,
                     )
                     if auto_source == SOURCE_MOBILE:
                         return await self.async_step_mobile_login_gate()
                     self._api = Shaobor95598ApiClient(
                         token=self._auth_token,
                         session=async_get_clientsession(self.hass),
-                        machine_id=self._reauth_machine_id or self.hass.data.get("core.uuid"),
+                        machine_id=effective_mid,
                     )
                     await self._api.initialize()
                     # 登录有效时，若 Store 中已有户号列表，尝试校验会话并进入选择户号（或仅一户则直接创建），跳过「选择登录方式」
@@ -586,18 +594,19 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
                 # 被误判为授权密钥无效。登录方式闸门会自行按源分流。
                 from .helpers.upstream import resolve_upstream_source_raw, SOURCE_MOBILE
 
+                effective_mid = await self._async_get_effective_machine_id()
                 source = await resolve_upstream_source_raw(
                     self.hass,
                     token,
                     # resolve 走绑定码校验，首次安装 _reauth_machine_id 为 None，
-                    # 必须兜底 core.uuid，否则后端 403"未提供绑定码"→ 误判 web 源
-                    self._reauth_machine_id or self.hass.data.get("core.uuid"),
+                    # 必须兜底 instance_id，否则后端 403"未提供绑定码"→ 误判 web 源
+                    effective_mid,
                 )
                 if source != SOURCE_MOBILE:
                     self._api = Shaobor95598ApiClient(
                         token=self._auth_token, 
                         session=async_get_clientsession(self.hass),
-                        machine_id=self._reauth_machine_id or self.hass.data.get("core.uuid"),
+                        machine_id=effective_mid,
                     )
                     try:
                         await self._api.initialize()
@@ -638,11 +647,12 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
         # iOS 登录链路（无扫码选项；登录态/设备指纹由后端持有），网页登录方式不适用。
         from .helpers.upstream import resolve_upstream_source_raw, SOURCE_MOBILE
         if user_input is None:
+            effective_mid = await self._async_get_effective_machine_id()
             source = await resolve_upstream_source_raw(
                 self.hass,
                 self._auth_token,
-                # 同上：首次安装兜底 core.uuid，否则 resolve 403 误判 web 源
-                self._reauth_machine_id or self.hass.data.get("core.uuid"),
+                # 同上：首次安装兜底 instance_id，否则 resolve 403 误判 web 源
+                effective_mid,
             )
             if source == SOURCE_MOBILE:
                 return await self.async_step_mobile_login_gate()
@@ -693,7 +703,7 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
 
     def _mobile_machine_id(self) -> str | None:
         """当前 machineId（reauth 场景优先用原机器，保证查到原登录档案）。"""
-        return self._reauth_machine_id or self.hass.data.get("core.uuid")
+        return self._reauth_machine_id or get_machine_id(self.hass)
 
     async def _async_mobile_invalid_token(self) -> FlowResult:
         """授权码校验失败时返回授权码输入页（保留已输入值）。"""

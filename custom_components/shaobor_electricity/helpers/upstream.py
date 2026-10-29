@@ -35,9 +35,10 @@ VALID_SOURCES = (SOURCE_WEB, SOURCE_MOBILE)
 def entry_auth(hass: Any, entry: Any) -> tuple[str | None, str | None]:
     """从 entry 提取后端授权码与绑定码。"""
     from ..const import CONF_AUTH_TOKEN, CONF_MACHINE_ID
+    from .machine_id import get_machine_id
 
     token = entry.data.get(CONF_AUTH_TOKEN)
-    machine_id = entry.data.get(CONF_MACHINE_ID) or hass.data.get("core.uuid")
+    machine_id = entry.data.get(CONF_MACHINE_ID) or get_machine_id(hass)
     return token, machine_id
 
 
@@ -99,7 +100,7 @@ async def resolve_upstream_source_raw(
     if not token:
         return None
     if session is None:
-        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession  # type: ignore
 
         session = async_get_clientsession(hass)
     try:
@@ -118,7 +119,7 @@ async def set_upstream_source(hass: Any, entry: Any, source: str) -> None:
     """写入全局数据源配置（system_settings.upstream_source，选项流调用）。失败抛异常。"""
     if source not in VALID_SOURCES:
         raise ValueError(f"source 仅支持 {'/'.join(VALID_SOURCES)}")
-    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession  # type: ignore
 
     token, machine_id = entry_auth(hass, entry)
     if not token:

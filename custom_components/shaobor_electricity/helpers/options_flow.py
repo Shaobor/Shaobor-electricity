@@ -540,7 +540,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 _LOGGER.info("[数据查看] 发现旧版任务记录，正在迁移至户号文件")
                 tasks = legacy_tasks
                 # 迁移任务文件
-                from homeassistant.helpers.storage import Store
+                from homeassistant.helpers.storage import Store  # type: ignore
                 await Store(self.hass, version=1, key=f"shaobor_electricity/shaobor_import_tasks_{suffix}").async_save(tasks)
                 await Store(self.hass, version=1, key=f"shaobor_electricity/shaobor_import_tasks_{entry_id}").async_remove()
                 # 迁移数据文件
@@ -595,7 +595,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     ) -> FlowResult:
         """二次确认删除操作."""
         from .data_importer import get_import_tasks, delete_import_task
-        from homeassistant.helpers.storage import Store
+        from homeassistant.helpers.storage import Store  # type: ignore
         
         # 1. 动态确定存储后缀
         entry_id = self.config_entry.entry_id
@@ -666,10 +666,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
             # 若内存中尚未持有，尝试从本地数据库兜底读取
             if not user_token and getattr(coordinator, "db", None):
+                from .machine_id import get_machine_id
                 machine_id = (
                     self.config_entry.data.get(CONF_MACHINE_ID)
                     or getattr(api, "_machine_id", None)
-                    or self.hass.data.get("core.uuid")
+                    or get_machine_id(self.hass)
                 )
                 if machine_id:
                     try:

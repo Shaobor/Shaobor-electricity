@@ -97,6 +97,13 @@ async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
     """初始化全局组件环境，注册前端卡片静态资源与 Lovelace Resource."""
     domain_data = hass.data.setdefault(DOMAIN, {})
 
+    # 预先获取并缓存 HA 实例的机器码（Machine ID），兼容 HA 2026.10+ 新版架构
+    try:
+        from .helpers.machine_id import async_get_machine_id
+        await async_get_machine_id(hass)
+    except Exception as err:
+        _LOGGER.debug("预加载 Machine ID 异常: %s", err)
+
     # 注册前端静态卡片资源映射: /shaobor_electricity -> <集成目录>/www
     www_dir = Path(__file__).parent / "www"
     if www_dir.is_dir() and not domain_data.get("static_paths_registered"):
@@ -162,7 +169,8 @@ async def _async_setup_mobile_ios_entry(
 
     store = AuthStore(hass, STORAGE_VERSION, STORAGE_KEY)
 
-    machine_id = entry.data.get(CONF_MACHINE_ID) or hass.data.get("core.uuid")
+    from .helpers.machine_id import async_get_machine_id
+    machine_id = entry.data.get(CONF_MACHINE_ID) or await async_get_machine_id(hass)
     api = MobileIosApiClient(
         token, session, hass, entry_id=entry.entry_id, machine_id=machine_id
     )
@@ -337,13 +345,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return stored.get(store_key or key)
         return None
 
+    from .helpers.machine_id import async_get_machine_id
+    machine_id = entry.data.get(CONF_MACHINE_ID) or await async_get_machine_id(hass)
     api = Shaobor95598ApiClient(
         token, 
         session, 
         None, # 不再传入 store，内部直接对接 db
         hass, 
         entry_id=entry.entry_id,
-        machine_id=entry.data.get(CONF_MACHINE_ID) or hass.data.get("core.uuid")
+        machine_id=machine_id
     )
     api.set_db(db) # 注入数据库
     api.load_auth_state(
