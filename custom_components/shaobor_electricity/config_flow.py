@@ -353,6 +353,9 @@ class ConfigFlow(MobileIosLoginMixin, config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> FlowResult:
         """Reauth 时先执行刷新 token：优先尝试从共享 Store 静默修复，失败才要求重新登录."""
+        # HA 通过 reauth flow 传入原配置数据；必须先恢复授权码，后续
+        # 数据源判断、后端校验和登录方式流程才能沿用首次配置的授权码。
+        self._auth_token = entry_data.get(CONF_AUTH_TOKEN) or ""
         effective_mid = (
             entry_data.get(CONF_MACHINE_ID) or await self._async_get_effective_machine_id()
         )
